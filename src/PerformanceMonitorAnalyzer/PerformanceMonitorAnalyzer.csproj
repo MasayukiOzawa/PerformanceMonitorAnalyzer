@@ -12,8 +12,8 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- WPF版をビルドしない場合はwpf-versionディレクトリを除外 -->
-  <ItemGroup Condition="'$(BuildWindowsWpf)' != 'true'">
+  <!-- wpf-versionディレクトリを常に除外（WPF版の場合は後で明示的に含める） -->
+  <ItemGroup>
     <Compile Remove="wpf-version\**" />
     <EmbeddedResource Remove="wpf-version\**" />
     <None Remove="wpf-version\**" />
