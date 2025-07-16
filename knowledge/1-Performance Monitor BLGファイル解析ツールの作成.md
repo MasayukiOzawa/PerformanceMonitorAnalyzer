@@ -189,3 +189,79 @@ static double GenerateSampleValue(string counter, Random random, int index)
 ## まとめ
 
 要件を満たすC#デスクトップアプリケーションを作成しました。クロスプラットフォーム対応とWindows専用WPF版の両方を提供することで、開発環境の制約を克服し、実用的なソリューションを実現しました。
+
+## 2024年12月追記: プロジェクト構造の簡素化
+
+### 背景
+ユーザーフィードバックにより、以下の問題が報告されました：
+- ScottPlot.WPFの名前空間エラー（.NET 8.0-windows互換性問題）
+- 重複するCompileアイテムエラー
+- コンソール版が不要との要望
+
+### 対応内容
+
+#### 1. プロジェクト構造の簡素化
+```
+変更前:
+src/
+└── PerformanceMonitorAnalyzer/
+    ├── Program.cs                 # コンソール版
+    ├── wpf-version/               # WPF版サブディレクトリ
+    │   ├── App.xaml
+    │   ├── App.xaml.cs
+    │   ├── MainWindow.xaml
+    │   └── MainWindow.xaml.cs
+    └── PerformanceMonitorAnalyzer.csproj
+
+変更後:
+src/
+└── PerformanceMonitorAnalyzer/
+    ├── App.xaml                   # WPF版メインディレクトリ
+    ├── App.xaml.cs
+    ├── MainWindow.xaml
+    ├── MainWindow.xaml.cs
+    └── PerformanceMonitorAnalyzer.csproj
+```
+
+#### 2. プロジェクトファイルの簡素化
+- コンソール版関連設定の削除
+- 条件付きビルドの除去
+- WPF専用設定に統一
+
+#### 3. ScottPlot問題の一時的対応
+- ScottPlot.WPFの名前空間互換性問題を回避
+- グラフ機能を一時的に無効化
+- プレースホルダーUIで今後の実装に備える
+
+### 技術的課題と解決策
+
+#### 課題1: LiveCharts互換性警告
+```
+warning NU1701: パッケージ 'LiveCharts.Wpf 0.9.7' はプロジェクトのターゲット フレームワーク 'net8.0-windows7.0' ではなく '.NETFramework,Version=v4.8' を使用して復元されました
+```
+
+**解決策**: ScottPlot.WPFに変更したが、名前空間問題で一時無効化
+
+#### 課題2: 重複Compileアイテムエラー
+```
+error NETSDK1022: 重複する 'Compile' 個のアイテムが含められました
+```
+
+**解決策**: wpf-versionサブディレクトリを削除し、ファイルをメインディレクトリに移動
+
+#### 課題3: ScottPlot名前空間エラー
+```
+error MC3074: タグ 'WpfPlot' は、XML 名前空間 'clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF' にありません
+```
+
+**解決策**: 
+- 一時的にScottPlotコントロールを無効化
+- プレースホルダーUIで代替
+- 今後の実装で適切なグラフライブラリを選定
+
+### 学習ポイント（追記）
+
+1. **.NET バージョン互換性**: 古いライブラリと新しい.NETバージョンの互換性問題
+2. **プロジェクト構造設計**: 複雑な条件付きビルドよりもシンプルな構造の重要性
+3. **段階的開発**: 機能を一時的に無効化してコア機能を確立する手法
+4. **ユーザーフィードバック対応**: 要望に応じた機能削減・簡素化の重要性

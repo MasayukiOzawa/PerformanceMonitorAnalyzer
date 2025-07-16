@@ -9,7 +9,7 @@
 
 ### プラットフォーム別要件
 
-#### Windows環境
+#### Windows環境（推奨）
 - Windows 10/11
 - Visual Studio 2022（推奨）または Visual Studio Code
 - Windows SDK（WPF開発用）
@@ -17,6 +17,7 @@
 #### Linux/macOS環境
 - Docker（Dev Container使用時）
 - Visual Studio Code with Dev Containers extension
+- **注意**: WPFアプリケーションはWindows専用のため、実際の動作はWindowsでのみ可能
 
 ## セットアップ手順
 

@@ -1,59 +1,44 @@
 # Performance Monitor Analyzer
 
-Windows Performance Monitor の .blg ファイルを読み込み、解析・可視化するC#デスクトップアプリケーションです。
+Windows Performance Monitor の .blg ファイルを読み込み、解析・可視化するC# WPFデスクトップアプリケーションです。
 
 ## 機能
 
 - ✅ BLGファイルの読み込み（Windows環境のみ）
 - ✅ パフォーマンスカウンターの一覧表示
 - ✅ 複数カウンターの選択機能
-- ✅ データのグラフ化（WPF版）
-- ✅ カウンターごとのタブ形式データテーブル表示（WPF版）
+- ✅ カウンターごとのタブ形式データテーブル表示
 - ✅ JSONファイルへのデータエクスポート
 - ✅ 統計情報の表示
 - ✅ エラーログ機能
+- 🚧 データのグラフ化（現在開発中）
 
 ## プロジェクト構成
 
 ```
 src/
 └── PerformanceMonitorAnalyzer/
-    ├── Program.cs                 # コンソール版メインプログラム
-    ├── wpf-version/               # WPF版GUI（Windows専用）
-    │   ├── App.xaml
-    │   ├── App.xaml.cs
-    │   ├── MainWindow.xaml
-    │   └── MainWindow.xaml.cs
+    ├── App.xaml                   # WPFアプリケーション設定
+    ├── App.xaml.cs
+    ├── MainWindow.xaml            # メインウィンドウUI
+    ├── MainWindow.xaml.cs         # メインウィンドウロジック
     └── PerformanceMonitorAnalyzer.csproj
 ```
 
 ## 必要な環境
 
-### コンソール版
-- .NET 8.0以降
-- Windows/Linux/macOS（サンプルデータでのデモンストレーション）
-
-### WPF版（GUI）
 - .NET 8.0以降
 - Windows環境必須
 - Visual Studio 2022 または Visual Studio Code
 
 ## ビルドと実行
 
-### コンソール版（クロスプラットフォーム）
+### Windows環境（推奨）
 
 ```bash
 cd src/PerformanceMonitorAnalyzer
 dotnet build
 dotnet run
-```
-
-### WPF版（Windows専用）
-
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet build -p:BuildWindowsWpf=true -f net8.0-windows
-dotnet run -p:BuildWindowsWpf=true -f net8.0-windows
 ```
 
 ### 引数でBLGファイルを指定（Windows環境のみ）
@@ -64,18 +49,12 @@ dotnet run "C:\path\to\your\file.blg"
 
 ## 使用方法
 
-### コンソール版
-1. アプリケーションを実行
-2. BLGファイルがある場合は引数で指定、ない場合はサンプルデータで動作確認
-3. パフォーマンスカウンターの統計情報が表示される
-4. データはJSONファイルに出力される
-
-### WPF版（Windows環境）
+### WPF GUI アプリケーション
 1. アプリケーションを実行
 2. メニューから「ファイル」→「BLGファイルを開く」を選択
 3. 左側のカウンター一覧から表示したいカウンターにチェック
-4. 右側にリアルタイムグラフが表示される
-5. 下部のタブでカウンターごとの詳細データを確認
+4. 下部のタブでカウンターごとの詳細データを確認
+5. グラフ機能は現在開発中です
 
 ## サポートするカウンター例
 

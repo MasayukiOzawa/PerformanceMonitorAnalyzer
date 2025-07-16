@@ -2,28 +2,13 @@
 
 ## Performance Monitor Analyzer の基本的な使い方
 
-### コンソール版の使用方法
-
-#### 1. 基本実行
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet run
-```
-
-サンプルデータを使用してアプリケーションの動作を確認できます。
-
-#### 2. BLGファイルを指定して実行（Windows環境のみ）
-```bash
-dotnet run "C:\path\to\your\performance.blg"
-```
-
-### WPF版の使用方法（Windows専用）
+### WPF アプリケーションの使用方法（Windows専用）
 
 #### 1. アプリケーション起動
 ```bash
 cd src/PerformanceMonitorAnalyzer
-dotnet build -p:BuildWindowsWpf=true -f net8.0-windows
-dotnet run -p:BuildWindowsWpf=true -f net8.0-windows
+dotnet build
+dotnet run
 ```
 
 #### 2. BLGファイルの読み込み
@@ -31,10 +16,12 @@ dotnet run -p:BuildWindowsWpf=true -f net8.0-windows
 2. ファイルダイアログでBLGファイルを選択
 3. カウンター一覧が左側パネルに表示される
 
-#### 3. カウンターの選択とグラフ表示
+#### 3. カウンターの選択とデータ表示
 1. 左側のカウンター一覧から表示したいカウンターにチェック
-2. 選択したカウンターのグラフが右側に表示される
+2. 選択したカウンターがデータテーブルに表示される
 3. 複数のカウンターを同時に選択可能
+
+**注意**: グラフ機能は現在開発中です。データテーブルでの確認が可能です。
 
 #### 4. データテーブルの確認
 - 画面下部のタブで各カウンターの詳細データを確認
