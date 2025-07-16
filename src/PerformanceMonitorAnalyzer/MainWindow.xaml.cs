@@ -3,7 +3,6 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
-using ScottPlot;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -25,10 +24,8 @@ public partial class MainWindow : Window
 
     private void InitializeChart()
     {
-        PerformanceChart.Plot.Title("パフォーマンスモニター");
-        PerformanceChart.Plot.XLabel("時間");
-        PerformanceChart.Plot.YLabel("値");
-        PerformanceChart.Refresh();
+        // ScottPlotは現在無効化されています
+        // 後でチャート機能を実装する予定です
     }
 
     private void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -60,7 +57,7 @@ public partial class MainWindow : Window
         
         // UI状態をリセット
         CounterPanel.Children.Clear();
-        PerformanceChart.Plot.Clear();
+        // PerformanceChart.Plot.Clear(); // ScottPlot機能は無効化中
         DataTabControl.Items.Clear();
         _counterData.Clear();
 
@@ -175,40 +172,19 @@ public partial class MainWindow : Window
     {
         if (!_counterData.ContainsKey(counter)) return;
 
-        var dataPoints = _counterData[counter];
-        var times = dataPoints.Select((point, index) => (double)index).ToArray();
-        var values = dataPoints.Select(point => point.Value).ToArray();
-
-        var displayName = GetCounterDisplayName(counter);
-        PerformanceChart.Plot.AddScatter(times, values, label: displayName);
-        PerformanceChart.Plot.Legend(true);
-        PerformanceChart.Refresh();
+        // ScottPlot機能は現在無効化されています
+        // チャート表示機能は後で実装される予定です
+        
+        // データテーブルの更新のみ実行
+        Console.WriteLine($"カウンター追加: {GetCounterDisplayName(counter)}");
     }
 
     private void RemoveCounterFromChart(string counter)
     {
-        var displayName = GetCounterDisplayName(counter);
-        PerformanceChart.Plot.Clear();
+        // ScottPlot機能は現在無効化されています
+        // チャート表示機能は後で実装される予定です
         
-        // 他の選択されているカウンターを再描画
-        foreach (CheckBox checkBox in CounterPanel.Children.OfType<CheckBox>())
-        {
-            if (checkBox.IsChecked == true && (string)checkBox.Tag != counter)
-            {
-                var otherCounter = (string)checkBox.Tag;
-                if (_counterData.ContainsKey(otherCounter))
-                {
-                    var dataPoints = _counterData[otherCounter];
-                    var times = dataPoints.Select((point, index) => (double)index).ToArray();
-                    var values = dataPoints.Select(point => point.Value).ToArray();
-                    var otherDisplayName = GetCounterDisplayName(otherCounter);
-                    PerformanceChart.Plot.AddScatter(times, values, label: otherDisplayName);
-                }
-            }
-        }
-        
-        PerformanceChart.Plot.Legend(true);
-        PerformanceChart.Refresh();
+        Console.WriteLine($"カウンター削除: {GetCounterDisplayName(counter)}");
     }
 
     private void AddCounterTab(string counter)

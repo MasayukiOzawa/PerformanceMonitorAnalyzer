@@ -3,7 +3,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:scottplot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized">
     <Grid>
@@ -57,7 +56,14 @@
             <!-- 右側: グラフ表示 -->
             <GroupBox Grid.Column="1" Header="グラフ表示">
                 <Grid>
-                    <scottplot:WpfPlot x:Name="PerformanceChart" />
+                    <Grid x:Name="PerformanceChart" Background="White" />
+                    <TextBlock Text="ScottPlotは現在無効です。チャート機能は後で実装されます。"
+                             HorizontalAlignment="Center"
+                             VerticalAlignment="Center"
+                             FontSize="14"
+                             Foreground="DarkGray"
+                             TextWrapping="Wrap"
+                             Margin="10"/>
                     <TextBlock x:Name="NoDataMessage" 
                              Text="BLGファイルを開いてカウンターを選択してください"
                              HorizontalAlignment="Center"

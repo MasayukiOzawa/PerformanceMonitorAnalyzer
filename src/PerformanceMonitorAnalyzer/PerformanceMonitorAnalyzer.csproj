@@ -1,8 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
@@ -10,32 +11,6 @@
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-  </ItemGroup>
-
-  <!-- wpf-versionディレクトリを常に除外（WPF版の場合は後で明示的に含める） -->
-  <ItemGroup>
-    <Compile Remove="wpf-version\**" />
-    <EmbeddedResource Remove="wpf-version\**" />
-    <None Remove="wpf-version\**" />
-    <Page Remove="wpf-version\**" />
-  </ItemGroup>
-
-  <!-- Windows WPF版のプロパティグループ -->
-  <PropertyGroup Condition="'$(BuildWindowsWpf)' == 'true'">
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
-  </PropertyGroup>
-
-  <!-- Windows環境でのみWPFパッケージを追加 -->
-  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
-    <PackageReference Include="ScottPlot.WPF" Version="4.1.71" />
-  </ItemGroup>
-
-  <!-- WPF版のファイルを条件付きで含める -->
-  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
-    <Compile Include="wpf-version\**\*.cs" />
-    <Page Include="wpf-version\**\*.xaml" Exclude="wpf-version\bin\**;wpf-version\obj\**" />
   </ItemGroup>
 
 </Project>
