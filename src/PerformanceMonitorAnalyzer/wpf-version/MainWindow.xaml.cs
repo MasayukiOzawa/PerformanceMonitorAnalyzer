@@ -3,8 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
-using LiveCharts;
-using LiveCharts.Wpf;
+using ScottPlot;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -15,7 +14,6 @@ namespace PerformanceMonitorAnalyzer;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private Dictionary<string, SeriesCollection> _chartData = new();
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
 
@@ -27,17 +25,10 @@ public partial class MainWindow : Window
 
     private void InitializeChart()
     {
-        PerformanceChart.Series = new SeriesCollection();
-        PerformanceChart.AxisX.Add(new Axis
-        {
-            Title = "時間",
-            LabelFormatter = value => new DateTime((long)value).ToString("HH:mm:ss")
-        });
-        PerformanceChart.AxisY.Add(new Axis
-        {
-            Title = "値",
-            LabelFormatter = value => value.ToString("N2")
-        });
+        PerformanceChart.Plot.Title("パフォーマンスモニター");
+        PerformanceChart.Plot.XLabel("時間");
+        PerformanceChart.Plot.YLabel("値");
+        PerformanceChart.Refresh();
     }
 
     private void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -69,10 +60,9 @@ public partial class MainWindow : Window
         
         // UI状態をリセット
         CounterPanel.Children.Clear();
-        PerformanceChart.Series.Clear();
+        PerformanceChart.Plot.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
-        _chartData.Clear();
 
         // BLGファイルを解析（シミュレーション）
         var counters = ParseBlgFile(fileName);
@@ -186,40 +176,39 @@ public partial class MainWindow : Window
         if (!_counterData.ContainsKey(counter)) return;
 
         var dataPoints = _counterData[counter];
-        var values = new ChartValues<double>();
-        var labels = new List<string>();
+        var times = dataPoints.Select((point, index) => (double)index).ToArray();
+        var values = dataPoints.Select(point => point.Value).ToArray();
 
-        foreach (var point in dataPoints)
-        {
-            values.Add(point.Value);
-            labels.Add(point.Timestamp.ToString("HH:mm:ss"));
-        }
-
-        var series = new LineSeries
-        {
-            Title = GetCounterDisplayName(counter),
-            Values = values,
-            PointGeometry = null, // 点を非表示
-            LineSmoothness = 0.3
-        };
-
-        PerformanceChart.Series.Add(series);
-
-        // X軸のラベルを更新（最初のシリーズの時のみ）
-        if (PerformanceChart.Series.Count == 1)
-        {
-            PerformanceChart.AxisX[0].Labels = labels;
-        }
+        var displayName = GetCounterDisplayName(counter);
+        PerformanceChart.Plot.AddScatter(times, values, label: displayName);
+        PerformanceChart.Plot.Legend(true);
+        PerformanceChart.Refresh();
     }
 
     private void RemoveCounterFromChart(string counter)
     {
         var displayName = GetCounterDisplayName(counter);
-        var seriesToRemove = PerformanceChart.Series.FirstOrDefault(s => s.Title == displayName);
-        if (seriesToRemove != null)
+        PerformanceChart.Plot.Clear();
+        
+        // 他の選択されているカウンターを再描画
+        foreach (CheckBox checkBox in CounterPanel.Children.OfType<CheckBox>())
         {
-            PerformanceChart.Series.Remove(seriesToRemove);
+            if (checkBox.IsChecked == true && (string)checkBox.Tag != counter)
+            {
+                var otherCounter = (string)checkBox.Tag;
+                if (_counterData.ContainsKey(otherCounter))
+                {
+                    var dataPoints = _counterData[otherCounter];
+                    var times = dataPoints.Select((point, index) => (double)index).ToArray();
+                    var values = dataPoints.Select(point => point.Value).ToArray();
+                    var otherDisplayName = GetCounterDisplayName(otherCounter);
+                    PerformanceChart.Plot.AddScatter(times, values, label: otherDisplayName);
+                }
+            }
         }
+        
+        PerformanceChart.Plot.Legend(true);
+        PerformanceChart.Refresh();
     }
 
     private void AddCounterTab(string counter)

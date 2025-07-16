@@ -12,11 +12,12 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- WPFファイルを除外 -->
-  <ItemGroup>
+  <!-- WPF版をビルドしない場合はwpf-versionディレクトリを除外 -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' != 'true'">
     <Compile Remove="wpf-version\**" />
     <EmbeddedResource Remove="wpf-version\**" />
     <None Remove="wpf-version\**" />
+    <Page Remove="wpf-version\**" />
   </ItemGroup>
 
   <!-- Windows WPF版のプロパティグループ -->
@@ -28,9 +29,13 @@
 
   <!-- Windows環境でのみWPFパッケージを追加 -->
   <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
-    <PackageReference Include="LiveCharts.Wpf" Version="0.9.7" />
+    <PackageReference Include="ScottPlot.WPF" Version="4.1.71" />
+  </ItemGroup>
+
+  <!-- WPF版のファイルを条件付きで含める -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
     <Compile Include="wpf-version\**\*.cs" />
-    <Page Include="wpf-version\**\*.xaml" />
+    <Page Include="wpf-version\**\*.xaml" Exclude="wpf-version\bin\**;wpf-version\obj\**" />
   </ItemGroup>
 
 </Project>
