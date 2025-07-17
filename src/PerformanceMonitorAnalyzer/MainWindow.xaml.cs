@@ -1355,8 +1355,8 @@ public partial class MainWindow : Window
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
-                StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
+                StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
+                StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
             };
 
             using var process = new Process { StartInfo = processInfo };
@@ -1415,8 +1415,8 @@ public partial class MainWindow : Window
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
-                        StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
+                        StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
+                        StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
                     };
                     
                     using var altProcess = new Process { StartInfo = altProcessInfo };
@@ -1470,8 +1470,8 @@ public partial class MainWindow : Window
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
-                        StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
+                        StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
+                        StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
                     };
                     
                     using var fallbackProcess = new Process { StartInfo = fallbackProcessInfo };
