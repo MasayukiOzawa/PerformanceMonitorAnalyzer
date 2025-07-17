@@ -1537,17 +1537,22 @@ public partial class MainWindow : Window
             var headers = ParseCsvLine(lines[0]);
             var counterColumns = new Dictionary<string, int>();
             
+            // Preprocess selectedCounters into a dictionary for fast lookups
+            var normalizedCounters = selectedCounters.ToDictionary(
+                c => NormalizeCounterPath(c), 
+                c => c
+            );
+            
             // ヘッダーから該当するカウンターのカラムインデックスを取得
             for (int i = 1; i < headers.Count; i++)
             {
                 var headerName = headers[i];
-                var matchingCounter = selectedCounters.FirstOrDefault(c => 
-                    headerName.Contains(c) || c.Contains(headerName) || 
-                    NormalizeCounterPath(c) == NormalizeCounterPath(headerName));
+                var normalizedHeader = NormalizeCounterPath(headerName);
                 
-                if (!string.IsNullOrEmpty(matchingCounter))
+                if (normalizedCounters.TryGetValue(normalizedHeader, out var matchingCounter) ||
+                    selectedCounters.Any(c => headerName.Contains(c) || c.Contains(headerName)))
                 {
-                    counterColumns[matchingCounter] = i;
+                    counterColumns[matchingCounter ?? headerName] = i;
                 }
             }
             
