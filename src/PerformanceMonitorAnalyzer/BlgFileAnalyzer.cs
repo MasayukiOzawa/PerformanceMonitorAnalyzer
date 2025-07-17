@@ -138,9 +138,8 @@ public class BlgFileAnalyzer : IDisposable
 
                 uint bufferSize = 0;
 
-                // まずバッファサイズを取得（詳細レベルを上げる）
-                uint result = PdhApi.PdhEnumObjectsH(
-                    _dataSource,
+                // PdhEnumObjectsA（ANSI版）を使用してバッファサイズを取得
+                uint result = PdhApi.PdhEnumObjectsA(
                     machineName,
                     IntPtr.Zero,
                     ref bufferSize,
@@ -151,13 +150,12 @@ public class BlgFileAnalyzer : IDisposable
 
                 if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
-                    // IntPtrを使って生データを取得
-                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2); // Unicodeのため2倍
+                    // ANSIバッファを確保（1バイト文字）
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
 
                     try
                     {
-                        result = PdhApi.PdhEnumObjectsH(
-                            _dataSource,
+                        result = PdhApi.PdhEnumObjectsA(
                             machineName,
                             buffer,
                             ref bufferSize,
@@ -168,9 +166,9 @@ public class BlgFileAnalyzer : IDisposable
 
                         if (result == PdhApi.ERROR_SUCCESS)
                         {
-                            // Unicode文字列として解析
-                            var rawData = Marshal.PtrToStringUni(buffer);
-                            progress?.Report($"生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData.Length)] ?? "null"}");
+                            // ANSI文字列として解析
+                            var rawData = Marshal.PtrToStringAnsi(buffer);
+                            progress?.Report($"生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
 
                             if (!string.IsNullOrEmpty(rawData))
                             {

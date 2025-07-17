@@ -84,6 +84,28 @@ public static class PdhApi
         bool bRefresh);
 
     /// <summary>
+    /// オブジェクトを列挙（ANSI版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi, EntryPoint = "PdhEnumObjectsA")]
+    public static extern uint PdhEnumObjectsA(
+        string? szMachineName,
+        StringBuilder? mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
+    /// オブジェクトを列挙（ANSI版、IntPtr使用）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi, EntryPoint = "PdhEnumObjectsA")]
+    public static extern uint PdhEnumObjectsA(
+        string? szMachineName,
+        IntPtr mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
     /// マシン名を列挙（通常版）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
