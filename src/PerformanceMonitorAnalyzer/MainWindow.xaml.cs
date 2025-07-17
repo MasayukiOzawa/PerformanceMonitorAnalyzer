@@ -308,29 +308,33 @@ public partial class MainWindow : Window
                 {
                     var counterInfo = await analyzer.LoadCounterDataAsync(counter, progress);
                     
-                    // より現実的なサンプルデータを生成
-                    var dataPoints = new List<PerformanceDataPoint>();
-                    var random = new Random();
-                    var startTime = DateTime.Now.AddHours(-1);
-                    
-                    for (int i = 0; i < 60; i++)
+                    // 実際のBLGファイルから読み込んだデータを使用
+                    if (counterInfo != null && counterInfo.DataPoints.Count > 0)
                     {
-                        var value = GenerateRealisticValue(counter, random, i);
-                        var unit = EstimateUnit(counter);
-                        var formattedValue = FormatValueWithUnit(value, unit);
+                        var dataPoints = new List<PerformanceDataPoint>();
                         
-                        dataPoints.Add(new PerformanceDataPoint
+                        foreach (var dataPoint in counterInfo.DataPoints)
                         {
-                            Counter = counter,
-                            Value = value,
-                            Timestamp = startTime.AddMinutes(i),
-                            FormattedValue = formattedValue,
-                            Unit = unit
-                        });
+                            var unit = EstimateUnit(counter);
+                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                            
+                            dataPoints.Add(new PerformanceDataPoint
+                            {
+                                Counter = counter,
+                                Value = dataPoint.Value,
+                                Timestamp = dataPoint.Timestamp,
+                                FormattedValue = formattedValue,
+                                Unit = unit
+                            });
+                        }
+                        
+                        _counterData[counter] = dataPoints;
+                        processedCount++;
                     }
-                    
-                    _counterData[counter] = dataPoints;
-                    processedCount++;
+                    else
+                    {
+                        LogError($"No data available for counter: {counter}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -551,9 +555,9 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
             System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
             
-            // カウンターデータが存在しない場合、サンプルデータを動的に生成
-            System.Diagnostics.Debug.WriteLine($"Generating sample data for counter: {counter}");
-            GenerateSampleDataForCounter(counter);
+            // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
+            System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
+            return;
         }
 
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
@@ -576,42 +580,7 @@ public partial class MainWindow : Window
         RemoveCounterTab(counter);
     }
 
-    private void GenerateSampleDataForCounter(string counter)
-    {
-        try
-        {
-            System.Diagnostics.Debug.WriteLine($"Generating sample data for counter: {counter}");
-            
-            var dataPoints = new List<PerformanceDataPoint>();
-            var random = new Random();
-            var startTime = DateTime.Now.AddHours(-1);
-            
-            // 60分間のサンプルデータを生成（1分間隔）
-            for (int i = 0; i < 60; i++)
-            {
-                var value = GenerateRealisticValue(counter, random, i);
-                var unit = EstimateUnit(counter);
-                var formattedValue = FormatValueWithUnit(value, unit);
-                
-                dataPoints.Add(new PerformanceDataPoint
-                {
-                    Counter = counter,
-                    Value = value,
-                    Timestamp = startTime.AddMinutes(i),
-                    FormattedValue = formattedValue,
-                    Unit = unit
-                });
-            }
-            
-            _counterData[counter] = dataPoints;
-            System.Diagnostics.Debug.WriteLine($"Generated {dataPoints.Count} sample data points for counter: {counter}");
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error generating sample data for counter {counter}: {ex.Message}");
-            LogError($"Error generating sample data for counter {counter}: {ex}");
-        }
-    }
+
 
     private void AddCounterTab(string counter)
     {
@@ -935,58 +904,7 @@ public partial class MainWindow : Window
         Application.Current.Shutdown();
     }
 
-    /// <summary>
-    /// カウンターの種類に基づいてより現実的な値を生成
-    /// </summary>
-    private double GenerateRealisticValue(string counter, Random random, int timeIndex)
-    {
-        var lowerCounter = counter.ToLower();
-        
-        // CPU使用率系
-        if (lowerCounter.Contains("% processor time"))
-        {
-            var baseValue = 25 + 20 * Math.Sin(timeIndex * 0.1);
-            return Math.Max(0, Math.Min(100, baseValue + (random.NextDouble() - 0.5) * 15));
-        }
-        
-        // アイドル時間系
-        if (lowerCounter.Contains("% idle time"))
-        {
-            var baseValue = 75 - 20 * Math.Sin(timeIndex * 0.1);
-            return Math.Max(0, Math.Min(100, baseValue + (random.NextDouble() - 0.5) * 15));
-        }
-        
-        // メモリ系（MB）
-        if (lowerCounter.Contains("available mbytes"))
-        {
-            var baseValue = 4000 + 1000 * Math.Sin(timeIndex * 0.05);
-            return Math.Max(1000, baseValue + (random.NextDouble() - 0.5) * 500);
-        }
-        
-        // ディスク読み取り/書き込み速度
-        if (lowerCounter.Contains("disk") && lowerCounter.Contains("/sec"))
-        {
-            var baseValue = 50 + 30 * Math.Sin(timeIndex * 0.15);
-            return Math.Max(0, baseValue + (random.NextDouble() - 0.5) * 20);
-        }
-        
-        // ネットワーク関連
-        if (lowerCounter.Contains("network") || lowerCounter.Contains("bytes"))
-        {
-            var baseValue = 1024000 + 512000 * Math.Sin(timeIndex * 0.2);
-            return Math.Max(0, baseValue + (random.NextDouble() - 0.5) * 100000);
-        }
-        
-        // プロセス数やコンテキストスイッチ
-        if (lowerCounter.Contains("process") || lowerCounter.Contains("context"))
-        {
-            var baseValue = 500 + 200 * Math.Sin(timeIndex * 0.1);
-            return Math.Max(10, baseValue + (random.NextDouble() - 0.5) * 100);
-        }
-        
-        // デフォルト値
-        return Math.Max(0, 50 + 25 * Math.Sin(timeIndex * 0.1) + (random.NextDouble() - 0.5) * 20);
-    }
+
 
     /// <summary>
     /// 値を単位付きでフォーマット
