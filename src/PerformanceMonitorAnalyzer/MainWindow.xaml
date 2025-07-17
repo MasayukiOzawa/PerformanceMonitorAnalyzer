@@ -58,6 +58,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- ファイル名表示 -->
@@ -163,6 +164,44 @@
                         </TreeView>
                     </ScrollViewer>
 
+                    <!-- relog実行状況表示 -->
+                    <GroupBox x:Name="RelogStatusGroup" Header="🔄 relog実行状況" Margin="5,5,5,10" 
+                              Visibility="Collapsed" BorderBrush="Orange" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- 実行中のカウンター表示 -->
+                            <TextBlock Grid.Row="0" x:Name="CurrentProcessingCounter" 
+                                     Text="処理中のカウンター: なし" 
+                                     Margin="5,5,5,5" 
+                                     FontSize="11"
+                                     FontWeight="SemiBold"
+                                     Foreground="DarkOrange"/>
+                            
+                            <!-- 進捗状況 -->
+                            <TextBlock Grid.Row="1" x:Name="RelogProgressText" 
+                                     Text="待機中..." 
+                                     Margin="5,0,5,5" 
+                                     FontSize="10"
+                                     Foreground="Gray"/>
+                            
+                            <!-- 手動実行ボタン -->
+                            <Button Grid.Row="2" x:Name="ExecuteRelogButton" 
+                                  Content="🚀 選択されたカウンターでrelog実行"
+                                  Click="ExecuteRelog_Click"
+                                  Margin="5,5,5,5"
+                                  Padding="8,5"
+                                  FontSize="11"
+                                  Background="LightGreen"
+                                  BorderBrush="Green"
+                                  IsEnabled="False"/>
+                        </Grid>
+                    </GroupBox>
+                    
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="すべて選択" Click="SelectAll_Click" Margin="0,0,5,0"/>
                         <Button Content="すべて解除" Click="UnselectAll_Click"/>
