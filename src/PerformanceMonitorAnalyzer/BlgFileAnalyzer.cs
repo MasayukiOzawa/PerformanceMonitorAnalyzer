@@ -138,43 +138,62 @@ public class BlgFileAnalyzer : IDisposable
 
                 uint bufferSize = 0;
 
-                // まずバッファサイズを取得
+                // まずバッファサイズを取得（詳細レベルを上げる）
                 uint result = PdhApi.PdhEnumObjectsH(
                     _dataSource,
                     machineName,
-                    null,
+                    IntPtr.Zero,
                     ref bufferSize,
-                    100, // PERF_DETAIL_NOVICE
+                    PdhApi.PERF_DETAIL_WIZARD, // より多くのオブジェクトを取得
                     false);
 
                 progress?.Report($"バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
 
                 if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
-                    var buffer = new StringBuilder((int)bufferSize);
-                    
-                    result = PdhApi.PdhEnumObjectsH(
-                        _dataSource,
-                        machineName,
-                        buffer,
-                        ref bufferSize,
-                        100,
-                        false);
+                    // IntPtrを使って生データを取得
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2); // Unicodeのため2倍
 
-                    progress?.Report($"オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
-
-                    if (result == PdhApi.ERROR_SUCCESS)
+                    try
                     {
-                        // NULL区切りの文字列を解析
-                        var objectList = buffer.ToString();
-                        progress?.Report($"取得したオブジェクトリスト（最初の100文字）: {objectList[..Math.Min(100, objectList.Length)]}");
-                        
-                        var objectNames = objectList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                        objects.AddRange(objectNames);
+                        result = PdhApi.PdhEnumObjectsH(
+                            _dataSource,
+                            machineName,
+                            buffer,
+                            ref bufferSize,
+                            PdhApi.PERF_DETAIL_WIZARD, // より多くのオブジェクトを取得
+                            false);
+
+                        progress?.Report($"オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
+
+                        if (result == PdhApi.ERROR_SUCCESS)
+                        {
+                            // Unicode文字列として解析
+                            var rawData = Marshal.PtrToStringUni(buffer);
+                            progress?.Report($"生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData.Length)] ?? "null"}");
+
+                            if (!string.IsNullOrEmpty(rawData))
+                            {
+                                // null文字で分割して複数のオブジェクト名を取得
+                                var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                                progress?.Report($"分割後のオブジェクト数: {objectNames.Length}");
+
+                                for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
+                                {
+                                    progress?.Report($"オブジェクト[{i}]: '{objectNames[i]}'");
+                                }
+
+                                objects.AddRange(objectNames);
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception($"オブジェクト列挙に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                        }
                     }
-                    else
+                    finally
                     {
-                        throw new Exception($"オブジェクト列挙に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                        Marshal.FreeHGlobal(buffer);
                     }
                 }
                 else if (result != PdhApi.ERROR_SUCCESS)
@@ -183,6 +202,10 @@ public class BlgFileAnalyzer : IDisposable
                 }
 
                 progress?.Report($"{objects.Count}個のオブジェクトが見つかりました");
+                foreach (var obj in objects.Take(10))
+                {
+                    progress?.Report($"見つかったオブジェクト: {obj}");
+                }
                 return objects;
             }
             catch (Exception ex)
@@ -205,18 +228,29 @@ public class BlgFileAnalyzer : IDisposable
             if (_dataSource != IntPtr.Zero)
             {
                 uint bufferSize = 0;
-                uint result = PdhApi.PdhEnumMachinesH(_dataSource, null, ref bufferSize);
+                uint result = PdhApi.PdhEnumMachinesH(_dataSource, IntPtr.Zero, ref bufferSize);
                 
                 if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
-                    var buffer = new StringBuilder((int)bufferSize);
-                    result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2); // Unicodeのため2倍
                     
-                    if (result == PdhApi.ERROR_SUCCESS)
+                    try
                     {
-                        var machineList = buffer.ToString();
-                        var machineNames = machineList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                        machines.AddRange(machineNames);
+                        result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
+                        
+                        if (result == PdhApi.ERROR_SUCCESS)
+                        {
+                            var rawData = Marshal.PtrToStringUni(buffer);
+                            if (!string.IsNullOrEmpty(rawData))
+                            {
+                                var machineNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                                machines.AddRange(machineNames);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
                     }
                 }
             }

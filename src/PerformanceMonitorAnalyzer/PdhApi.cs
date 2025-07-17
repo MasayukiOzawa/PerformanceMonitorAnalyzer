@@ -28,6 +28,12 @@ public static class PdhApi
     public const uint GENERIC_READ = 0x80000000;
     public const uint GENERIC_WRITE = 0x40000000;
 
+    // PDH パフォーマンス詳細レベル
+    public const uint PERF_DETAIL_NOVICE = 100;
+    public const uint PERF_DETAIL_ADVANCED = 200;
+    public const uint PERF_DETAIL_EXPERT = 300;
+    public const uint PERF_DETAIL_WIZARD = 400;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct PDH_FMT_COUNTERVALUE
     {
@@ -139,13 +145,25 @@ public static class PdhApi
         out PDH_FMT_COUNTERVALUE pValue);
 
     /// <summary>
-    /// BLGログファイル内のオブジェクトを列挙
+    /// BLGログファイル内のオブジェクトを列挙（StringBuilder版）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectsH(
         IntPtr hDataSource,
         string? szMachineName,
         StringBuilder? mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
+    /// BLGログファイル内のオブジェクトを列挙（IntPtr版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumObjectsH(
+        IntPtr hDataSource,
+        string? szMachineName,
+        IntPtr mszObjectList,
         ref uint pcchBufferSize,
         uint dwDetailLevel,
         bool bRefresh);
@@ -181,12 +199,21 @@ public static class PdhApi
         uint dwFlags);
 
     /// <summary>
-    /// BLGログファイル内のマシン名を列挙
+    /// BLGログファイル内のマシン名を列挙（StringBuilder版）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumMachinesH(
         IntPtr hDataSource,
         StringBuilder? mszMachineList,
+        ref uint pcchBufferSize);
+
+    /// <summary>
+    /// BLGログファイル内のマシン名を列挙（IntPtr版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumMachinesH(
+        IntPtr hDataSource,
+        IntPtr mszMachineList,
         ref uint pcchBufferSize);
 
     /// <summary>
