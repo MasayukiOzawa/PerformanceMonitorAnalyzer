@@ -29,6 +29,15 @@ sample/
 └── DataCollector01.blg            # サンプルBLGファイル
 ```
 
+## 🚨 実行環境要件
+
+**このアプリケーションはWindows専用です**
+
+- ✅ Windows 10/11
+- ✅ .NET 8.0 Windows Desktop Runtime
+- ✅ PowerShell（BLGファイル解析用）
+- ❌ Linux/macOS（WPFのため実行不可）
+
 ## 必要な環境
 
 - .NET 8.0以降
@@ -97,6 +106,37 @@ dotnet run
 ```bash
 dotnet run "C:\path\to\your\file.blg"
 ```
+
+## トラブルシューティング
+
+### アプリケーションが起動しない場合
+
+1. **Windows環境の確認**
+   - このアプリケーションはWindows専用（WPF使用）です
+   - Linux/macOSでは実行できません
+
+2. **起動時エラーの確認**
+   - 起動エラーが発生した場合、実行ディレクトリに `startup_error.log` が作成されます
+   - ログファイルの内容を確認してください
+
+3. **コマンドライン引数の使用**
+   ```bash
+   # 正しい例
+   dotnet run "C:\path\to\file.blg"
+   
+   # パスにスペースが含まれる場合は引用符で囲む
+   dotnet run "C:\Program Files\My Files\data.blg"
+   ```
+
+4. **必要な依存関係**
+   - .NET 8.0 Windows Desktop Runtime が必要です
+   - PowerShell（BLGファイル解析で使用）
+
+### よくある問題
+
+- **ファイルが見つからないエラー**: ファイルパスが正しいか確認してください
+- **権限エラー**: 管理者権限で実行してみてください
+- **BLGファイル解析エラー**: PowerShellが利用可能か確認してください
 
 ## 使用方法
 
