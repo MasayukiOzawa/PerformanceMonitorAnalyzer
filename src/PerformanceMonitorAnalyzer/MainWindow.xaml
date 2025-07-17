@@ -11,7 +11,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="5"/>
-            <RowDefinition Height="300" MinHeight="100" MaxHeight="600"/>
+            <RowDefinition Height="400" MinHeight="100" MaxHeight="600"/>
         </Grid.RowDefinitions>
 
         <!-- メニューバー -->
@@ -109,63 +109,33 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 
-                                <!-- 時間範囲スライダー（範囲選択） -->
-                                <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                                    <TextBlock Text="時間範囲:" FontSize="11" Margin="0,0,0,5"/>
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
-                                        
-                                        <!-- 背景のスライダー（全範囲表示用） -->
-                                        <Slider Grid.Row="0" 
-                                               Minimum="0" Maximum="100" Value="100"
-                                               TickPlacement="BottomRight" TickFrequency="10"
-                                               IsEnabled="False"
-                                               Background="LightGray"
-                                               Opacity="0.3"/>
-                                        
-                                        <!-- 開始時間スライダー -->
-                                        <Slider Grid.Row="0"
-                                               x:Name="StartTimeSlider" 
-                                               Minimum="0" Maximum="100" Value="0"
-                                               ValueChanged="TimeSlider_ValueChanged"
-                                               TickPlacement="None"
-                                               IsSnapToTickEnabled="False"
-                                               Background="Transparent"
-                                               Foreground="Blue"/>
-                                        
-                                        <!-- 終了時間スライダー -->
-                                        <Slider Grid.Row="0"
-                                               x:Name="EndTimeSlider" 
-                                               Minimum="0" Maximum="100" Value="100"
-                                               ValueChanged="TimeSlider_ValueChanged"
-                                               TickPlacement="None"
-                                               IsSnapToTickEnabled="False"
-                                               Background="Transparent"
-                                               Foreground="Red"/>
-                                        
-                                        <!-- 時間表示 -->
-                                        <Grid Grid.Row="1" Margin="0,5,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" x:Name="StartTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Left" Foreground="Blue"/>
-                                            <TextBlock Grid.Column="1" Text="～" FontSize="10" HorizontalAlignment="Center" Margin="10,0"/>
-                                            <TextBlock Grid.Column="2" x:Name="EndTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Right" Foreground="Red"/>
-                                        </Grid>
-                                    </Grid>
+                                <!-- 開始時間スライダー -->
+                                <StackPanel Grid.Row="0" Margin="0,0,0,5">
+                                    <TextBlock Text="開始時間:" FontSize="11" Margin="0,0,0,2"/>
+                                    <Slider x:Name="StartTimeSlider" 
+                                           Minimum="0" Maximum="100" Value="0"
+                                           ValueChanged="TimeSlider_ValueChanged"
+                                           TickPlacement="BottomRight" TickFrequency="10"
+                                           IsSnapToTickEnabled="False"/>
+                                    <TextBlock x:Name="StartTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Left" Foreground="DarkBlue"/>
                                 </StackPanel>
                                 
-
+                                <!-- 終了時間スライダー -->
+                                <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                                    <TextBlock Text="終了時間:" FontSize="11" Margin="0,0,0,2"/>
+                                    <Slider x:Name="EndTimeSlider" 
+                                           Minimum="0" Maximum="100" Value="100"
+                                           ValueChanged="TimeSlider_ValueChanged"
+                                           TickPlacement="BottomRight" TickFrequency="10"
+                                           IsSnapToTickEnabled="False"/>
+                                    <TextBlock x:Name="EndTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Right" Foreground="DarkBlue"/>
+                                </StackPanel>
                                 
                                 <!-- relog.exe実行状況表示 -->
-                                <Expander Grid.Row="1" Header="🔧 relog.exe実行状況" IsExpanded="False" 
+                                <Expander Grid.Row="2" Header="🔧 relog.exe実行状況" IsExpanded="False" 
                                          Margin="0,10,0,0" x:Name="RelogStatusExpander" Visibility="Collapsed">
                                     <StackPanel Margin="5">
                                         <TextBlock Text="実行コマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
