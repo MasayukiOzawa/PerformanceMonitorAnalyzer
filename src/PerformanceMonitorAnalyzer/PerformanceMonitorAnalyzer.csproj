@@ -1,0 +1,62 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType Condition="'$(BuildWindowsWpf)' == 'true'">WinExe</OutputType>
+    <OutputType Condition="'$(BuildWindowsWpf)' != 'true'">Exe</OutputType>
+    <TargetFramework Condition="'$(BuildWindowsWpf)' == 'true'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(BuildWindowsWpf)' != 'true'">net8.0</TargetFramework>
+    <UseWPF Condition="'$(BuildWindowsWpf)' == 'true'">true</UseWPF>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
+    <PackageReference Include="LiveCharts.Wpf" Version="0.9.7" />
+  </ItemGroup>
+
+  <!-- 共通ファイルを明示的に含める -->
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="BlgFileAnalyzer.cs" />
+    <Compile Include="PdhApi.cs" />
+  </ItemGroup>
+
+  <!-- WPFファイルを条件付きで含める -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Include="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+
+  <!-- コンソール版では WPF 関連ファイルを除外 -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' != 'true'">
+    <Compile Remove="App.xaml.cs" />
+    <Compile Remove="MainWindow.xaml.cs" />
+    <None Remove="App.xaml" />
+    <None Remove="MainWindow.xaml" />
+  </ItemGroup>
+
+</Project>
