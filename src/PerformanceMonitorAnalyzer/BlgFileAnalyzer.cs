@@ -136,67 +136,33 @@ public class BlgFileAnalyzer : IDisposable
                 string? machineName = machineNames.FirstOrDefault();
                 progress?.Report($"マシン名を検出: {machineName ?? "null"}");
 
-                uint bufferSize = 0;
-
-                // PdhEnumObjectsA（ANSI版）を使用してバッファサイズを取得
-                uint result = PdhApi.PdhEnumObjectsA(
-                    machineName,
-                    IntPtr.Zero,
-                    ref bufferSize,
-                    PdhApi.PERF_DETAIL_WIZARD, // より多くのオブジェクトを取得
-                    false);
-
-                progress?.Report($"バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
-
-                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                // 方法1: PdhEnumObjectsW（Unicode版）を試行
+                progress?.Report("方法1: PdhEnumObjectsW（Unicode版）を試行中...");
+                var objectsW = TryEnumerateObjectsW(machineName, progress);
+                if (objectsW.Count > 0)
                 {
-                    // ANSIバッファを確保（1バイト文字）
-                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
-
-                    try
-                    {
-                        result = PdhApi.PdhEnumObjectsA(
-                            machineName,
-                            buffer,
-                            ref bufferSize,
-                            PdhApi.PERF_DETAIL_WIZARD, // より多くのオブジェクトを取得
-                            false);
-
-                        progress?.Report($"オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
-
-                        if (result == PdhApi.ERROR_SUCCESS)
-                        {
-                            // ANSI文字列として解析
-                            var rawData = Marshal.PtrToStringAnsi(buffer);
-                            progress?.Report($"生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
-
-                            if (!string.IsNullOrEmpty(rawData))
-                            {
-                                // null文字で分割して複数のオブジェクト名を取得
-                                var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                                progress?.Report($"分割後のオブジェクト数: {objectNames.Length}");
-
-                                for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
-                                {
-                                    progress?.Report($"オブジェクト[{i}]: '{objectNames[i]}'");
-                                }
-
-                                objects.AddRange(objectNames);
-                            }
-                        }
-                        else
-                        {
-                            throw new Exception($"オブジェクト列挙に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                        }
-                    }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(buffer);
-                    }
+                    progress?.Report($"PdhEnumObjectsWで{objectsW.Count}個のオブジェクトを取得しました");
+                    objects.AddRange(objectsW);
                 }
-                else if (result != PdhApi.ERROR_SUCCESS)
+                else
                 {
-                    throw new Exception($"オブジェクト列挙のバッファサイズ取得に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    progress?.Report("PdhEnumObjectsWでオブジェクトを取得できませんでした");
+                }
+
+                // 方法2: PdhEnumObjectsA（ANSI版）を試行（フォールバック）
+                if (objects.Count == 0)
+                {
+                    progress?.Report("方法2: PdhEnumObjectsA（ANSI版）をフォールバックとして試行中...");
+                    var objectsA = TryEnumerateObjectsA(machineName, progress);
+                    if (objectsA.Count > 0)
+                    {
+                        progress?.Report($"PdhEnumObjectsAで{objectsA.Count}個のオブジェクトを取得しました");
+                        objects.AddRange(objectsA);
+                    }
+                    else
+                    {
+                        progress?.Report("PdhEnumObjectsAでもオブジェクトを取得できませんでした");
+                    }
                 }
 
                 progress?.Report($"{objects.Count}個のオブジェクトが見つかりました");
@@ -646,6 +612,166 @@ public class BlgFileAnalyzer : IDisposable
             }
         }
         return string.Empty;
+    }
+
+    /// <summary>
+    /// PdhEnumObjectsW（Unicode版）を使用してオブジェクトを列挙
+    /// </summary>
+    private List<string> TryEnumerateObjectsW(string? machineName, IProgress<string>? progress)
+    {
+        var objects = new List<string>();
+
+        try
+        {
+            uint bufferSize = 0;
+
+            // PdhEnumObjectsW（Unicode版）を使用してバッファサイズを取得
+            uint result = PdhApi.PdhEnumObjectsW(
+                machineName,
+                IntPtr.Zero,
+                ref bufferSize,
+                PdhApi.PERF_DETAIL_WIZARD,
+                false);
+
+            progress?.Report($"PdhEnumObjectsW バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
+
+            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+            {
+                // Unicodeバッファを確保（2バイト文字、文字数単位でサイズ指定）
+                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2);
+
+                try
+                {
+                    result = PdhApi.PdhEnumObjectsW(
+                        machineName,
+                        buffer,
+                        ref bufferSize,
+                        PdhApi.PERF_DETAIL_WIZARD,
+                        false);
+
+                    progress?.Report($"PdhEnumObjectsW オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
+
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        // Unicode文字列として解析
+                        var rawData = Marshal.PtrToStringUni(buffer);
+                        progress?.Report($"PdhEnumObjectsW 生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
+
+                        if (!string.IsNullOrEmpty(rawData))
+                        {
+                            // null文字で分割して複数のオブジェクト名を取得
+                            var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                            progress?.Report($"PdhEnumObjectsW 分割後のオブジェクト数: {objectNames.Length}");
+
+                            for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
+                            {
+                                progress?.Report($"PdhEnumObjectsW オブジェクト[{i}]: '{objectNames[i]}'");
+                            }
+
+                            objects.AddRange(objectNames);
+                        }
+                    }
+                    else
+                    {
+                        progress?.Report($"PdhEnumObjectsW オブジェクト列挙に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            else if (result != PdhApi.ERROR_SUCCESS)
+            {
+                progress?.Report($"PdhEnumObjectsW バッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"PdhEnumObjectsW 例外が発生: {ex.Message}");
+        }
+
+        return objects;
+    }
+
+    /// <summary>
+    /// PdhEnumObjectsA（ANSI版）を使用してオブジェクトを列挙
+    /// </summary>
+    private List<string> TryEnumerateObjectsA(string? machineName, IProgress<string>? progress)
+    {
+        var objects = new List<string>();
+
+        try
+        {
+            uint bufferSize = 0;
+
+            // PdhEnumObjectsA（ANSI版）を使用してバッファサイズを取得
+            uint result = PdhApi.PdhEnumObjectsA(
+                machineName,
+                IntPtr.Zero,
+                ref bufferSize,
+                PdhApi.PERF_DETAIL_WIZARD,
+                false);
+
+            progress?.Report($"PdhEnumObjectsA バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
+
+            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+            {
+                // ANSIバッファを確保（1バイト文字）
+                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+
+                try
+                {
+                    result = PdhApi.PdhEnumObjectsA(
+                        machineName,
+                        buffer,
+                        ref bufferSize,
+                        PdhApi.PERF_DETAIL_WIZARD,
+                        false);
+
+                    progress?.Report($"PdhEnumObjectsA オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
+
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        // ANSI文字列として解析
+                        var rawData = Marshal.PtrToStringAnsi(buffer);
+                        progress?.Report($"PdhEnumObjectsA 生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
+
+                        if (!string.IsNullOrEmpty(rawData))
+                        {
+                            // null文字で分割して複数のオブジェクト名を取得
+                            var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                            progress?.Report($"PdhEnumObjectsA 分割後のオブジェクト数: {objectNames.Length}");
+
+                            for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
+                            {
+                                progress?.Report($"PdhEnumObjectsA オブジェクト[{i}]: '{objectNames[i]}'");
+                            }
+
+                            objects.AddRange(objectNames);
+                        }
+                    }
+                    else
+                    {
+                        progress?.Report($"PdhEnumObjectsA オブジェクト列挙に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            else if (result != PdhApi.ERROR_SUCCESS)
+            {
+                progress?.Report($"PdhEnumObjectsA バッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"PdhEnumObjectsA 例外が発生: {ex.Message}");
+        }
+
+        return objects;
     }
 
     public void Dispose()
