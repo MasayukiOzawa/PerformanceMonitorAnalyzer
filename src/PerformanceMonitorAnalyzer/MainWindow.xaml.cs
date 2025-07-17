@@ -10,6 +10,8 @@ using System.Collections.ObjectModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
+using ScottPlot;
+using ScottPlot.WPF;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -115,6 +117,18 @@ public partial class MainWindow : Window
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
     private string? _actualComputerName;
+    
+    // ScottPlot用のプロパティ
+    private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
+    
+    // カウンターごとのスケール設定を管理
+    private readonly Dictionary<string, double> _counterScales = new();
+    
+    // サポートされるスケール値
+    private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
+    
+    // スケールコントロール更新中フラグ
+    private bool _isUpdatingScaleControls = false;
 
     public MainWindow()
     {
@@ -125,8 +139,16 @@ public partial class MainWindow : Window
 
     private void InitializeChart()
     {
-        // ScottPlotは現在無効化されています
-        // 後でチャート機能を実装する予定です
+        // ScottPlot グラフの初期設定
+        PerformanceChart.Plot.Clear();
+        PerformanceChart.Plot.XLabel("時間");
+        PerformanceChart.Plot.YLabel("値");
+        
+        // 時間軸の設定
+        PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+        
+        // グラフの更新
+        PerformanceChart.Refresh();
     }
 
     private async void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -624,22 +646,174 @@ public partial class MainWindow : Window
 
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
-        // ScottPlot機能は現在無効化されています
-        // チャート表示機能は後で実装される予定です
+        // 既存のシリーズをチェック
+        if (_chartSeries.ContainsKey(counter))
+        {
+            System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
+            return;
+        }
+        
+        // データポイントを準備
+        var dataPoints = _counterData[counter];
+        if (!dataPoints.Any())
+        {
+            System.Diagnostics.Debug.WriteLine($"No data points for counter: {counter}");
+            return;
+        }
+        
+        // カウンターのスケール設定を取得（デフォルトは1.0）
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        
+        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        
+        System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
+        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        
+        // 新しいシリーズを作成
+        var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
+        scatter.LegendText = GetCounterDisplayName(counter);
+        scatter.LineWidth = 2;
+        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        
+        // シリーズを記録
+        _chartSeries[counter] = scatter;
+        
+        System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
+        
+        // グラフを更新
+        PerformanceChart.Plot.Axes.AutoScale();
+        PerformanceChart.Refresh();
         
         // データテーブルタブを作成（チェックボックス経由）
         AddCounterTab(counter);
+        
+        // グラフが表示されたらメッセージを非表示
+        UpdateChartVisibility();
+        
+        // スケールコントロールの表示を更新
+        UpdateScaleControlVisibility();
+    }
+
+    /// <summary>
+    /// カウンターをチャートに追加（スケールコントロール更新なし）
+    /// </summary>
+    private void AddCounterToChartInternal(string counter)
+    {
+        System.Diagnostics.Debug.WriteLine($"AddCounterToChartInternal called for: {counter}");
+        
+        if (!_counterData.ContainsKey(counter))
+        {
+            System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
+            return;
+        }
+
+        // 既存のシリーズをチェック
+        if (_chartSeries.ContainsKey(counter))
+        {
+            System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
+            return;
+        }
+        
+        // データポイントを準備
+        var dataPoints = _counterData[counter];
+        if (!dataPoints.Any())
+        {
+            System.Diagnostics.Debug.WriteLine($"No data points for counter: {counter}");
+            return;
+        }
+        
+        // カウンターのスケール設定を取得（デフォルトは1.0）
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        
+        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        
+        System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
+        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        
+        // 新しいシリーズを作成
+        var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
+        scatter.LegendText = GetCounterDisplayName(counter);
+        scatter.LineWidth = 2;
+        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        
+        // シリーズを記録
+        _chartSeries[counter] = scatter;
+        
+        System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
+        
+        // グラフを更新
+        PerformanceChart.Plot.Axes.AutoScale();
+        PerformanceChart.Refresh();
+        
+        // データテーブルタブを作成（チェックボックス経由）
+        AddCounterTab(counter);
+        
+        // グラフが表示されたらメッセージを非表示
+        UpdateChartVisibility();
     }
 
     private void RemoveCounterFromChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"RemoveCounterFromChart called for: {counter}");
         
-        // ScottPlot機能は現在無効化されています
-        // チャート表示機能は後で実装される予定です
+        // 対応するシリーズを削除
+        if (_chartSeries.TryGetValue(counter, out var scatter))
+        {
+            PerformanceChart.Plot.Remove(scatter);
+            _chartSeries.Remove(counter);
+            PerformanceChart.Refresh();
+            System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
+        }
+        
+        // スケール設定も削除
+        _counterScales.Remove(counter);
         
         // データテーブルタブを削除
         RemoveCounterTab(counter);
+        
+        // グラフの表示状態を更新
+        UpdateChartVisibility();
+        
+        // スケールコントロールの表示を更新
+        UpdateScaleControlVisibility();
+    }
+
+    /// <summary>
+    /// グラフ表示エリアを現在選択されているチェックの内容で初期化
+    /// </summary>
+    private void InitializeChartWithSelectedCounters()
+    {
+        System.Diagnostics.Debug.WriteLine("InitializeChartWithSelectedCounters called");
+        
+        // 現在選択されているカウンターを取得
+        var selectedCounters = GetSelectedCounters().ToHashSet();
+        
+        // 現在グラフに表示されているカウンターのリストを作成
+        var currentChartCounters = _chartSeries.Keys.ToList();
+        
+        // 選択されていないカウンターをグラフから削除
+        foreach (var counter in currentChartCounters)
+        {
+            if (!selectedCounters.Contains(counter))
+            {
+                System.Diagnostics.Debug.WriteLine($"Removing unselected counter from chart: {counter}");
+                RemoveCounterFromChart(counter);
+            }
+        }
+        
+        System.Diagnostics.Debug.WriteLine($"Chart initialized with {selectedCounters.Count} selected counters");
+    }
+    
+    private void UpdateChartVisibility()
+    {
+        // シリーズがある場合はメッセージを非表示、ない場合は表示
+        var hasData = _chartSeries.Any();
+        NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
+        System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
     }
 
 
@@ -781,7 +955,7 @@ public partial class MainWindow : Window
 
         var stackPanel = new StackPanel
         {
-            Orientation = Orientation.Horizontal
+            Orientation = System.Windows.Controls.Orientation.Horizontal
         };
 
         // 統計情報を表示するテキストブロックを作成
@@ -802,7 +976,7 @@ public partial class MainWindow : Window
                 Text = item,
                 Margin = new Thickness(0, 0, 20, 0),
                 FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
             };
             stackPanel.Children.Add(textBlock);
         }
@@ -813,7 +987,7 @@ public partial class MainWindow : Window
             Content = "CSV出力",
             Padding = new Thickness(10, 2, 10, 2),
             Margin = new Thickness(10, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
         };
         exportButton.Click += (sender, e) => ExportCounterDataToCsv(counter, dataPoints);
         stackPanel.Children.Add(exportButton);
@@ -1343,6 +1517,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        // グラフ表示エリアを現在のチェック内容で初期化
+        InitializeChartWithSelectedCounters();
+
         try
         {
             // プログレスバーを表示
@@ -1733,7 +1910,8 @@ public partial class MainWindow : Window
                     // UIスレッドでデータテーブルを更新
                     Dispatcher.Invoke(() =>
                     {
-                        AddCounterTab(counterPath);
+                        // グラフとデータテーブルの両方を更新
+                        AddCounterToChart(counterPath);
                     });
                 }
             }
@@ -1825,4 +2003,187 @@ public partial class MainWindow : Window
             // ログ出力に失敗した場合は何もしない
         }
     }
+
+    #region スケール変更機能
+
+    /// <summary>
+    /// カウンター別スケール設定コントロールを作成
+    /// </summary>
+    private Border CreateCounterScaleControl(string counter)
+    {
+        var border = new Border
+        {
+            BorderBrush = System.Windows.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1, 1, 1, 1),
+            Margin = new Thickness(0, 2, 0, 0),
+            Padding = new Thickness(5, 5, 5, 5),
+            Background = System.Windows.Media.Brushes.White
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // カウンター名表示
+        var counterLabel = new TextBlock
+        {
+            Text = GetCounterDisplayName(counter),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = System.Windows.Media.Brushes.DarkBlue,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 3)
+        };
+        Grid.SetRow(counterLabel, 0);
+        grid.Children.Add(counterLabel);
+
+        // スケール選択コンボボックス
+        var scaleComboBox = new ComboBox
+        {
+            Width = 160,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            Tag = counter
+        };
+
+        // スケール値を追加
+        var scaleItems = new[] { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
+        foreach (var scaleValue in scaleItems)
+        {
+            scaleComboBox.Items.Add(new ComboBoxItem 
+            { 
+                Content = scaleValue, 
+                Tag = scaleValue 
+            });
+        }
+
+        // 現在のスケール値を選択
+        var currentScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        foreach (ComboBoxItem item in scaleComboBox.Items)
+        {
+            if (item.Tag?.ToString() is string tagValue && 
+                double.TryParse(tagValue, out double itemScale) && 
+                Math.Abs(itemScale - currentScale) < 0.0001)
+            {
+                scaleComboBox.SelectedItem = item;
+                break;
+            }
+        }
+        
+        // デフォルトで1.0を選択（見つからない場合）
+        if (scaleComboBox.SelectedItem == null && scaleComboBox.Items.Count > 0)
+        {
+            // "1.0" を探して選択
+            foreach (ComboBoxItem item in scaleComboBox.Items)
+            {
+                if (item.Tag?.ToString() == "1.0")
+                {
+                    scaleComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+
+        // イベントハンドラー追加
+        scaleComboBox.SelectionChanged += (sender, e) =>
+        {
+            if (sender is ComboBox comboBox && 
+                comboBox.Tag is string counterName &&
+                comboBox.SelectedItem is ComboBoxItem selectedItem &&
+                selectedItem.Tag is string scaleString)
+            {
+                if (double.TryParse(scaleString, out double newScale))
+                {
+                    var oldScale = _counterScales.GetValueOrDefault(counterName, 1.0);
+                    _counterScales[counterName] = newScale;
+                    
+                    // グラフを即座に更新
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        RefreshCounterInChart(counterName);
+                    }), System.Windows.Threading.DispatcherPriority.Normal);
+                    
+                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale}");
+                }
+            }
+        };
+
+        Grid.SetRow(scaleComboBox, 1);
+        grid.Children.Add(scaleComboBox);
+
+        border.Child = grid;
+        return border;
+    }
+
+    /// <summary>
+    /// スケールコントロールパネルの表示/非表示を更新
+    /// </summary>
+    private void UpdateScaleControlVisibility()
+    {
+        // スケールコントロール更新中はスキップ
+        if (_isUpdatingScaleControls)
+        {
+            return;
+        }
+        
+        bool hasChartData = _chartSeries.Any();
+        ScaleControlGroupBox.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
+        
+        if (hasChartData)
+        {
+            // 既存のコントロールをクリア
+            CounterScaleStackPanel.Children.Clear();
+            
+            // 各カウンターのスケール設定コントロールを追加
+            foreach (var counter in _chartSeries.Keys.OrderBy(c => c))
+            {
+                var control = CreateCounterScaleControl(counter);
+                CounterScaleStackPanel.Children.Add(control);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 特定のカウンターのグラフ表示を更新
+    /// </summary>
+    private void RefreshCounterInChart(string counter)
+    {
+        if (_chartSeries.ContainsKey(counter))
+        {
+            System.Diagnostics.Debug.WriteLine($"Refreshing chart for counter: {counter}");
+            
+            // スケールコントロールの更新を一時的に無効化
+            _isUpdatingScaleControls = true;
+            
+            try
+            {
+                // 既存のシリーズを削除（スケールコントロール更新なし）
+                if (_chartSeries.TryGetValue(counter, out var scatter))
+                {
+                    PerformanceChart.Plot.Remove(scatter);
+                    _chartSeries.Remove(counter);
+                    PerformanceChart.Refresh();
+                    System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
+                }
+                
+                // 新しいスケールで再追加（スケールコントロール更新なし）
+                AddCounterToChartInternal(counter);
+            }
+            finally
+            {
+                // スケールコントロールの更新を再有効化
+                _isUpdatingScaleControls = false;
+                
+                // 最後に一度だけスケールコントロールを更新
+                UpdateScaleControlVisibility();
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"Chart refreshed for counter: {counter}");
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine($"Counter not found in chart series: {counter}");
+        }
+    }
+
+    #endregion
 }

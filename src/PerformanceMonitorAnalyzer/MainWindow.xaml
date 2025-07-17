@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:scottplot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized">
     <Grid>
@@ -45,6 +46,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="350"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="200"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左側: カウンター一覧 -->
@@ -188,11 +190,17 @@
                 </Grid>
             </GroupBox>
 
-            <!-- 右側: グラフ表示 -->
-            <GroupBox Grid.Column="1" Header="グラフ表示">
+            <!-- 中央: グラフ表示 -->
+            <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
                 <Grid>
-                    <Grid x:Name="PerformanceChart" Background="White" />
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- ScottPlot グラフコンテナ -->
+                    <scottplot:WpfPlot x:Name="PerformanceChart" 
+                                      Background="White" />
+                    
+                    <!-- データなしの場合のメッセージ -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                              x:Name="NoDataMessagePanel" 
+                              Visibility="Visible">
                         <TextBlock x:Name="NoDataMessage" 
                                  Text="📊 BLGファイルを開いてカウンターを選択してください"
                                  HorizontalAlignment="Center"
@@ -206,12 +214,35 @@
                             <Run Text="カウンター名" FontWeight="Bold"/>
                             <Run Text="をクリックして詳細データを表示"/>
                         </TextBlock>
-                        <TextBlock Text="※グラフ機能は現在開発中です（データテーブルで確認可能）"
+                        <TextBlock Text="✨ グラフ機能が実装されました！"
                                  HorizontalAlignment="Center"
-                                 FontSize="11"
-                                 Foreground="LightGray"
+                                 FontSize="12"
+                                 Foreground="DarkGreen"
+                                 FontWeight="Bold"
                                  Margin="5"/>
                     </StackPanel>
+                </Grid>
+            </GroupBox>
+
+            <!-- 右側: スケール設定 -->
+            <GroupBox Grid.Column="2" Header="スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- 説明テキスト -->
+                    <TextBlock Grid.Row="0" Text="各カウンターのスケールを調整:"
+                             FontSize="11" Foreground="DarkGray" 
+                             Margin="5,5,5,10" TextWrapping="Wrap"/>
+                    
+                    <!-- カウンタースケール設定リスト -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="CounterScaleStackPanel" Margin="5">
+                            <!-- カウンター別スケール設定が動的に追加される -->
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </GroupBox>
         </Grid>
