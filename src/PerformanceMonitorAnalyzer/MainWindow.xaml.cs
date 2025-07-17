@@ -1330,6 +1330,15 @@ public partial class MainWindow : Window
                 arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
             }
             
+            // UIにrelog.exeコマンドを表示
+            await Dispatcher.InvokeAsync(() =>
+            {
+                RelogStatusExpander.Visibility = Visibility.Visible;
+                RelogCommandDisplay.Text = $"relog.exe {arguments}";
+                RelogResultDisplay.Text = "実行中...";
+                RelogStatusExpander.IsExpanded = true;
+            });
+            
             // デバッグ情報をログに出力
             LogInfo($"Executing relog.exe with arguments: {arguments}");
             LogInfo($"Use time constraints: {useTimeConstraints}");
@@ -1354,6 +1363,21 @@ public partial class MainWindow : Window
             
             await process.WaitForExitAsync();
             
+            // 実行結果をUIに表示
+            var output = await process.StandardOutput.ReadToEndAsync();
+            var error = await process.StandardError.ReadToEndAsync();
+            
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var result = $"Exit Code: {process.ExitCode}\n";
+                if (!string.IsNullOrEmpty(output))
+                    result += $"Output: {output}\n";
+                if (!string.IsNullOrEmpty(error))
+                    result += $"Error: {error}\n";
+                
+                RelogResultDisplay.Text = result;
+            });
+            
             // Exit code 11で時間制約使用時は、異なる時間形式を試す
             if (process.ExitCode == 11 && useTimeConstraints)
             {
@@ -1374,6 +1398,13 @@ public partial class MainWindow : Window
                                       $"-b \"{startTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" " +
                                       $"-e \"{endTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" -y";
                     
+                    // UIに代替コマンドを表示
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        RelogCommandDisplay.Text += $"\n\n[再試行] relog.exe {altArguments}";
+                        RelogResultDisplay.Text += $"\n\n[再試行 - {format}] 実行中...";
+                    });
+                    
                     var altProcessInfo = new ProcessStartInfo
                     {
                         FileName = "relog.exe",
@@ -1389,6 +1420,21 @@ public partial class MainWindow : Window
                     using var altProcess = new Process { StartInfo = altProcessInfo };
                     altProcess.Start();
                     await altProcess.WaitForExitAsync();
+                    
+                    // 代替実行結果をUIに追加
+                    var altOutput = await altProcess.StandardOutput.ReadToEndAsync();
+                    var altError = await altProcess.StandardError.ReadToEndAsync();
+                    
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var altResult = $"Exit Code: {altProcess.ExitCode}";
+                        if (!string.IsNullOrEmpty(altOutput))
+                            altResult += $"\nOutput: {altOutput}";
+                        if (!string.IsNullOrEmpty(altError))
+                            altResult += $"\nError: {altError}";
+                        
+                        RelogResultDisplay.Text = RelogResultDisplay.Text.Replace($"[再試行 - {format}] 実行中...", altResult);
+                    });
                     
                     if (altProcess.ExitCode == 0 && File.Exists(tempCsvPath))
                     {
@@ -1407,6 +1453,13 @@ public partial class MainWindow : Window
                     LogInfo("All time formats failed, falling back to no time constraints");
                     var fallbackArguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
                     
+                    // UIにフォールバックコマンドを表示
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        RelogCommandDisplay.Text += $"\n\n[フォールバック] relog.exe {fallbackArguments}";
+                        RelogResultDisplay.Text += $"\n\n[フォールバック] 時間制約なしで実行中...";
+                    });
+                    
                     var fallbackProcessInfo = new ProcessStartInfo
                     {
                         FileName = "relog.exe",
@@ -1423,9 +1476,23 @@ public partial class MainWindow : Window
                     fallbackProcess.Start();
                     await fallbackProcess.WaitForExitAsync();
                     
+                    // フォールバック実行結果をUIに追加
+                    var fallbackOutput = await fallbackProcess.StandardOutput.ReadToEndAsync();
+                    var fallbackError = await fallbackProcess.StandardError.ReadToEndAsync();
+                    
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var fallbackResult = $"Exit Code: {fallbackProcess.ExitCode}";
+                        if (!string.IsNullOrEmpty(fallbackOutput))
+                            fallbackResult += $"\nOutput: {fallbackOutput}";
+                        if (!string.IsNullOrEmpty(fallbackError))
+                            fallbackResult += $"\nError: {fallbackError}";
+                        
+                        RelogResultDisplay.Text = RelogResultDisplay.Text.Replace("[フォールバック] 時間制約なしで実行中...", fallbackResult);
+                    });
+                    
                     if (fallbackProcess.ExitCode != 0)
                     {
-                        var fallbackError = await fallbackProcess.StandardError.ReadToEndAsync();
                         LogError($"Fallback execution also failed - Exit code: {fallbackProcess.ExitCode}, Error: {fallbackError}");
                     }
                 }
@@ -1438,8 +1505,6 @@ public partial class MainWindow : Window
             }
             else
             {
-                var error = await process.StandardError.ReadToEndAsync();
-                var output = await process.StandardOutput.ReadToEndAsync();
                 LogError($"relog.exe failed - Exit code: {process.ExitCode}");
                 LogError($"relog.exe error output: {error}");
                 LogError($"relog.exe standard output: {output}");
