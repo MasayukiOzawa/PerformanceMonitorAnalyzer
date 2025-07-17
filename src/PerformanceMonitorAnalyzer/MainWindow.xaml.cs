@@ -1926,7 +1926,9 @@ public partial class MainWindow : Window
             // ScaleValueComboBoxで該当するアイテムを選択
             foreach (ComboBoxItem item in ScaleValueComboBox.Items)
             {
-                if (item.Tag != null && double.Parse(item.Tag.ToString()) == currentScale)
+                if (item.Tag != null && 
+                    item.Tag.ToString() is string tagString &&
+                    double.Parse(tagString) == currentScale)
                 {
                     ScaleValueComboBox.SelectedItem = item;
                     break;
@@ -1950,9 +1952,10 @@ public partial class MainWindow : Window
     {
         if (CounterScaleComboBox.SelectedItem is string selectedCounter &&
             ScaleValueComboBox.SelectedItem is ComboBoxItem selectedScaleItem &&
-            selectedScaleItem.Tag != null)
+            selectedScaleItem.Tag != null &&
+            selectedScaleItem.Tag.ToString() is string scaleTagString)
         {
-            var newScale = double.Parse(selectedScaleItem.Tag.ToString());
+            var newScale = double.Parse(scaleTagString);
             
             // スケール設定を保存
             _counterScales[selectedCounter] = newScale;
@@ -1961,7 +1964,7 @@ public partial class MainWindow : Window
             RefreshCounterInChart(selectedCounter);
             
             // ログ出力
-            LogDebugInfo($"Counter '{selectedCounter}' scale changed to {newScale}");
+            LogError($"Counter '{selectedCounter}' scale changed to {newScale}");
         }
     }
 
