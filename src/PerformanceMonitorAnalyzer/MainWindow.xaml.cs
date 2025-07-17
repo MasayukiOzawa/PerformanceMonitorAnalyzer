@@ -253,7 +253,7 @@ public partial class MainWindow : Window
         
         try
         {
-            return await ParseBlgFileWithTypeLibAsync(fileName, progress);
+            return ParseBlgFileWithTypeLib(fileName, progress);
         }
         catch (Exception ex)
         {
@@ -262,7 +262,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<List<string>> ParseBlgFileWithTypeLibAsync(string fileName, IProgress<string>? progress)
+    private List<string> ParseBlgFileWithTypeLib(string fileName, IProgress<string>? progress)
     {
         // COM経由でPDH APIを使用（実装は複雑なため、現在は未実装）
         progress?.Report("代替手法は現在未実装です...");
