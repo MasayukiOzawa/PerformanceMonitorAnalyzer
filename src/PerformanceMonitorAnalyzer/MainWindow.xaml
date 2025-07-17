@@ -17,6 +17,7 @@
         <Menu Grid.Row="0">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="BLGファイルを開く(_O)..." Click="OpenBlgFile_Click"/>
+                <MenuItem Header="サンプルBLGファイルを読み込み(_S)" Click="LoadSampleBlgFile_Click"/>
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click"/>
             </MenuItem>
@@ -124,10 +125,32 @@
         </Grid>
 
         <!-- 下部: データテーブル（タブ形式） -->
-        <GroupBox Grid.Row="3" Header="データテーブル" Margin="10,0,10,10">
-            <TabControl x:Name="DataTabControl">
-                <!-- タブは動的に追加される -->
-            </TabControl>
+        <GroupBox Grid.Row="3" Header="📊 データテーブル" Margin="10,0,10,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <!-- データテーブルの説明とコントロール -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5" Background="#F8F8F8" Padding="5">
+                    <TextBlock Text="📈 選択したカウンターの詳細データと統計情報" 
+                             VerticalAlignment="Center" 
+                             FontWeight="SemiBold"
+                             Margin="0,0,20,0"/>
+                    <Button Content="すべてのタブを閉じる" 
+                          Click="CloseAllTabs_Click" 
+                          Padding="8,2,8,2"
+                          Margin="0,0,10,0"/>
+                    <Button Content="全データをCSV出力" 
+                          Click="ExportAllDataToCsv_Click" 
+                          Padding="8,2,8,2"/>
+                </StackPanel>
+                
+                <TabControl x:Name="DataTabControl" Grid.Row="1">
+                    <!-- タブは動的に追加される -->
+                </TabControl>
+            </Grid>
         </GroupBox>
     </Grid>
 </Window>

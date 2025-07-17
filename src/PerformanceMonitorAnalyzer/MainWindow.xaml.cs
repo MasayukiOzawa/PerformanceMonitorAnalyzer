@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Text;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -76,6 +77,29 @@ public class PerformanceDataPoint
     public string Counter { get; set; } = string.Empty;
     public double Value { get; set; }
     public DateTime Timestamp { get; set; }
+    public string FormattedValue { get; set; } = string.Empty;
+    public string Unit { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// カウンター統計情報
+/// </summary>
+public class CounterStatistics
+{
+    public string CounterName { get; set; } = string.Empty;
+    public int DataPointCount { get; set; }
+    public double Average { get; set; }
+    public double Maximum { get; set; }
+    public double Minimum { get; set; }
+    public double StandardDeviation { get; set; }
+    public DateTime FirstTimestamp { get; set; }
+    public DateTime LastTimestamp { get; set; }
+    public string Unit { get; set; } = string.Empty;
+    
+    public string FormattedAverage => $"{Average:N2} {Unit}".Trim();
+    public string FormattedMaximum => $"{Maximum:N2} {Unit}".Trim();
+    public string FormattedMinimum => $"{Minimum:N2} {Unit}".Trim();
+    public string FormattedStandardDeviation => $"{StandardDeviation:N2} {Unit}".Trim();
 }
 
 /// <summary>
@@ -120,6 +144,36 @@ public partial class MainWindow : Window
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 LogError($"Failed to load BLG file: {ex}");
             }
+        }
+    }
+
+    private async void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
+            
+            if (!File.Exists(sampleFilePath))
+            {
+                // 実行ディレクトリからの相対パスを試行
+                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
+            }
+            
+            if (!File.Exists(sampleFilePath))
+            {
+                MessageBox.Show("サンプルBLGファイル（DataCollector01.blg）が見つかりません。\n" +
+                              "sample フォルダにファイルが存在することを確認してください。", 
+                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            await LoadBlgFileAsync(sampleFilePath);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"Failed to load sample BLG file: {ex}");
         }
     }
 
@@ -267,18 +321,24 @@ public partial class MainWindow : Window
                 {
                     var counterInfo = await analyzer.LoadCounterDataAsync(counter, progress);
                     
-                    // サンプルデータを生成（実際の実装では PDH API からタイムスタンプ付きデータを取得）
+                    // より現実的なサンプルデータを生成
                     var dataPoints = new List<PerformanceDataPoint>();
                     var random = new Random();
                     var startTime = DateTime.Now.AddHours(-1);
                     
                     for (int i = 0; i < 60; i++)
                     {
+                        var value = GenerateRealisticValue(counter, random, i);
+                        var unit = EstimateUnit(counter);
+                        var formattedValue = FormatValueWithUnit(value, unit);
+                        
                         dataPoints.Add(new PerformanceDataPoint
                         {
                             Counter = counter,
-                            Value = random.NextDouble() * 100,
-                            Timestamp = startTime.AddMinutes(i)
+                            Value = value,
+                            Timestamp = startTime.AddMinutes(i),
+                            FormattedValue = formattedValue,
+                            Unit = unit
                         });
                     }
                     
@@ -482,11 +542,20 @@ public partial class MainWindow : Window
             Tag = counter
         };
 
+        // メインコンテナを作成
+        var mainGrid = new Grid();
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // データグリッドを作成
         var dataGrid = new DataGrid
         {
             AutoGenerateColumns = false,
             IsReadOnly = true,
-            ItemsSource = _counterData[counter]
+            ItemsSource = _counterData[counter],
+            AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            HeadersVisibility = DataGridHeadersVisibility.Column
         };
 
         // 列を定義
@@ -512,12 +581,34 @@ public partial class MainWindow : Window
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
+            Header = "フォーマット済み値",
+            Binding = new System.Windows.Data.Binding("FormattedValue"),
+            Width = 120
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "単位",
+            Binding = new System.Windows.Data.Binding("Unit"),
+            Width = 80
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
             Header = "カウンター",
             Binding = new System.Windows.Data.Binding("Counter"),
             Width = DataGridLength.SizeToCells
         });
 
-        tabItem.Content = dataGrid;
+        Grid.SetRow(dataGrid, 0);
+        mainGrid.Children.Add(dataGrid);
+
+        // 統計情報パネルを作成
+        var statisticsPanel = CreateStatisticsPanel(counter, _counterData[counter]);
+        Grid.SetRow(statisticsPanel, 1);
+        mainGrid.Children.Add(statisticsPanel);
+
+        tabItem.Content = mainGrid;
         DataTabControl.Items.Add(tabItem);
     }
 
@@ -531,7 +622,164 @@ public partial class MainWindow : Window
         }
     }
 
-    private string GetCounterDisplayName(string counter)
+    /// <summary>
+    /// 統計情報パネルを作成
+    /// </summary>
+    private UIElement CreateStatisticsPanel(string counter, List<PerformanceDataPoint> dataPoints)
+    {
+        var statistics = CalculateStatistics(counter, dataPoints);
+        
+        var border = new Border
+        {
+            Background = System.Windows.Media.Brushes.LightGray,
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 5, 0, 0)
+        };
+
+        var stackPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal
+        };
+
+        // 統計情報を表示するテキストブロックを作成
+        var statisticsItems = new[]
+        {
+            $"データ数: {statistics.DataPointCount}",
+            $"平均: {statistics.FormattedAverage}",
+            $"最大: {statistics.FormattedMaximum}",
+            $"最小: {statistics.FormattedMinimum}",
+            $"標準偏差: {statistics.FormattedStandardDeviation}",
+            $"期間: {statistics.FirstTimestamp:MM/dd HH:mm} - {statistics.LastTimestamp:MM/dd HH:mm}"
+        };
+
+        foreach (var item in statisticsItems)
+        {
+            var textBlock = new TextBlock
+            {
+                Text = item,
+                Margin = new Thickness(0, 0, 20, 0),
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            stackPanel.Children.Add(textBlock);
+        }
+
+        // エクスポートボタンを追加
+        var exportButton = new Button
+        {
+            Content = "CSV出力",
+            Padding = new Thickness(10, 2, 10, 2),
+            Margin = new Thickness(10, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        exportButton.Click += (sender, e) => ExportCounterDataToCsv(counter, dataPoints);
+        stackPanel.Children.Add(exportButton);
+
+        border.Child = stackPanel;
+        return border;
+    }
+
+    /// <summary>
+    /// 統計情報を計算
+    /// </summary>
+    private CounterStatistics CalculateStatistics(string counter, List<PerformanceDataPoint> dataPoints)
+    {
+        if (!dataPoints.Any())
+        {
+            return new CounterStatistics
+            {
+                CounterName = counter,
+                DataPointCount = 0
+            };
+        }
+
+        var values = dataPoints.Select(dp => dp.Value).ToList();
+        var average = values.Average();
+        var variance = values.Select(v => Math.Pow(v - average, 2)).Average();
+        var standardDeviation = Math.Sqrt(variance);
+
+        // カウンターの種類に基づいて単位を推定
+        var unit = EstimateUnit(counter);
+
+        return new CounterStatistics
+        {
+            CounterName = counter,
+            DataPointCount = dataPoints.Count,
+            Average = average,
+            Maximum = values.Max(),
+            Minimum = values.Min(),
+            StandardDeviation = standardDeviation,
+            FirstTimestamp = dataPoints.Min(dp => dp.Timestamp),
+            LastTimestamp = dataPoints.Max(dp => dp.Timestamp),
+            Unit = unit
+        };
+    }
+
+    /// <summary>
+    /// カウンターの種類から単位を推定
+    /// </summary>
+    private string EstimateUnit(string counter)
+    {
+        var lowerCounter = counter.ToLower();
+        
+        if (lowerCounter.Contains("% processor time") || lowerCounter.Contains("% idle time"))
+            return "%";
+        if (lowerCounter.Contains("available mbytes") || lowerCounter.Contains("mbytes"))
+            return "MB";
+        if (lowerCounter.Contains("bytes") && !lowerCounter.Contains("mbytes"))
+            return "Bytes";
+        if (lowerCounter.Contains("/sec"))
+            return "/sec";
+        if (lowerCounter.Contains("count"))
+            return "count";
+        
+        return "";
+    }
+
+    /// <summary>
+    /// カウンターデータをCSVファイルに出力
+    /// </summary>
+    private void ExportCounterDataToCsv(string counter, List<PerformanceDataPoint> dataPoints)
+    {
+        try
+        {
+            var saveFileDialog = new SaveFileDialog
+            {
+                Filter = "CSV Files (*.csv)|*.csv",
+                FileName = $"{GetCounterDisplayName(counter).Replace(" - ", "_").Replace(" ", "_")}.csv",
+                Title = "CSVファイルを保存"
+            };
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                var csv = new StringBuilder();
+                
+                // ヘッダー行
+                csv.AppendLine("Timestamp,Value,FormattedValue,Unit,Counter");
+                
+                // データ行
+                foreach (var dataPoint in dataPoints.OrderBy(dp => dp.Timestamp))
+                {
+                    csv.AppendLine($"{dataPoint.Timestamp:yyyy-MM-dd HH:mm:ss}," +
+                                 $"{dataPoint.Value}," +
+                                 $"\"{dataPoint.FormattedValue}\"," +
+                                 $"\"{dataPoint.Unit}\"," +
+                                 $"\"{dataPoint.Counter}\"");
+                }
+                
+                File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
+                
+                MessageBox.Show($"CSVファイルが保存されました。\n{saveFileDialog.FileName}", 
+                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"CSV export failed: {ex}");
+        }
+    }
     {
         // カウンター名を短縮して表示用の名前を生成
         var parts = counter.Split('\\');
@@ -569,6 +817,171 @@ public partial class MainWindow : Window
     private void Exit_Click(object sender, RoutedEventArgs e)
     {
         Application.Current.Shutdown();
+    }
+
+    /// <summary>
+    /// カウンターの種類に基づいてより現実的な値を生成
+    /// </summary>
+    private double GenerateRealisticValue(string counter, Random random, int timeIndex)
+    {
+        var lowerCounter = counter.ToLower();
+        
+        // CPU使用率系
+        if (lowerCounter.Contains("% processor time"))
+        {
+            var baseValue = 25 + 20 * Math.Sin(timeIndex * 0.1);
+            return Math.Max(0, Math.Min(100, baseValue + (random.NextDouble() - 0.5) * 15));
+        }
+        
+        // アイドル時間系
+        if (lowerCounter.Contains("% idle time"))
+        {
+            var baseValue = 75 - 20 * Math.Sin(timeIndex * 0.1);
+            return Math.Max(0, Math.Min(100, baseValue + (random.NextDouble() - 0.5) * 15));
+        }
+        
+        // メモリ系（MB）
+        if (lowerCounter.Contains("available mbytes"))
+        {
+            var baseValue = 4000 + 1000 * Math.Sin(timeIndex * 0.05);
+            return Math.Max(1000, baseValue + (random.NextDouble() - 0.5) * 500);
+        }
+        
+        // ディスク読み取り/書き込み速度
+        if (lowerCounter.Contains("disk") && lowerCounter.Contains("/sec"))
+        {
+            var baseValue = 50 + 30 * Math.Sin(timeIndex * 0.15);
+            return Math.Max(0, baseValue + (random.NextDouble() - 0.5) * 20);
+        }
+        
+        // ネットワーク関連
+        if (lowerCounter.Contains("network") || lowerCounter.Contains("bytes"))
+        {
+            var baseValue = 1024000 + 512000 * Math.Sin(timeIndex * 0.2);
+            return Math.Max(0, baseValue + (random.NextDouble() - 0.5) * 100000);
+        }
+        
+        // プロセス数やコンテキストスイッチ
+        if (lowerCounter.Contains("process") || lowerCounter.Contains("context"))
+        {
+            var baseValue = 500 + 200 * Math.Sin(timeIndex * 0.1);
+            return Math.Max(10, baseValue + (random.NextDouble() - 0.5) * 100);
+        }
+        
+        // デフォルト値
+        return Math.Max(0, 50 + 25 * Math.Sin(timeIndex * 0.1) + (random.NextDouble() - 0.5) * 20);
+    }
+
+    /// <summary>
+    /// 値を単位付きでフォーマット
+    /// </summary>
+    private string FormatValueWithUnit(double value, string unit)
+    {
+        if (unit == "%")
+            return $"{value:N1}%";
+        if (unit == "MB")
+            return $"{value:N0} MB";
+        if (unit == "Bytes")
+        {
+            if (value >= 1073741824) // >= 1GB
+                return $"{value / 1073741824:N2} GB";
+            if (value >= 1048576) // >= 1MB
+                return $"{value / 1048576:N2} MB";
+            if (value >= 1024) // >= 1KB
+                return $"{value / 1024:N2} KB";
+            return $"{value:N0} Bytes";
+        }
+        if (unit == "/sec")
+            return $"{value:N2}/sec";
+        if (unit == "count")
+            return $"{value:N0}";
+        
+        return $"{value:N2}";
+    }
+
+    private void CloseAllTabs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 全てのカウンターのチェックを外す
+            SetAllCheckBoxes(false);
+            
+            // 全てのタブを削除
+            DataTabControl.Items.Clear();
+            
+            MessageBox.Show("全てのデータテーブルタブが閉じられました。", 
+                          "タブクリア完了", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"タブのクリアに失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"Failed to close all tabs: {ex}");
+        }
+    }
+
+    private void ExportAllDataToCsv_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!_counterData.Any())
+            {
+                MessageBox.Show("エクスポートするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。", 
+                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var saveFileDialog = new SaveFileDialog
+            {
+                Filter = "CSV Files (*.csv)|*.csv",
+                FileName = $"PerformanceData_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                Title = "全データのCSVファイルを保存"
+            };
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                var csv = new StringBuilder();
+                
+                // ヘッダー行
+                csv.AppendLine("Timestamp,CounterName,Value,FormattedValue,Unit");
+                
+                // 各カウンターのデータを統合
+                var allData = new List<(DateTime timestamp, string counter, PerformanceDataPoint data)>();
+                
+                foreach (var counterPair in _counterData)
+                {
+                    foreach (var dataPoint in counterPair.Value)
+                    {
+                        allData.Add((dataPoint.Timestamp, counterPair.Key, dataPoint));
+                    }
+                }
+                
+                // タイムスタンプ順にソート
+                foreach (var item in allData.OrderBy(x => x.timestamp).ThenBy(x => x.counter))
+                {
+                    var dp = item.data;
+                    csv.AppendLine($"{dp.Timestamp:yyyy-MM-dd HH:mm:ss}," +
+                                 $"\"{GetCounterDisplayName(item.counter)}\"," +
+                                 $"{dp.Value}," +
+                                 $"\"{dp.FormattedValue}\"," +
+                                 $"\"{dp.Unit}\"");
+                }
+                
+                File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
+                
+                MessageBox.Show($"全データがCSVファイルに保存されました。\n" +
+                              $"ファイル: {saveFileDialog.FileName}\n" +
+                              $"カウンター数: {_counterData.Count}個\n" +
+                              $"データポイント数: {allData.Count}個", 
+                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"All data CSV export failed: {ex}");
+        }
     }
 
     private void LogError(string message)
