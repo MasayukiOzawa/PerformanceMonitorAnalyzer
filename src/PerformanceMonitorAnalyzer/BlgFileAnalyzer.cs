@@ -50,34 +50,36 @@ public class BlgFileAnalyzer : IDisposable
         {
             try
             {
-                // まず通常のクエリを開く（データソースなし）
-                uint result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
-
-                progress?.Report("PDHクエリが正常に開かれました");
+                progress?.Report("BLGファイルをデータソースとして開いています...");
                 
-                // BLGファイルをログとして開く
-                result = PdhApi.PdhOpenLog(
+                // BLGファイルをデータソースとして開く（hQueryはNULLを指定）
+                uint result = PdhApi.PdhOpenLog(
                     filePath,
                     PdhApi.GENERIC_READ,
                     out uint logType,
-                    _query,
+                    IntPtr.Zero,  // hQueryはNULLを指定
                     0,
                     string.Empty,
                     out _dataSource);
 
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
-                    // クエリをクリーンアップしてから例外を投げる
-                    PdhApi.PdhCloseQuery(_query);
-                    _query = IntPtr.Zero;
                     throw new Exception($"BLGファイルを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
                 progress?.Report($"BLGファイルが正常に開かれました（ログタイプ: {logType}）");
+
+                // データソースが開かれた後、クエリを作成
+                result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    // データソースをクリーンアップしてから例外を投げる
+                    PdhApi.PdhCloseLog(_dataSource, 0);
+                    _dataSource = IntPtr.Zero;
+                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+
+                progress?.Report("PDHクエリが正常に開かれました");
                 return true;
             }
             catch (Exception ex)
