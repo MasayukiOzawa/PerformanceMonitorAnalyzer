@@ -205,6 +205,14 @@ public partial class MainWindow : Window
             ProgressStatusText.Text = "カウンター階層を構築中...";
             BuildCounterTree(counters);
 
+            // コンピューター名を表示（最初のカウンターから抽出）
+            if (counters.Count > 0)
+            {
+                var computerName = GetComputerNameFromCounterPath(counters[0]);
+                ComputerNameDisplay.Text = $"コンピューター: {computerName}";
+                ComputerNameDisplay.Visibility = Visibility.Visible;
+            }
+
             // 時間範囲を検出
             ProgressStatusText.Text = "時間範囲を検出中...";
             await DetectTimeRangeAsync(fileName, progress);
@@ -380,16 +388,26 @@ public partial class MainWindow : Window
         
         foreach (var counter in counters)
         {
-            // パフォーマンスカウンターのパス解析: \ObjectName(InstanceName)\CounterName
-            var parts = counter.Split('\\');
-            if (parts.Length < 3) 
+            // パフォーマンスカウンターのパス解析: \\ComputerName\ObjectName(InstanceName)\CounterName または \ObjectName(InstanceName)\CounterName
+            var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+            
+            string objectName, counterName;
+            
+            if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
+            {
+                objectName = parts[1];
+                counterName = parts[2];
+            }
+            else if (parts.Length >= 2) // \オブジェクト\カウンター の場合（ローカルコンピューター）
+            {
+                objectName = parts[0];
+                counterName = parts[1];
+            }
+            else
             {
                 LogError($"Skipping invalid counter path: {counter}");
                 continue;
             }
-            
-            var objectName = parts[1];
-            var counterName = parts[2];
             
             // インスタンス名を抽出
             var instanceName = "(なし)";
@@ -457,8 +475,21 @@ public partial class MainWindow : Window
                 
                 foreach (var counter in instanceGroup.Value.OrderBy(x => x))
                 {
-                    var parts = counter.Split('\\');
-                    var counterName = parts.Length >= 3 ? parts[2] : counter;
+                    var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                    string counterName;
+                    
+                    if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
+                    {
+                        counterName = parts[2];
+                    }
+                    else if (parts.Length >= 2) // \オブジェクト\カウンター の場合
+                    {
+                        counterName = parts[1];
+                    }
+                    else
+                    {
+                        counterName = counter;
+                    }
                     
                     var counterNode = new CounterTreeNode
                     {
@@ -876,12 +907,65 @@ public partial class MainWindow : Window
     /// </summary>
     private string GetCounterDisplayName(string counter)
     {
-        var parts = counter.Split('\\');
+        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length >= 3)
         {
-            return $"{parts[1]} - {parts[2]}";
+            var objectName = parts[1];
+            var counterName = parts[2];
+            
+            // インスタンス名を抽出
+            var instanceName = "";
+            if (objectName.Contains('(') && objectName.Contains(')'))
+            {
+                var startIndex = objectName.IndexOf('(');
+                var endIndex = objectName.IndexOf(')');
+                instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
+                objectName = objectName.Substring(0, startIndex);
+                
+                // インスタンス名がある場合は含める
+                return $"{objectName}({instanceName}) - {counterName}";
+            }
+            
+            return $"{objectName} - {counterName}";
+        }
+        else if (parts.Length >= 2) // ローカルコンピューターの場合
+        {
+            var objectName = parts[0];
+            var counterName = parts[1];
+            
+            // インスタンス名を抽出
+            var instanceName = "";
+            if (objectName.Contains('(') && objectName.Contains(')'))
+            {
+                var startIndex = objectName.IndexOf('(');
+                var endIndex = objectName.IndexOf(')');
+                instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
+                objectName = objectName.Substring(0, startIndex);
+                
+                // インスタンス名がある場合は含める
+                return $"{objectName}({instanceName}) - {counterName}";
+            }
+            
+            return $"{objectName} - {counterName}";
         }
         return counter;
+    }
+
+    /// <summary>
+    /// カウンターパスからコンピューター名を抽出
+    /// </summary>
+    private string GetComputerNameFromCounterPath(string counter)
+    {
+        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        
+        // \\コンピューター名\オブジェクト\カウンター の場合
+        if (counter.StartsWith("\\\\") && parts.Length >= 3)
+        {
+            return parts[0]; // コンピューター名
+        }
+        
+        // \オブジェクト\カウンター の場合（ローカルコンピューター）
+        return "ローカルコンピューター";
     }
 
     private void SelectAll_Click(object sender, RoutedEventArgs e)

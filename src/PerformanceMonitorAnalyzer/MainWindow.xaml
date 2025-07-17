@@ -61,10 +61,19 @@
                     <!-- ファイル名表示 -->
                     <TextBlock Grid.Row="0" x:Name="FileNameDisplay" 
                              Text="ファイルが選択されていません" 
-                             Margin="5,5,5,10" 
+                             Margin="5,5,5,5" 
                              FontWeight="Bold"
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"/>
+                    
+                    <!-- コンピューター名表示 -->
+                    <TextBlock Grid.Row="0" x:Name="ComputerNameDisplay" 
+                             Text="" 
+                             Margin="5,25,5,10" 
+                             FontSize="11"
+                             Foreground="DarkGray"
+                             TextWrapping="Wrap"
+                             Visibility="Collapsed"/>
                     
                     <TextBlock Grid.Row="1" 
                              Text="📈 表示したいカウンターをチェック:" 
