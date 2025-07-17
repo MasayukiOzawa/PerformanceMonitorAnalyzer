@@ -20,7 +20,8 @@ namespace PerformanceMonitorAnalyzer;
 /// </summary>
 public class CounterTreeNode : INotifyPropertyChanged
 {
-    private bool _isChecked = false;
+    private bool? _isChecked = false;
+    private CounterTreeNode? _parent;
     
     public string DisplayName { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
@@ -28,7 +29,12 @@ public class CounterTreeNode : INotifyPropertyChanged
     public NodeType Type { get; set; } = NodeType.Counter;
     
     public bool IsLeaf => Children.Count == 0;
-    public Visibility CheckBoxVisibility => IsLeaf ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility CheckBoxVisibility => Visibility.Visible; // 全階層でチェックボックス表示
+    
+    /// <summary>
+    /// 三状態チェックボックスかどうか（親ノードの場合はtrue）
+    /// </summary>
+    public bool IsThreeState => !IsLeaf;
     
     // 階層レベルに応じた表示プロパティ
     public string FontWeight => Type == NodeType.Object ? "Bold" : "Normal";
@@ -44,7 +50,20 @@ public class CounterTreeNode : INotifyPropertyChanged
     
     public Visibility CountVisibility => Type != NodeType.Counter ? Visibility.Visible : Visibility.Collapsed;
     
-    public bool IsChecked
+    /// <summary>
+    /// 親ノードの設定
+    /// </summary>
+    public CounterTreeNode? Parent
+    {
+        get => _parent;
+        set => _parent = value;
+    }
+    
+    /// <summary>
+    /// 三状態チェックボックス対応のIsCheckedプロパティ
+    /// true: 全選択, false: 全解除, null: 部分選択
+    /// </summary>
+    public bool? IsChecked
     {
         get => _isChecked;
         set
@@ -53,10 +72,87 @@ public class CounterTreeNode : INotifyPropertyChanged
             {
                 _isChecked = value;
                 OnPropertyChanged(nameof(IsChecked));
+                
+                // 子ノードへの伝播
+                if (value.HasValue)
+                {
+                    SetChildrenCheckedState(value.Value, false);
+                }
+                
+                // 親ノードの状態更新（再帰的更新を避けるため）
+                if (_parent != null)
+                {
+                    _parent.UpdateParentCheckedState();
+                }
             }
         }
     }
     
+    /// <summary>
+    /// 子ノードのチェック状態を設定（内部処理用）
+    /// </summary>
+    private void SetChildrenCheckedState(bool isChecked, bool updateParent = true)
+    {
+        foreach (var child in Children)
+        {
+            child._isChecked = isChecked;
+            child.OnPropertyChanged(nameof(IsChecked));
+            child.SetChildrenCheckedState(isChecked, false);
+        }
+    }
+    
+    /// <summary>
+    /// 親ノードのチェック状態を更新
+    /// </summary>
+    private void UpdateParentCheckedState()
+    {
+        if (_parent == null) return;
+        
+        var checkedChildren = _parent.Children.Count(c => c.IsChecked == true);
+        var uncheckedChildren = _parent.Children.Count(c => c.IsChecked == false);
+        var totalChildren = _parent.Children.Count;
+        
+        bool? newState;
+        if (checkedChildren == totalChildren)
+        {
+            newState = true;  // 全選択
+        }
+        else if (uncheckedChildren == totalChildren)
+        {
+            newState = false; // 全解除
+        }
+        else
+        {
+            newState = null;  // 部分選択
+        }
+        
+        if (_parent._isChecked != newState)
+        {
+            _parent._isChecked = newState;
+            _parent.OnPropertyChanged(nameof(IsChecked));
+            _parent.UpdateParentCheckedState();
+        }
+    }
+    
+    /// <summary>
+    /// 選択されているリーフ（カウンター）ノードを取得
+    /// </summary>
+    public IEnumerable<CounterTreeNode> GetSelectedCounters()
+    {
+        if (IsLeaf && IsChecked == true)
+        {
+            yield return this;
+        }
+        
+        foreach (var child in Children)
+        {
+            foreach (var selectedCounter in child.GetSelectedCounters())
+            {
+                yield return selectedCounter;
+            }
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     
     protected virtual void OnPropertyChanged(string propertyName)
@@ -539,12 +635,14 @@ public partial class MainWindow : Window
                     {
                         DisplayName = counterName,
                         FullPath = counter,
-                        Type = NodeType.Counter
+                        Type = NodeType.Counter,
+                        Parent = instanceNode  // 親の設定
                     };
                     
                     instanceNode.Children.Add(counterNode);
                 }
                 
+                instanceNode.Parent = objectNode;  // 親の設定
                 objectNode.Children.Add(instanceNode);
             }
             
@@ -578,26 +676,25 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked called");
             
-            if (sender is CheckBox checkBox)
+            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
             {
-                System.Diagnostics.Debug.WriteLine($"CheckBox found, Tag: {checkBox.Tag}");
+                System.Diagnostics.Debug.WriteLine($"CheckBox found for node: {node.DisplayName} (Type: {node.Type})");
                 
-                if (checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+                // ノードのIsCheckedを直接更新（親子関係の伝播も行われる）
+                if (node.IsChecked != true)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked for: {counter}");
-                    
-                    // 自動データ読み込みは行わず、チェック状態のみ保持
-                    // 実際のデータ読み込みは「実行」ボタンで行う
-                    System.Diagnostics.Debug.WriteLine($"Counter {counter} marked for execution");
+                    node.IsChecked = true;
                 }
-                else
+                
+                // リーフノード（カウンター）の場合は、データ読み込みの準備
+                if (node.IsLeaf)
                 {
-                    System.Diagnostics.Debug.WriteLine($"CheckBox Tag is not a valid string. Tag: {checkBox.Tag}");
+                    System.Diagnostics.Debug.WriteLine($"Counter {node.FullPath} marked for execution");
                 }
             }
             else
             {
-                System.Diagnostics.Debug.WriteLine("Sender is not a CheckBox");
+                System.Diagnostics.Debug.WriteLine("CheckBox Tag is not a CounterTreeNode");
             }
         }
         catch (Exception ex)
@@ -613,18 +710,48 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked called");
             
-            if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
             {
-                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for: {counter}");
+                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for node: {node.DisplayName} (Type: {node.Type})");
                 
-                // チェック解除時はデータテーブルからも削除
-                RemoveCounterFromChart(counter);
+                // ノードのIsCheckedを直接更新（親子関係の伝播も行われる）
+                if (node.IsChecked != false)
+                {
+                    node.IsChecked = false;
+                }
+                
+                // リーフノード（カウンター）の場合は、チャートからも削除
+                if (node.IsLeaf)
+                {
+                    RemoveCounterFromChart(node.FullPath);
+                }
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Unchecked: {ex.Message}");
             LogError($"Error in CounterCheckBox_Unchecked: {ex}");
+        }
+    }
+    
+    private void CounterCheckBox_Indeterminate(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Indeterminate called");
+            
+            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
+            {
+                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Indeterminate for node: {node.DisplayName} (Type: {node.Type})");
+                
+                // 部分選択状態の処理（必要に応じて実装）
+                // 現在は特別な処理は不要
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Indeterminate: {ex.Message}");
+            LogError($"Error in CounterCheckBox_Indeterminate: {ex}");
         }
     }
 
@@ -1184,13 +1311,7 @@ public partial class MainWindow : Window
     {
         foreach (var objectNode in _counterTreeNodes)
         {
-            foreach (var instanceNode in objectNode.Children)
-            {
-                foreach (var counterNode in instanceNode.Children)
-                {
-                    counterNode.IsChecked = isChecked;
-                }
-            }
+            objectNode.IsChecked = isChecked;
         }
     }
 
@@ -1567,15 +1688,9 @@ public partial class MainWindow : Window
         
         foreach (var objectNode in _counterTreeNodes)
         {
-            foreach (var instanceNode in objectNode.Children)
+            foreach (var selectedCounter in objectNode.GetSelectedCounters())
             {
-                foreach (var counterNode in instanceNode.Children)
-                {
-                    if (counterNode.IsChecked)
-                    {
-                        selected.Add(counterNode.FullPath);
-                    }
-                }
+                selected.Add(selectedCounter.FullPath);
             }
         }
         
