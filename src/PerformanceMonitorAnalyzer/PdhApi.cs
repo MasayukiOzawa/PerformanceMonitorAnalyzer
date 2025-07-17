@@ -106,8 +106,8 @@ public static class PdhApi
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectsH(
         IntPtr hDataSource,
-        string szMachineName,
-        StringBuilder mszObjectList,
+        string? szMachineName,
+        StringBuilder? mszObjectList,
         ref uint pcchBufferSize,
         uint dwDetailLevel,
         bool bRefresh);
@@ -118,11 +118,11 @@ public static class PdhApi
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectItemsH(
         IntPtr hDataSource,
-        string szMachineName,
+        string? szMachineName,
         string szObjectName,
-        StringBuilder mszCounterList,
+        StringBuilder? mszCounterList,
         ref uint pcchCounterListLength,
-        StringBuilder mszInstanceList,
+        StringBuilder? mszInstanceList,
         ref uint pcchInstanceListLength,
         uint dwDetailLevel,
         uint dwFlags);
@@ -181,13 +181,11 @@ public static class PdhApi
     {
         return errorCode switch
         {
-            ERROR_SUCCESS => "Success",
-            PDH_CSTATUS_VALID_DATA => "Valid data",
+            ERROR_SUCCESS => "Success", // ERROR_SUCCESS = 0 = PDH_CSTATUS_VALID_DATA
             PDH_CSTATUS_NEW_DATA => "New data",
-            PDH_MORE_DATA => "More data available",
+            PDH_MORE_DATA => "More data available", // PDH_MORE_DATA = 0x800007D2
             0x800007D0 => "PDH_CSTATUS_NO_MACHINE",
             0x800007D1 => "PDH_CSTATUS_NO_INSTANCE",
-            0x800007D2 => "PDH_MORE_DATA",
             0x800007D3 => "PDH_CSTATUS_ITEM_NOT_VALIDATED",
             0x800007D4 => "PDH_RETRY",
             0x800007D5 => "PDH_NO_DATA",
