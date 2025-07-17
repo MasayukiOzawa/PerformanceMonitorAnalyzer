@@ -111,12 +111,16 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
+    private BlgFileAnalyzer? _blgAnalyzer;
 
     public MainWindow()
     {
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // ウィンドウが閉じられる時のクリーンアップ処理
+        Closed += (sender, e) => _blgAnalyzer?.Dispose();
     }
 
     private void InitializeChart()
@@ -246,32 +250,33 @@ public partial class MainWindow : Window
     private async Task<List<string>> ParseBlgFileWithPdhApiAsync(string fileName, IProgress<string>? progress)
     {
         var counters = new List<string>();
-        BlgFileAnalyzer? analyzer = null;
         
         try
         {
             progress?.Report("PDH APIを使用してBLGファイルを解析中...");
             LogError($"Starting PDH API parsing for file: {fileName}");
             
-            analyzer = new BlgFileAnalyzer();
+            // 前のアナライザーがあれば廃棄
+            _blgAnalyzer?.Dispose();
+            _blgAnalyzer = new BlgFileAnalyzer();
             
             // BLGファイルを開く
-            var opened = await analyzer.OpenBlgFileAsync(fileName, progress);
+            var opened = await _blgAnalyzer.OpenBlgFileAsync(fileName, progress);
             if (!opened)
             {
                 throw new Exception("BLGファイルを開くことができませんでした。");
             }
             
             // 全てのカウンターパスを生成
-            counters = await analyzer.GenerateAllCounterPathsAsync(progress);
+            counters = await _blgAnalyzer.GenerateAllCounterPathsAsync(progress);
             
             LogError($"PDH API parsing completed with {counters.Count} counters");
             
             if (counters.Count > 0)
             {
-                progress?.Report("カウンターデータを読み込み中...");
-                // 実際のカウンターデータを読み込み（最初の10個のみテスト用）
-                await LoadCounterDataWithPdhApiAsync(analyzer, counters, progress);
+                progress?.Report("カウンターパス準備完了...");
+                // カウンターデータは要求時に動的に読み込む
+                await LoadCounterDataWithPdhApiAsync(_blgAnalyzer, counters, progress);
                 return counters;
             }
             else
@@ -283,11 +288,9 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"PDH API execution failed: {ex.Message}");
+            _blgAnalyzer?.Dispose();
+            _blgAnalyzer = null;
             throw new Exception($"PDH API解析エラー: {ex.Message}", ex);
-        }
-        finally
-        {
-            analyzer?.Dispose();
         }
     }
 
@@ -300,55 +303,14 @@ public partial class MainWindow : Window
             progress?.Report("パフォーマンスデータを取得中...");
             LogError($"Loading counter data for {counters.Count} counters using PDH API");
             
-            // 各カウンターのデータを読み込み（最初の10個のみ処理）
-            var processedCount = 0;
-            foreach (var counter in counters.Take(10))
-            {
-                try
-                {
-                    var counterInfo = await analyzer.LoadCounterDataAsync(counter, progress);
-                    
-                    // 実際のBLGファイルから読み込んだデータを使用
-                    if (counterInfo != null && counterInfo.DataPoints.Count > 0)
-                    {
-                        var dataPoints = new List<PerformanceDataPoint>();
-                        
-                        foreach (var dataPoint in counterInfo.DataPoints)
-                        {
-                            var unit = EstimateUnit(counter);
-                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
-                            
-                            dataPoints.Add(new PerformanceDataPoint
-                            {
-                                Counter = counter,
-                                Value = dataPoint.Value,
-                                Timestamp = dataPoint.Timestamp,
-                                FormattedValue = formattedValue,
-                                Unit = unit
-                            });
-                        }
-                        
-                        _counterData[counter] = dataPoints;
-                        processedCount++;
-                    }
-                    else
-                    {
-                        LogError($"No data available for counter: {counter}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogError($"Failed to load data for counter {counter}: {ex.Message}");
-                    // 個別のカウンターエラーは続行
-                }
-            }
-            
-            LogError($"Successfully loaded data for {processedCount} counters using PDH API");
-            progress?.Report($"カウンターデータ読み込み完了: {processedCount}個");
+            // カウンターデータは要求時に動的に読み込むため、ここでは何もしない
+            // チェックボックスがクリックされた時に個別に読み込む
+            LogError($"Counter paths stored for on-demand loading: {counters.Count} counters");
+            progress?.Report($"カウンターパス準備完了: {counters.Count}個（データは選択時に読み込み）");
         }
         catch (Exception ex)
         {
-            LogError($"Counter data loading failed: {ex.Message}");
+            LogError($"Counter data preparation failed: {ex.Message}");
             throw;
         }
     }
@@ -486,7 +448,7 @@ public partial class MainWindow : Window
         LogError("TreeView structure updated via ObservableCollection");
     }
 
-    private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
+    private async void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
     {
         try
         {
@@ -506,7 +468,7 @@ public partial class MainWindow : Window
                         System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
                     }
                     
-                    AddCounterToChart(counter);
+                    await AddCounterToChart(counter);
                 }
                 else
                 {
@@ -546,7 +508,57 @@ public partial class MainWindow : Window
 
 
 
-    private void AddCounterToChart(string counter)
+    /// <summary>
+    /// 要求時にカウンターデータを動的に読み込み
+    /// </summary>
+    private async Task LoadCounterDataOnDemandAsync(string counter)
+    {
+        if (_blgAnalyzer == null)
+        {
+            LogError("BLG analyzer not available for on-demand loading");
+            return;
+        }
+
+        try
+        {
+            LogError($"Loading data on-demand for counter: {counter}");
+            
+            var counterInfo = await _blgAnalyzer.LoadCounterDataAsync(counter, null);
+            
+            if (counterInfo != null && counterInfo.DataPoints.Count > 0)
+            {
+                var dataPoints = new List<PerformanceDataPoint>();
+                
+                foreach (var dataPoint in counterInfo.DataPoints)
+                {
+                    var unit = EstimateUnit(counter);
+                    var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                    
+                    dataPoints.Add(new PerformanceDataPoint
+                    {
+                        Counter = counter,
+                        Value = dataPoint.Value,
+                        Timestamp = dataPoint.Timestamp,
+                        FormattedValue = formattedValue,
+                        Unit = unit
+                    });
+                }
+                
+                _counterData[counter] = dataPoints;
+                LogError($"Successfully loaded {dataPoints.Count} data points for counter: {counter}");
+            }
+            else
+            {
+                LogError($"No data available for counter: {counter}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"Failed to load data on-demand for counter {counter}: {ex.Message}");
+        }
+    }
+
+    private async void AddCounterToChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
         
@@ -555,9 +567,17 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
             System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
             
-            // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
-            System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
-            return;
+            // カウンターデータが存在しない場合、BLGファイルから動的に読み込み
+            if (_blgAnalyzer != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Loading data dynamically for counter: {counter}");
+                await LoadCounterDataOnDemandAsync(counter);
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"BLG analyzer not available for: {counter}");
+                return;
+            }
         }
 
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
