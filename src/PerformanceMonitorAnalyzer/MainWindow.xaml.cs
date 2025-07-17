@@ -111,6 +111,7 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
+    private RelogCsvAnalyzer? _currentRelogAnalyzer;
 
     public MainWindow()
     {
@@ -145,6 +146,87 @@ public partial class MainWindow : Window
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 LogError($"Failed to load BLG file: {ex}");
             }
+        }
+    }
+
+    private async void OpenBlgFileWithRelog_Click(object sender, RoutedEventArgs e)
+    {
+        var openFileDialog = new OpenFileDialog
+        {
+            Filter = "Performance Monitor Files (*.blg)|*.blg|All Files (*.*)|*.*",
+            Title = "BLGファイルを選択してください (relog.exe使用)"
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+        {
+            try
+            {
+                await LoadBlgFileWithRelogAsync(openFileDialog.FileName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}", 
+                              "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                LogError($"Failed to load BLG file with relog: {ex}");
+            }
+        }
+    }
+
+    private async void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
+            if (!File.Exists(sampleFilePath))
+            {
+                // リリースビルド用の代替パス
+                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
+            }
+            
+            if (File.Exists(sampleFilePath))
+            {
+                await LoadBlgFileAsync(sampleFilePath);
+            }
+            else
+            {
+                MessageBox.Show("サンプルBLGファイルが見つかりません。", 
+                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"Failed to load sample BLG file: {ex}");
+        }
+    }
+
+    private async void LoadSampleBlgFileWithRelog_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
+            if (!File.Exists(sampleFilePath))
+            {
+                // リリースビルド用の代替パス
+                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
+            }
+            
+            if (File.Exists(sampleFilePath))
+            {
+                await LoadBlgFileWithRelogAsync(sampleFilePath);
+            }
+            else
+            {
+                MessageBox.Show("サンプルBLGファイルが見つかりません。", 
+                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"Failed to load sample BLG file with relog: {ex}");
         }
     }
 
@@ -227,6 +309,92 @@ public partial class MainWindow : Window
         {
             // プログレスバーを非表示
             ProgressGrid.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async Task LoadBlgFileWithRelogAsync(string fileName)
+    {
+        _currentBlgFile = fileName;
+        
+        // ファイル名を表示
+        FileNameDisplay.Text = $"読み込みファイル: {Path.GetFileName(fileName)} (relog.exe使用)";
+        
+        // プログレスバーを表示
+        ProgressGrid.Visibility = Visibility.Visible;
+        ProgressStatusText.Text = "relog.exe を使用してBLGファイルを解析中...";
+        
+        // UI状態をリセット
+        _counterTreeNodes.Clear();
+        DataTabControl.Items.Clear();
+        _counterData.Clear();
+
+        RelogCsvAnalyzer? analyzer = null;
+
+        try
+        {
+            // relog.exe を使用してBLGファイルを非同期で解析
+            var progress = new Progress<string>(status => 
+            {
+                ProgressStatusText.Text = status;
+                LogError($"Relog Progress: {status}"); // デバッグ用ログ追加
+            });
+            
+            analyzer = new RelogCsvAnalyzer();
+            
+            // BLGファイルをCSVに変換
+            var converted = await analyzer.ConvertBlgToCsvAsync(fileName, progress);
+            if (!converted)
+            {
+                throw new Exception("BLGファイルのCSV変換に失敗しました。");
+            }
+            
+            // 利用可能なカウンターを取得
+            var counters = await analyzer.GetAvailableCountersAsync(progress);
+            
+            LogError($"Relog CSV parsing completed with {counters.Count} counters"); // デバッグ用ログ
+            
+            if (counters.Count == 0)
+            {
+                throw new Exception("CSVファイルからカウンターを取得できませんでした。ファイルが破損しているか、対応していない形式の可能性があります。");
+            }
+            
+            // 階層構造を作成（UIスレッドで実行）
+            ProgressStatusText.Text = "カウンター階層を構築中...";
+            BuildCounterTree(counters);
+
+            NoDataMessage.Visibility = Visibility.Collapsed;
+            
+            LogError($"Counter tree built successfully with {_counterTreeNodes.Count} root nodes (relog)"); // デバッグ用ログ
+            
+            var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
+            var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
+            
+            MessageBox.Show($"BLGファイルが読み込まれました（relog.exe使用）。\n\n" +
+                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
+                           $"🏷️  インスタンス: {totalInstances}個\n" +
+                           $"📈 カウンター: {totalCounters}個\n\n" +
+                           $"左側のツリーから表示したいカウンターを選択してください。\n\n" +
+                           $"💡 relog.exe による変換では、すべてのカウンターデータが即座に利用可能です。", 
+                           "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            LogError($"LoadBlgFileWithRelogAsync failed: {ex}");
+            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。\n場所: {logPath}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            // プログレスバーを非表示
+            ProgressGrid.Visibility = Visibility.Collapsed;
+            // analyzernはDisposeしない（カウンター選択時にCSVファイルを読み取るため）
+            // 代わりにウィンドウクローズ時にDispose
+            if (analyzer != null)
+            {
+                // 現在のアナライザーを保持（プロパティまたはフィールドで管理する必要がある）
+                _currentRelogAnalyzer = analyzer;
+            }
         }
     }
 
@@ -546,18 +714,89 @@ public partial class MainWindow : Window
 
 
 
-    private void AddCounterToChart(string counter)
+    private async void AddCounterToChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
         
         if (!_counterData.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
-            System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
             
-            // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
-            System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
-            return;
+            // relog.exeアナライザーが利用可能な場合、動的にデータを読み込み
+            if (_currentRelogAnalyzer != null)
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"Loading counter data dynamically with relog analyzer: {counter}");
+                    
+                    // プログレス表示
+                    ProgressGrid.Visibility = Visibility.Visible;
+                    ProgressStatusText.Text = $"カウンターデータを読み込み中: {GetCounterDisplayName(counter)}";
+                    
+                    var progress = new Progress<string>(status => 
+                    {
+                        ProgressStatusText.Text = status;
+                    });
+                    
+                    // CSVからカウンターデータを読み込み
+                    var counterData = await _currentRelogAnalyzer.LoadCounterDataAsync(counter, progress);
+                    
+                    if (counterData != null && counterData.DataPoints.Count > 0)
+                    {
+                        var dataPoints = new List<PerformanceDataPoint>();
+                        
+                        foreach (var dataPoint in counterData.DataPoints)
+                        {
+                            if (dataPoint.IsValid)
+                            {
+                                var unit = EstimateUnit(counter);
+                                var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                                
+                                dataPoints.Add(new PerformanceDataPoint
+                                {
+                                    Counter = counter,
+                                    Value = dataPoint.Value,
+                                    Timestamp = dataPoint.Timestamp,
+                                    FormattedValue = formattedValue,
+                                    Unit = unit
+                                });
+                            }
+                        }
+                        
+                        // カウンターデータを保存
+                        _counterData[counter] = dataPoints;
+                        
+                        System.Diagnostics.Debug.WriteLine($"Successfully loaded {dataPoints.Count} data points for: {counter}");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"No valid data points found for: {counter}");
+                        MessageBox.Show($"カウンター '{GetCounterDisplayName(counter)}' にはデータが含まれていません。", 
+                                      "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to load counter data: {ex.Message}");
+                    LogError($"Failed to load counter data for {counter}: {ex}");
+                    MessageBox.Show($"カウンターデータの読み込みに失敗しました: {ex.Message}", 
+                                  "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                finally
+                {
+                    ProgressGrid.Visibility = Visibility.Collapsed;
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
+                
+                // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
+                System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
+                return;
+            }
         }
 
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
@@ -901,7 +1140,27 @@ public partial class MainWindow : Window
 
     private void Exit_Click(object sender, RoutedEventArgs e)
     {
+        CleanupResources();
         Application.Current.Shutdown();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        CleanupResources();
+        base.OnClosed(e);
+    }
+
+    private void CleanupResources()
+    {
+        try
+        {
+            _currentRelogAnalyzer?.Dispose();
+            _currentRelogAnalyzer = null;
+        }
+        catch (Exception ex)
+        {
+            LogError($"Error during cleanup: {ex.Message}");
+        }
     }
 
 
