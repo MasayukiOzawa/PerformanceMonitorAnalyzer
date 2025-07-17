@@ -63,7 +63,10 @@
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"/>
                     
-                    <TextBlock Grid.Row="1" Text="選択してグラフに表示:" Margin="5,0,5,5"/>
+                    <TextBlock Grid.Row="1" 
+                             Text="📈 表示したいカウンターをチェック:" 
+                             Margin="5,0,5,5" 
+                             FontWeight="SemiBold"/>
                     
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                         <TreeView x:Name="CounterTreeView" Margin="5">
@@ -74,8 +77,18 @@
                                                 Checked="CounterCheckBox_Checked"
                                                 Unchecked="CounterCheckBox_Unchecked"
                                                 Tag="{Binding FullPath}"
-                                                Visibility="{Binding CheckBoxVisibility}"/>
-                                        <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0"/>
+                                                Visibility="{Binding CheckBoxVisibility}"
+                                                Margin="0,0,5,0"/>
+                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,3,0"/>
+                                        <TextBlock Text="{Binding DisplayName}" 
+                                                 Margin="0,0,0,0"
+                                                 FontWeight="{Binding FontWeight}"
+                                                 Foreground="{Binding TextColor}"/>
+                                        <TextBlock Text="{Binding CountDisplay}" 
+                                                 Margin="5,0,0,0" 
+                                                 FontSize="10" 
+                                                 Foreground="Gray"
+                                                 Visibility="{Binding CountVisibility}"/>
                                     </StackPanel>
                                 </HierarchicalDataTemplate>
                             </TreeView.ItemTemplate>
@@ -95,12 +108,12 @@
                     <Grid x:Name="PerformanceChart" Background="White" />
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock x:Name="NoDataMessage" 
-                                 Text="BLGファイルを開いてカウンターを選択してください"
+                                 Text="📊 BLGファイルを開いてカウンターを選択してください"
                                  HorizontalAlignment="Center"
                                  FontSize="16"
                                  Foreground="Gray"
                                  Margin="10"/>
-                        <TextBlock Text="※グラフ機能は現在開発中です"
+                        <TextBlock Text="※グラフ機能は現在開発中です（データテーブルで確認可能）"
                                  HorizontalAlignment="Center"
                                  FontSize="12"
                                  Foreground="DarkGray"

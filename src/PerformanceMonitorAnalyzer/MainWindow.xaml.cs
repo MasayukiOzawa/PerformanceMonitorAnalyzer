@@ -21,8 +21,24 @@ public class CounterTreeNode : INotifyPropertyChanged
     public string DisplayName { get; set; } = string.Empty;
     public string FullPath { get; set; } = string.Empty;
     public ObservableCollection<CounterTreeNode> Children { get; set; } = new();
+    public NodeType Type { get; set; } = NodeType.Counter;
+    
     public bool IsLeaf => Children.Count == 0;
     public Visibility CheckBoxVisibility => IsLeaf ? Visibility.Visible : Visibility.Collapsed;
+    
+    // 階層レベルに応じた表示プロパティ
+    public string FontWeight => Type == NodeType.Object ? "Bold" : "Normal";
+    public string TextColor => Type switch
+    {
+        NodeType.Object => "DarkBlue",
+        NodeType.Instance => "DarkGreen", 
+        _ => "Black"
+    };
+    
+    public string CountDisplay => Type == NodeType.Object ? $"({Children.Count} インスタンス)" :
+                                 Type == NodeType.Instance ? $"({Children.Count} カウンター)" : "";
+    
+    public Visibility CountVisibility => Type != NodeType.Counter ? Visibility.Visible : Visibility.Collapsed;
     
     public bool IsChecked
     {
@@ -43,6 +59,13 @@ public class CounterTreeNode : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+public enum NodeType
+{
+    Object,
+    Instance,
+    Counter
 }
 
 /// <summary>
@@ -142,7 +165,14 @@ public partial class MainWindow : Window
             
             LogError($"Counter tree built successfully with {_counterTreeNodes.Count} root nodes"); // デバッグ用ログ
             
-            MessageBox.Show($"BLGファイルが読み込まれました。\n{counters.Count}個のカウンターが見つかりました。\n階層構造: {_counterTreeNodes.Count}個のオブジェクト", 
+            var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
+            var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
+            
+            MessageBox.Show($"BLGファイルが読み込まれました。\n\n" +
+                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
+                           $"🏷️  インスタンス: {totalInstances}個\n" +
+                           $"📈 カウンター: {totalCounters}個\n\n" +
+                           $"左側のツリーから表示したいカウンターを選択してください。", 
                            "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
@@ -329,7 +359,8 @@ public partial class MainWindow : Window
         // 各オブジェクトグループの詳細をログ出力
         foreach (var objGroup in objectGroups)
         {
-            LogError($"Object '{objGroup.Key}' has {objGroup.Value.Count} instances, total counters: {objGroup.Value.Sum(x => x.Value.Count)}");
+            var totalCounters = objGroup.Value.Sum(x => x.Value.Count);
+            LogError($"Object '{objGroup.Key}' has {objGroup.Value.Count} instances, total counters: {totalCounters}");
             
             // LogicalDiskの詳細を特に出力
             if (objGroup.Key == "LogicalDisk")
@@ -349,15 +380,17 @@ public partial class MainWindow : Window
             var objectNode = new CounterTreeNode
             {
                 DisplayName = objectGroup.Key,
-                FullPath = ""
+                FullPath = "",
+                Type = NodeType.Object
             };
             
             foreach (var instanceGroup in objectGroup.Value.OrderBy(x => x.Key))
             {
                 var instanceNode = new CounterTreeNode
                 {
-                    DisplayName = instanceGroup.Key,
-                    FullPath = ""
+                    DisplayName = instanceGroup.Key == "(なし)" ? "(総合)" : instanceGroup.Key,
+                    FullPath = "",
+                    Type = NodeType.Instance
                 };
                 
                 foreach (var counter in instanceGroup.Value.OrderBy(x => x))
@@ -368,7 +401,8 @@ public partial class MainWindow : Window
                     var counterNode = new CounterTreeNode
                     {
                         DisplayName = counterName,
-                        FullPath = counter
+                        FullPath = counter,
+                        Type = NodeType.Counter
                     };
                     
                     instanceNode.Children.Add(counterNode);
@@ -385,7 +419,8 @@ public partial class MainWindow : Window
         // 各ルートノードの詳細をログ出力
         foreach (var objNode in _counterTreeNodes)
         {
-            LogError($"Tree node '{objNode.DisplayName}' has {objNode.Children.Count} child instances");
+            var totalCounters = objNode.Children.Sum(inst => inst.Children.Count);
+            LogError($"Tree node '{objNode.DisplayName}' has {objNode.Children.Count} child instances, {totalCounters} total counters");
             
             // LogicalDiskノードの詳細
             if (objNode.DisplayName == "LogicalDisk")
