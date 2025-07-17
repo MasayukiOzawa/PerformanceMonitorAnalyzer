@@ -133,19 +133,21 @@
                 </Grid.RowDefinitions>
                 
                 <!-- データテーブルの説明とコントロール -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5" Background="#F8F8F8" Padding="5">
-                    <TextBlock Text="📈 選択したカウンターの詳細データと統計情報" 
-                             VerticalAlignment="Center" 
-                             FontWeight="SemiBold"
-                             Margin="0,0,20,0"/>
-                    <Button Content="すべてのタブを閉じる" 
-                          Click="CloseAllTabs_Click" 
-                          Padding="8,2,8,2"
-                          Margin="0,0,10,0"/>
-                    <Button Content="全データをCSV出力" 
-                          Click="ExportAllDataToCsv_Click" 
-                          Padding="8,2,8,2"/>
-                </StackPanel>
+                <Border Grid.Row="0" Margin="5" Background="#F8F8F8" Padding="5">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📈 選択したカウンターの詳細データと統計情報" 
+                                 VerticalAlignment="Center" 
+                                 FontWeight="SemiBold"
+                                 Margin="0,0,20,0"/>
+                        <Button Content="すべてのタブを閉じる" 
+                              Click="CloseAllTabs_Click" 
+                              Padding="8,2,8,2"
+                              Margin="0,0,10,0"/>
+                        <Button Content="全データをCSV出力" 
+                              Click="ExportAllDataToCsv_Click" 
+                              Padding="8,2,8,2"/>
+                    </StackPanel>
+                </Border>
                 
                 <TabControl x:Name="DataTabControl" Grid.Row="1">
                     <!-- タブは動的に追加される -->
