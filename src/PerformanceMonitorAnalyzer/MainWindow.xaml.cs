@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         // 後でチャート機能を実装する予定です
     }
 
-    private void OpenBlgFile_Click(object sender, RoutedEventArgs e)
+    private async void OpenBlgFile_Click(object sender, RoutedEventArgs e)
     {
         var openFileDialog = new OpenFileDialog
         {
@@ -79,7 +79,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                LoadBlgFile(openFileDialog.FileName);
+                await LoadBlgFileAsync(openFileDialog.FileName);
             }
             catch (Exception ex)
             {
@@ -90,88 +90,86 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadBlgFile(string fileName)
+    private async Task LoadBlgFileAsync(string fileName)
     {
         _currentBlgFile = fileName;
         
         // ファイル名を表示
         FileNameDisplay.Text = $"読み込みファイル: {Path.GetFileName(fileName)}";
         
+        // プログレスバーを表示
+        ProgressGrid.Visibility = Visibility.Visible;
+        ProgressStatusText.Text = "BLGファイルを解析中...";
+        
         // UI状態をリセット
         _counterTreeNodes.Clear();
-        // PerformanceChart.Plot.Clear(); // ScottPlot機能は無効化中
         DataTabControl.Items.Clear();
         _counterData.Clear();
 
-        // BLGファイルを解析
-        var counters = ParseBlgFile(fileName);
-        
-        // 階層構造を作成
-        BuildCounterTree(counters);
-
-        NoDataMessage.Visibility = Visibility.Collapsed;
-        
-        MessageBox.Show($"BLGファイルが読み込まれました。\n{counters.Count}個のカウンターが見つかりました。", 
-                       "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
-    private void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
-    {
         try
         {
-            var sampleDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "sample");
-            var blgFile = Path.Combine(sampleDir, "DataCollector01.blg");
+            // BLGファイルを非同期で解析
+            var progress = new Progress<string>(status => 
+            {
+                ProgressStatusText.Text = status;
+            });
             
-            if (File.Exists(blgFile))
-            {
-                LoadBlgFile(blgFile);
-            }
-            else
-            {
-                MessageBox.Show($"サンプルBLGファイルが見つかりません:\n{blgFile}", 
-                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            var counters = await ParseBlgFileAsync(fileName, progress);
+            
+            // 階層構造を作成
+            ProgressStatusText.Text = "カウンター階層を構築中...";
+            await Task.Run(() => BuildCounterTree(counters));
+
+            NoDataMessage.Visibility = Visibility.Collapsed;
+            
+            MessageBox.Show($"BLGファイルが読み込まれました。\n{counters.Count}個のカウンターが見つかりました。", 
+                           "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        catch (Exception ex)
+        finally
         {
-            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to load sample BLG file: {ex}");
+            // プログレスバーを非表示
+            ProgressGrid.Visibility = Visibility.Collapsed;
         }
     }
 
-    private List<string> ParseBlgFile(string fileName)
+    private async Task<List<string>> ParseBlgFileAsync(string fileName, IProgress<string> progress)
     {
         try
         {
+            progress?.Report("BLGファイルの解析を開始中...");
+            
             // Windows環境での実際のBLGファイル解析を試行
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                return ParseBlgFileWindows(fileName);
+                return await ParseBlgFileWindowsAsync(fileName, progress);
             }
             else
             {
                 // Linux/macOSではサンプルデータを生成
+                progress?.Report("非Windows環境でサンプルデータを生成中...");
                 LogError($"Non-Windows environment detected. Using sample data for file: {fileName}");
-                return GenerateSampleCounters();
+                return await Task.Run(() => GenerateSampleCounters());
             }
         }
         catch (Exception ex)
         {
             LogError($"Failed to parse BLG file {fileName}: {ex.Message}");
             // エラー時はサンプルデータを使用
+            progress?.Report("エラーが発生しました。サンプルデータを使用します...");
             MessageBox.Show($"BLGファイルの解析に失敗しました。サンプルデータを使用します。\nエラー: {ex.Message}", 
                           "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return GenerateSampleCounters();
+            return await Task.Run(() => GenerateSampleCounters());
         }
     }
 
-    private List<string> ParseBlgFileWindows(string fileName)
+    private async Task<List<string>> ParseBlgFileWindowsAsync(string fileName, IProgress<string> progress)
     {
         var counters = new List<string>();
         
         try
         {
+            progress?.Report("PowerShellを使用してBLGファイルを解析中...");
+            
             // PowerShellを使用してBLGファイルからパフォーマンスカウンターを取得
             var processInfo = new ProcessStartInfo
             {
@@ -186,12 +184,14 @@ public partial class MainWindow : Window
             using var process = Process.Start(processInfo);
             if (process != null)
             {
-                var output = process.StandardOutput.ReadToEnd();
-                var errors = process.StandardError.ReadToEnd();
-                process.WaitForExit();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var errors = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
 
                 if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                 {
+                    progress?.Report("カウンター一覧を処理中...");
+                    
                     var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
                     foreach (var line in lines)
                     {
@@ -204,8 +204,9 @@ public partial class MainWindow : Window
                     
                     if (counters.Count > 0)
                     {
+                        progress?.Report("カウンターデータを読み込み中...");
                         // 実際のBLGファイルからデータポイントを取得
-                        LoadActualCounterData(fileName, counters);
+                        await LoadActualCounterDataAsync(fileName, counters, progress);
                         return counters;
                     }
                 }
@@ -221,10 +222,11 @@ public partial class MainWindow : Window
             LogError($"PowerShell execution failed: {ex.Message}");
         }
 
+        progress?.Report("代替手法でBLGファイルを解析中...");
         // PowerShellが失敗した場合はTypeLibを試行
         try
         {
-            return ParseBlgFileWithTypeLib(fileName);
+            return await ParseBlgFileWithTypeLibAsync(fileName, progress);
         }
         catch (Exception ex)
         {
@@ -233,17 +235,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private List<string> ParseBlgFileWithTypeLib(string fileName)
+    private async Task<List<string>> ParseBlgFileWithTypeLibAsync(string fileName, IProgress<string> progress)
     {
         // COM経由でPDH APIを使用（実装は複雑なため、現在はサンプルデータを返す）
+        progress?.Report("代替手法でサンプルデータを生成中...");
         LogError("TypeLib parsing not yet implemented, using sample data");
-        return GenerateSampleCounters();
+        return await Task.Run(() => GenerateSampleCounters());
     }
 
-    private void LoadActualCounterData(string fileName, List<string> counters)
+    private async Task LoadActualCounterDataAsync(string fileName, List<string> counters, IProgress<string> progress)
     {
         try
         {
+            progress?.Report("パフォーマンスデータを取得中...");
+            
             // PowerShellを使用してカウンターデータを取得
             var processInfo = new ProcessStartInfo
             {
@@ -258,13 +263,14 @@ public partial class MainWindow : Window
             using var process = Process.Start(processInfo);
             if (process != null)
             {
-                var output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
 
                 if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                 {
+                    progress?.Report("パフォーマンスデータを解析中...");
                     // JSONデータを解析してカウンターデータを構築
-                    ParseCounterDataFromJson(output);
+                    await Task.Run(() => ParseCounterDataFromJson(output));
                     return;
                 }
             }
@@ -274,8 +280,9 @@ public partial class MainWindow : Window
             LogError($"Failed to load actual counter data: {ex.Message}");
         }
 
+        progress?.Report("サンプルデータを生成中...");
         // 実際のデータ取得に失敗した場合はサンプルデータを生成
-        GenerateSampleCounterData(counters);
+        await Task.Run(() => GenerateSampleCounterData(counters));
     }
 
     private void ParseCounterDataFromJson(string jsonOutput)

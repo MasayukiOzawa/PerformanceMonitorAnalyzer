@@ -8,6 +8,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="300"/>
         </Grid.RowDefinitions>
@@ -16,7 +17,6 @@
         <Menu Grid.Row="0">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="BLGファイルを開く(_O)..." Click="OpenBlgFile_Click"/>
-                <MenuItem Header="サンプルBLGファイルを読み込み(_S)" Click="LoadSampleBlgFile_Click"/>
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click"/>
             </MenuItem>
@@ -25,8 +25,21 @@
             </MenuItem>
         </Menu>
 
+        <!-- プログレスバー -->
+        <Grid Grid.Row="1" x:Name="ProgressGrid" Visibility="Collapsed" Background="#F0F0F0" Margin="10,5">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" x:Name="ProgressStatusText" Text="ファイルを読み込み中..." 
+                       Margin="10,10,10,5" FontWeight="Bold"/>
+            <ProgressBar Grid.Row="1" x:Name="LoadingProgressBar" 
+                         Height="20" Margin="10,0,10,10" 
+                         IsIndeterminate="True"/>
+        </Grid>
+
         <!-- 上部: カウンター選択とグラフ表示 -->
-        <Grid Grid.Row="1" Margin="10">
+        <Grid Grid.Row="2" Margin="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="350"/>
                 <ColumnDefinition Width="*"/>
@@ -98,7 +111,7 @@
         </Grid>
 
         <!-- 下部: データテーブル（タブ形式） -->
-        <GroupBox Grid.Row="2" Header="データテーブル" Margin="10,0,10,10">
+        <GroupBox Grid.Row="3" Header="データテーブル" Margin="10,0,10,10">
             <TabControl x:Name="DataTabControl">
                 <!-- タブは動的に追加される -->
             </TabControl>
