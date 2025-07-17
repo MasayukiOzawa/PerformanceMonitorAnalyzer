@@ -521,15 +521,12 @@ public partial class MainWindow : Window
         // チャート表示機能は後で実装される予定です
         
         // データテーブルの更新のみ実行
-        Console.WriteLine($"カウンター追加: {GetCounterDisplayName(counter)}");
     }
 
     private void RemoveCounterFromChart(string counter)
     {
         // ScottPlot機能は現在無効化されています
         // チャート表示機能は後で実装される予定です
-        
-        Console.WriteLine($"カウンター削除: {GetCounterDisplayName(counter)}");
     }
 
     private void AddCounterTab(string counter)
