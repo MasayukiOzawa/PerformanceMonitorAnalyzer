@@ -2,15 +2,25 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Management" Version="8.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
+
+  <!-- Windows 以外の環境では警告を表示してビルドをスキップ -->
+  <Target Name="CheckPlatform" BeforeTargets="Build" Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <Warning Text="このプロジェクトはWindows専用のWPFアプリケーションです。Linux/macOSではビルドできません。" />
+    <Error Text="WPFはWindows専用の技術です。Windows環境でビルドしてください。" />
+  </Target>
 
 </Project>
