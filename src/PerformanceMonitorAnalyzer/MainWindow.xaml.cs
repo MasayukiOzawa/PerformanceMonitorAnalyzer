@@ -10,6 +10,9 @@ using System.Collections.ObjectModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
+using LiveCharts;
+using LiveCharts.Wpf;
+using LiveCharts.Configurations;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -115,6 +118,11 @@ public partial class MainWindow : Window
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
     private string? _actualComputerName;
+    
+    // LiveCharts用のプロパティ
+    public SeriesCollection SeriesCollection { get; set; } = new SeriesCollection();
+    public Func<double, string> DateTimeFormatter { get; set; }
+    public Func<double, string> ValueFormatter { get; set; }
 
     public MainWindow()
     {
@@ -125,8 +133,22 @@ public partial class MainWindow : Window
 
     private void InitializeChart()
     {
-        // ScottPlotは現在無効化されています
-        // 後でチャート機能を実装する予定です
+        // LiveCharts の DateTime 設定
+        var dayConfig = Mappers.Xy<PerformanceDataPoint>()
+            .X(dataPoint => dataPoint.Timestamp.Ticks)
+            .Y(dataPoint => dataPoint.Value);
+        
+        Charting.For<PerformanceDataPoint>(dayConfig);
+        
+        // フォーマッター設定
+        DateTimeFormatter = value => new DateTime((long)value).ToString("MM/dd HH:mm:ss");
+        ValueFormatter = value => value.ToString("N2");
+        
+        // データコンテキスト設定
+        DataContext = this;
+        
+        // グラフの初期設定
+        PerformanceChart.Series = SeriesCollection;
     }
 
     private async void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -624,22 +646,59 @@ public partial class MainWindow : Window
 
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
-        // ScottPlot機能は現在無効化されています
-        // チャート表示機能は後で実装される予定です
+        // 既存のシリーズをチェック
+        var existingSeries = SeriesCollection.FirstOrDefault(s => s.Title == GetCounterDisplayName(counter));
+        if (existingSeries != null)
+        {
+            System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
+            return;
+        }
+        
+        // 新しいシリーズを作成
+        var lineSeries = new LineSeries
+        {
+            Title = GetCounterDisplayName(counter),
+            Values = new ChartValues<PerformanceDataPoint>(_counterData[counter]),
+            PointGeometry = null, // ポイントを非表示にしてパフォーマンス向上
+            LineSmoothness = 0, // 直線で接続
+            StrokeThickness = 2
+        };
+        
+        SeriesCollection.Add(lineSeries);
+        System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
         // データテーブルタブを作成（チェックボックス経由）
         AddCounterTab(counter);
+        
+        // グラフが表示されたらメッセージを非表示
+        UpdateChartVisibility();
     }
 
     private void RemoveCounterFromChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"RemoveCounterFromChart called for: {counter}");
         
-        // ScottPlot機能は現在無効化されています
-        // チャート表示機能は後で実装される予定です
+        // 対応するシリーズを削除
+        var seriesToRemove = SeriesCollection.FirstOrDefault(s => s.Title == GetCounterDisplayName(counter));
+        if (seriesToRemove != null)
+        {
+            SeriesCollection.Remove(seriesToRemove);
+            System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
+        }
         
         // データテーブルタブを削除
         RemoveCounterTab(counter);
+        
+        // グラフの表示状態を更新
+        UpdateChartVisibility();
+    }
+    
+    private void UpdateChartVisibility()
+    {
+        // シリーズがある場合はメッセージを非表示、ない場合は表示
+        var hasData = SeriesCollection.Any();
+        NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
+        System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
     }
 
 
@@ -1733,7 +1792,8 @@ public partial class MainWindow : Window
                     // UIスレッドでデータテーブルを更新
                     Dispatcher.Invoke(() =>
                     {
-                        AddCounterTab(counterPath);
+                        // グラフとデータテーブルの両方を更新
+                        AddCounterToChart(counterPath);
                     });
                 }
             }

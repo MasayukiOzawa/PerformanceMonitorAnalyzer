@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:lvc="clr-namespace:LiveCharts.Wpf;assembly=LiveCharts.Wpf"
         mc:Ignorable="d"
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized">
     <Grid>
@@ -191,8 +192,28 @@
             <!-- 右側: グラフ表示 -->
             <GroupBox Grid.Column="1" Header="グラフ表示">
                 <Grid>
-                    <Grid x:Name="PerformanceChart" Background="White" />
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- LiveCharts グラフコンテナ -->
+                    <lvc:CartesianChart x:Name="PerformanceChart" 
+                                      Background="White"
+                                      LegendLocation="Bottom"
+                                      AnimationsSpeed="0:0:0.5">
+                        <lvc:CartesianChart.AxisX>
+                            <lvc:Axis Title="時間" 
+                                    LabelFormatter="{Binding DateTimeFormatter}"
+                                    Unit="{x:Static lvc:TimeUnitType.ByHour}">
+                            </lvc:Axis>
+                        </lvc:CartesianChart.AxisX>
+                        <lvc:CartesianChart.AxisY>
+                            <lvc:Axis Title="値" 
+                                    LabelFormatter="{Binding ValueFormatter}">
+                            </lvc:Axis>
+                        </lvc:CartesianChart.AxisY>
+                    </lvc:CartesianChart>
+                    
+                    <!-- データなしの場合のメッセージ -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                              x:Name="NoDataMessagePanel" 
+                              Visibility="Visible">
                         <TextBlock x:Name="NoDataMessage" 
                                  Text="📊 BLGファイルを開いてカウンターを選択してください"
                                  HorizontalAlignment="Center"
@@ -206,10 +227,11 @@
                             <Run Text="カウンター名" FontWeight="Bold"/>
                             <Run Text="をクリックして詳細データを表示"/>
                         </TextBlock>
-                        <TextBlock Text="※グラフ機能は現在開発中です（データテーブルで確認可能）"
+                        <TextBlock Text="✨ グラフ機能が実装されました！"
                                  HorizontalAlignment="Center"
-                                 FontSize="11"
-                                 Foreground="LightGray"
+                                 FontSize="12"
+                                 Foreground="DarkGreen"
+                                 FontWeight="Bold"
                                  Margin="5"/>
                     </StackPanel>
                 </Grid>
