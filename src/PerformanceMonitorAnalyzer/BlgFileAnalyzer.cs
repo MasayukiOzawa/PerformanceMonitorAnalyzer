@@ -527,74 +527,172 @@ public class BlgFileAnalyzer : IDisposable
                 uint result = PdhApi.PdhAddCounter(_query, counterPath, IntPtr.Zero, out counter);
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
-                    throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)}");
+                    throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
-                // PdhGetRawCounterArrayを使用して履歴データを取得
-                uint bufferSize = 0;
-                uint itemCount = 0;
+                progress?.Report($"カウンター追加成功: {counterPath}");
 
-                // まずバッファサイズを取得
-                result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, IntPtr.Zero);
-                
-                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                // BLGファイルの場合は履歴データを取得する必要がある
+                // PdhSetQueryTimeRangeを使用してBLGファイル全体のデータを読み込む
+                result = PdhApi.PdhSetQueryTimeRange(_query, IntPtr.Zero);
+                if (result != PdhApi.ERROR_SUCCESS)
                 {
-                    // バッファを確保してデータを取得
-                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
-                    try
+                    progress?.Report($"タイムレンジ設定警告: {PdhApi.GetErrorMessage(result)}");
+                }
+
+                // BLGファイルからすべてのデータを読み込むためのループ
+                var allDataPoints = new List<CounterDataPoint>();
+                bool hasMoreData = true;
+                int maxIterations = 10000; // 無限ループ防止
+                int currentIteration = 0;
+
+                while (hasMoreData && currentIteration < maxIterations)
+                {
+                    currentIteration++;
+                    
+                    // データを収集
+                    result = PdhApi.PdhCollectQueryData(_query);
+                    
+                    if (result == PdhApi.ERROR_SUCCESS)
                     {
-                        result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, buffer);
-                        
-                        if (result == PdhApi.ERROR_SUCCESS && itemCount > 0)
+                        // フォーマット済み値を取得
+                        result = PdhApi.PdhGetFormattedCounterValue(
+                            counter,
+                            PdhApi.PDH_FMT_DOUBLE | PdhApi.PDH_FMT_NOCAP100,
+                            out uint valueType,
+                            out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                        if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
                         {
-                            progress?.Report($"履歴データ項目数: {itemCount}");
+                            // タイムスタンプを取得するために生の値も取得
+                            uint result2 = PdhApi.PdhGetRawCounterValue(counter, out uint valueType2, out PdhApi.PDH_RAW_COUNTER rawValue);
                             
-                            // PDH_RAW_COUNTER_ITEM構造体のサイズ
-                            int itemSize = Marshal.SizeOf<PdhApi.PDH_RAW_COUNTER_ITEM>();
-                            
-                            for (uint i = 0; i < itemCount && i < 1000; i++) // 最大1000項目に制限
+                            DateTime timestamp = DateTime.Now;
+                            if (result2 == PdhApi.ERROR_SUCCESS)
                             {
-                                IntPtr itemPtr = IntPtr.Add(buffer, (int)(i * itemSize));
-                                var rawItem = Marshal.PtrToStructure<PdhApi.PDH_RAW_COUNTER_ITEM>(itemPtr);
-                                
-                                // FileTimeをDateTimeに変換
-                                DateTime timestamp;
                                 try
                                 {
-                                    timestamp = DateTime.FromFileTime(rawItem.TimeStamp.dwLowDateTime | 
-                                                                    ((long)rawItem.TimeStamp.dwHighDateTime << 32));
+                                    // FileTimeからDateTimeに変換
+                                    long fileTime = rawValue.TimeStamp.dwLowDateTime | ((long)rawValue.TimeStamp.dwHighDateTime << 32);
+                                    if (fileTime > 0)
+                                    {
+                                        timestamp = DateTime.FromFileTime(fileTime);
+                                    }
                                 }
                                 catch
                                 {
-                                    // FileTime変換に失敗した場合のフォールバック
-                                    timestamp = DateTime.Now.AddMinutes(-(int)i);
+                                    // FileTime変換に失敗した場合は現在時刻を使用
+                                    timestamp = DateTime.Now.AddMinutes(-currentIteration);
                                 }
-
-                                // 生の値をフォーマット済み値に変換
-                                var dataPoint = new CounterDataPoint
-                                {
-                                    Timestamp = timestamp,
-                                    Value = ConvertRawValueToDouble(rawItem.RawValue),
-                                    Status = rawItem.RawValue.CStatus
-                                };
-                                
-                                counterInfo.DataPoints.Add(dataPoint);
                             }
+
+                            var dataPoint = new CounterDataPoint
+                            {
+                                Timestamp = timestamp,
+                                Value = value.doubleValue,
+                                Status = value.CStatus
+                            };
+                            
+                            allDataPoints.Add(dataPoint);
+                            
+                            if (currentIteration % 100 == 0)
+                            {
+                                progress?.Report($"データポイント読み込み中: {allDataPoints.Count}個");
+                            }
+                        }
+                        else if (result == PdhApi.PDH_NO_MORE_DATA)
+                        {
+                            hasMoreData = false;
+                            break;
                         }
                         else
                         {
-                            progress?.Report($"履歴データ取得エラー: {PdhApi.GetErrorMessage(result)}");
+                            progress?.Report($"データ取得警告: {PdhApi.GetErrorMessage(result)}");
                         }
                     }
-                    finally
+                    else if (result == PdhApi.PDH_NO_MORE_DATA)
                     {
-                        Marshal.FreeHGlobal(buffer);
+                        hasMoreData = false;
+                        break;
+                    }
+                    else
+                    {
+                        progress?.Report($"データ収集エラー: {PdhApi.GetErrorMessage(result)}");
+                        hasMoreData = false;
                     }
                 }
-                else
+
+                // 代替手法: PdhGetRawCounterArrayを試行
+                if (allDataPoints.Count == 0)
                 {
-                    // 履歴データが取得できない場合、現在の値を試行
-                    progress?.Report($"履歴データなし、現在値を取得中: {PdhApi.GetErrorMessage(result)}");
+                    progress?.Report("代替手法でPdhGetRawCounterArrayを試行中...");
+                    
+                    uint bufferSize = 0;
+                    uint itemCount = 0;
+
+                    // まずバッファサイズを取得
+                    result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, IntPtr.Zero);
+                    
+                    if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                    {
+                        // バッファを確保してデータを取得
+                        IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+                        try
+                        {
+                            result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, buffer);
+                            
+                            if (result == PdhApi.ERROR_SUCCESS && itemCount > 0)
+                            {
+                                progress?.Report($"履歴データ項目数: {itemCount}");
+                                
+                                // PDH_RAW_COUNTER_ITEM構造体のサイズ
+                                int itemSize = Marshal.SizeOf<PdhApi.PDH_RAW_COUNTER_ITEM>();
+                                
+                                for (uint i = 0; i < itemCount && i < 1000; i++) // 最大1000項目に制限
+                                {
+                                    IntPtr itemPtr = IntPtr.Add(buffer, (int)(i * itemSize));
+                                    var rawItem = Marshal.PtrToStructure<PdhApi.PDH_RAW_COUNTER_ITEM>(itemPtr);
+                                    
+                                    // FileTimeをDateTimeに変換
+                                    DateTime timestamp;
+                                    try
+                                    {
+                                        timestamp = DateTime.FromFileTime(rawItem.TimeStamp.dwLowDateTime | 
+                                                                        ((long)rawItem.TimeStamp.dwHighDateTime << 32));
+                                    }
+                                    catch
+                                    {
+                                        // FileTime変換に失敗した場合のフォールバック
+                                        timestamp = DateTime.Now.AddMinutes(-(int)i);
+                                    }
+
+                                    // 生の値をフォーマット済み値に変換
+                                    var dataPoint = new CounterDataPoint
+                                    {
+                                        Timestamp = timestamp,
+                                        Value = ConvertRawValueToDouble(rawItem.RawValue),
+                                        Status = rawItem.RawValue.CStatus
+                                    };
+                                    
+                                    allDataPoints.Add(dataPoint);
+                                }
+                            }
+                            else
+                            {
+                                progress?.Report($"履歴データ取得エラー: {PdhApi.GetErrorMessage(result)}");
+                            }
+                        }
+                        finally
+                        {
+                            Marshal.FreeHGlobal(buffer);
+                        }
+                    }
+                }
+
+                // 最終手法: 単一データポイントの取得
+                if (allDataPoints.Count == 0)
+                {
+                    progress?.Report("単一データポイント取得を試行中...");
                     
                     result = PdhApi.PdhCollectQueryData(_query);
                     if (result == PdhApi.ERROR_SUCCESS)
@@ -613,11 +711,12 @@ public class BlgFileAnalyzer : IDisposable
                                 Value = value.doubleValue,
                                 Status = value.CStatus
                             };
-                            counterInfo.DataPoints.Add(dataPoint);
+                            allDataPoints.Add(dataPoint);
                         }
                     }
                 }
 
+                counterInfo.DataPoints = allDataPoints;
                 progress?.Report($"取得したデータポイント数: {counterInfo.DataPoints.Count}");
                 
                 // データポイントをタイムスタンプ順にソート

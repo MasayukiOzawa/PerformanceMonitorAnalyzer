@@ -516,6 +516,8 @@ public partial class MainWindow : Window
         if (_blgAnalyzer == null)
         {
             LogError("BLG analyzer not available for on-demand loading");
+            MessageBox.Show("BLGファイルアナライザーが利用できません。\nファイルを再度読み込んでください。", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -523,7 +525,13 @@ public partial class MainWindow : Window
         {
             LogError($"Loading data on-demand for counter: {counter}");
             
-            var counterInfo = await _blgAnalyzer.LoadCounterDataAsync(counter, null);
+            // プログレス表示用
+            var progress = new Progress<string>(status => 
+            {
+                LogError($"LoadCounterData Progress: {status}");
+            });
+            
+            var counterInfo = await _blgAnalyzer.LoadCounterDataAsync(counter, progress);
             
             if (counterInfo != null && counterInfo.DataPoints.Count > 0)
             {
@@ -546,40 +554,73 @@ public partial class MainWindow : Window
                 
                 _counterData[counter] = dataPoints;
                 LogError($"Successfully loaded {dataPoints.Count} data points for counter: {counter}");
+                
+                // 最初と最後のデータポイントの情報をログ出力
+                if (dataPoints.Count > 0)
+                {
+                    var first = dataPoints.First();
+                    var last = dataPoints.Last();
+                    LogError($"Data range: {first.Timestamp:yyyy-MM-dd HH:mm:ss} to {last.Timestamp:yyyy-MM-dd HH:mm:ss}");
+                    LogError($"Sample values: First={first.Value:F2}, Last={last.Value:F2}");
+                }
             }
             else
             {
                 LogError($"No data available for counter: {counter}");
+                MessageBox.Show($"カウンター '{GetCounterDisplayName(counter)}' のデータが見つかりませんでした。\n" +
+                              "このカウンターはBLGファイルに記録されていない可能性があります。", 
+                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
         catch (Exception ex)
         {
             LogError($"Failed to load data on-demand for counter {counter}: {ex.Message}");
+            LogError($"Exception details: {ex}");
+            MessageBox.Show($"カウンターデータの読み込みに失敗しました。\n" +
+                          $"カウンター: {GetCounterDisplayName(counter)}\n" +
+                          $"エラー: {ex.Message}\n\n" +
+                          "詳細はerror.logを確認してください。", 
+                          "データ読み込みエラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     private async void AddCounterToChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
+        LogError($"AddCounterToChart called for: {counter}");
         
         if (!_counterData.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
             System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
+            LogError($"Counter not found in _counterData: {counter}");
+            LogError($"Available counters in _counterData: {_counterData.Count} total");
             
             // カウンターデータが存在しない場合、BLGファイルから動的に読み込み
             if (_blgAnalyzer != null)
             {
                 System.Diagnostics.Debug.WriteLine($"Loading data dynamically for counter: {counter}");
+                LogError($"Loading data dynamically for counter: {counter}");
                 await LoadCounterDataOnDemandAsync(counter);
+                
+                // 読み込み後に再度チェック
+                if (!_counterData.ContainsKey(counter))
+                {
+                    LogError($"Failed to load data for counter: {counter}");
+                    return;
+                }
             }
             else
             {
                 System.Diagnostics.Debug.WriteLine($"BLG analyzer not available for: {counter}");
+                LogError($"BLG analyzer not available for: {counter}");
+                MessageBox.Show("BLGファイルアナライザーが利用できません。\nファイルを再度読み込んでください。", 
+                              "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
         }
 
+        LogError($"Counter found in _counterData with {_counterData[counter].Count} data points");
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
         // ScottPlot機能は現在無効化されています
@@ -607,10 +648,25 @@ public partial class MainWindow : Window
         try
         {
             System.Diagnostics.Debug.WriteLine($"AddCounterTab called for: {counter}");
+            LogError($"AddCounterTab called for: {counter}");
             
             if (!_counterData.ContainsKey(counter))
             {
                 System.Diagnostics.Debug.WriteLine($"Counter data not found for: {counter}");
+                LogError($"Counter data not found for: {counter}");
+                MessageBox.Show($"カウンター '{GetCounterDisplayName(counter)}' のデータが見つかりません。", 
+                              "データなし", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dataPoints = _counterData[counter];
+            LogError($"Counter data found: {dataPoints.Count} data points for {counter}");
+            
+            if (dataPoints.Count == 0)
+            {
+                LogError($"Counter has no data points: {counter}");
+                MessageBox.Show($"カウンター '{GetCounterDisplayName(counter)}' にはデータポイントがありません。", 
+                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -620,11 +676,13 @@ public partial class MainWindow : Window
             if (existingTab != null)
             {
                 System.Diagnostics.Debug.WriteLine($"Tab already exists for: {counter}");
+                LogError($"Tab already exists for: {counter}");
                 DataTabControl.SelectedItem = existingTab;
                 return;
             }
 
             System.Diagnostics.Debug.WriteLine($"Creating new tab for: {counter}");
+            LogError($"Creating new tab for: {counter} with {dataPoints.Count} data points");
 
             var tabItem = new TabItem
             {
@@ -642,13 +700,14 @@ public partial class MainWindow : Window
             {
                 AutoGenerateColumns = false,
                 IsReadOnly = true,
-                ItemsSource = _counterData[counter],
+                ItemsSource = dataPoints,
                 AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
                 GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
                 HeadersVisibility = DataGridHeadersVisibility.Column
             };
 
-            System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
+            System.Diagnostics.Debug.WriteLine($"Data points count: {dataPoints.Count}");
+            LogError($"Setting DataGrid ItemsSource with {dataPoints.Count} items");
 
             // 列を定義
             dataGrid.Columns.Add(new DataGridTextColumn
@@ -696,7 +755,7 @@ public partial class MainWindow : Window
             mainGrid.Children.Add(dataGrid);
 
             // 統計情報パネルを作成
-            var statisticsPanel = CreateStatisticsPanel(counter, _counterData[counter]);
+            var statisticsPanel = CreateStatisticsPanel(counter, dataPoints);
             Grid.SetRow(statisticsPanel, 1);
             mainGrid.Children.Add(statisticsPanel);
 
@@ -705,10 +764,12 @@ public partial class MainWindow : Window
             DataTabControl.SelectedItem = tabItem;
 
             System.Diagnostics.Debug.WriteLine($"Tab created and added successfully for: {counter}");
+            LogError($"Tab created and added successfully for: {counter}");
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in AddCounterTab: {ex.Message}");
+            LogError($"Error in AddCounterTab: {ex}");
             MessageBox.Show($"タブ作成でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }

@@ -16,6 +16,7 @@ public static class PdhApi
     public const uint PDH_CSTATUS_INVALID_DATA = 0xC0000BC0;
     public const uint PDH_CSTATUS_NO_INSTANCE = 0x800007D1;
     public const uint PDH_MORE_DATA = 0x800007D2;
+    public const uint PDH_NO_MORE_DATA = 0x800007D5;
     public const uint ERROR_SUCCESS = 0;
     public const uint ERROR_NO_MORE_DATA = 0x103;
 
@@ -205,6 +206,23 @@ public static class PdhApi
         uint dwFormat,
         out uint lpdwType,
         out PDH_FMT_COUNTERVALUE pValue);
+
+    /// <summary>
+    /// 生のカウンター値を取得
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhGetRawCounterValue(
+        IntPtr hCounter,
+        out uint lpdwType,
+        out PDH_RAW_COUNTER pValue);
+
+    /// <summary>
+    /// クエリのタイムレンジを設定（BLGファイル用）
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhSetQueryTimeRange(
+        IntPtr hQuery,
+        IntPtr pTimeRange);
 
     /// <summary>
     /// 生のカウンター配列を取得（履歴データ用）
