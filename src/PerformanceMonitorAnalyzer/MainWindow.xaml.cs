@@ -132,37 +132,20 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<List<string>> ParseBlgFileAsync(string fileName, IProgress<string> progress)
+    private async Task<List<string>> ParseBlgFileAsync(string fileName, IProgress<string>? progress)
     {
-        try
+        progress?.Report("BLGファイルの解析を開始中...");
+        
+        // Windows環境での実際のBLGファイル解析を実行
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            progress?.Report("BLGファイルの解析を開始中...");
-            
-            // Windows環境での実際のBLGファイル解析を試行
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                return await ParseBlgFileWindowsAsync(fileName, progress);
-            }
-            else
-            {
-                // Linux/macOSではサンプルデータを生成
-                progress?.Report("非Windows環境でサンプルデータを生成中...");
-                LogError($"Non-Windows environment detected. Using sample data for file: {fileName}");
-                return await Task.Run(() => GenerateSampleCounters());
-            }
+            throw new PlatformNotSupportedException("このアプリケーションはWindows環境でのみ動作します。");
         }
-        catch (Exception ex)
-        {
-            LogError($"Failed to parse BLG file {fileName}: {ex.Message}");
-            // エラー時はサンプルデータを使用
-            progress?.Report("エラーが発生しました。サンプルデータを使用します...");
-            MessageBox.Show($"BLGファイルの解析に失敗しました。サンプルデータを使用します。\nエラー: {ex.Message}", 
-                          "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return await Task.Run(() => GenerateSampleCounters());
-        }
+        
+        return await ParseBlgFileWindowsAsync(fileName, progress);
     }
 
-    private async Task<List<string>> ParseBlgFileWindowsAsync(string fileName, IProgress<string> progress)
+    private async Task<List<string>> ParseBlgFileWindowsAsync(string fileName, IProgress<string>? progress)
     {
         var counters = new List<string>();
         
@@ -235,15 +218,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<List<string>> ParseBlgFileWithTypeLibAsync(string fileName, IProgress<string> progress)
+    private async Task<List<string>> ParseBlgFileWithTypeLibAsync(string fileName, IProgress<string>? progress)
     {
-        // COM経由でPDH APIを使用（実装は複雑なため、現在はサンプルデータを返す）
-        progress?.Report("代替手法でサンプルデータを生成中...");
-        LogError("TypeLib parsing not yet implemented, using sample data");
-        return await Task.Run(() => GenerateSampleCounters());
+        // COM経由でPDH APIを使用（実装は複雑なため、現在は未実装）
+        progress?.Report("代替手法は現在未実装です...");
+        LogError("TypeLib parsing not yet implemented");
+        throw new NotImplementedException("TypeLibを使用したBLGファイル解析は現在未実装です。");
     }
 
-    private async Task LoadActualCounterDataAsync(string fileName, List<string> counters, IProgress<string> progress)
+    private async Task LoadActualCounterDataAsync(string fileName, List<string> counters, IProgress<string>? progress)
     {
         try
         {
@@ -278,11 +261,8 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"Failed to load actual counter data: {ex.Message}");
+            throw;
         }
-
-        progress?.Report("サンプルデータを生成中...");
-        // 実際のデータ取得に失敗した場合はサンプルデータを生成
-        await Task.Run(() => GenerateSampleCounterData(counters));
     }
 
     private void ParseCounterDataFromJson(string jsonOutput)
@@ -323,183 +303,11 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"JSON parsing failed: {ex.Message}");
-            GenerateSampleCounterData(new List<string>());
+            throw;
         }
     }
 
-    private List<string> GenerateSampleCounters()
-    {
-        // 実際の実装では、PDH APIやWMIを使用してBLGファイルを解析します
-        // ここではサンプルデータを生成
-        var counters = new List<string>
-        {
-            // Processor カウンター
-            "\\Processor(_Total)\\% Processor Time",
-            "\\Processor(_Total)\\% User Time", 
-            "\\Processor(_Total)\\% Privileged Time",
-            "\\Processor(_Total)\\% Idle Time",
-            "\\Processor(_Total)\\% Interrupt Time",
-            "\\Processor(_Total)\\Interrupts/sec",
-            "\\Processor(0)\\% Processor Time",
-            "\\Processor(1)\\% Processor Time",
-            "\\Processor(2)\\% Processor Time",
-            "\\Processor(3)\\% Processor Time",
-            
-            // Memory カウンター
-            "\\Memory\\Available MBytes",
-            "\\Memory\\Available KBytes",
-            "\\Memory\\Committed Bytes",
-            "\\Memory\\Pool Nonpaged Bytes",
-            "\\Memory\\Pool Paged Bytes",
-            "\\Memory\\Pages/sec",
-            "\\Memory\\Page Faults/sec",
-            "\\Memory\\Cache Bytes",
-            "\\Memory\\Cache Faults/sec",
-            
-            // PhysicalDisk カウンター
-            "\\PhysicalDisk(_Total)\\Disk Reads/sec",
-            "\\PhysicalDisk(_Total)\\Disk Writes/sec",
-            "\\PhysicalDisk(_Total)\\Disk Read Bytes/sec",
-            "\\PhysicalDisk(_Total)\\Disk Write Bytes/sec",
-            "\\PhysicalDisk(_Total)\\Avg. Disk Queue Length",
-            "\\PhysicalDisk(_Total)\\% Disk Time",
-            "\\PhysicalDisk(_Total)\\Current Disk Queue Length",
-            "\\PhysicalDisk(0 C:)\\Disk Reads/sec",
-            "\\PhysicalDisk(0 C:)\\Disk Writes/sec",
-            "\\PhysicalDisk(0 C:)\\% Disk Time",
-            
-            // LogicalDisk カウンター
-            "\\LogicalDisk(_Total)\\Free Megabytes",
-            "\\LogicalDisk(_Total)\\% Free Space",
-            "\\LogicalDisk(C:)\\Free Megabytes",
-            "\\LogicalDisk(C:)\\% Free Space",
-            "\\LogicalDisk(C:)\\Disk Reads/sec",
-            "\\LogicalDisk(C:)\\Disk Writes/sec",
-            
-            // Network Interface カウンター
-            "\\Network Interface(*)\\Bytes Total/sec",
-            "\\Network Interface(*)\\Bytes Received/sec",
-            "\\Network Interface(*)\\Bytes Sent/sec",
-            "\\Network Interface(*)\\Packets/sec",
-            "\\Network Interface(*)\\Packets Received/sec",
-            "\\Network Interface(*)\\Packets Sent/sec",
-            "\\Network Interface(Intel[R] Wi-Fi 6 AX201 160MHz)\\Bytes Total/sec",
-            "\\Network Interface(Intel[R] Wi-Fi 6 AX201 160MHz)\\Bytes Received/sec",
-            "\\Network Interface(Intel[R] Wi-Fi 6 AX201 160MHz)\\Bytes Sent/sec",
-            
-            // System カウンター
-            "\\System\\Context Switches/sec",
-            "\\System\\System Calls/sec",
-            "\\System\\Processor Queue Length",
-            "\\System\\Processes",
-            "\\System\\Threads",
-            "\\System\\System Up Time",
-            "\\System\\File Read Operations/sec",
-            "\\System\\File Write Operations/sec",
-            
-            // Process カウンター
-            "\\Process(_Total)\\Working Set",
-            "\\Process(_Total)\\Virtual Bytes",
-            "\\Process(_Total)\\Private Bytes",
-            "\\Process(_Total)\\% Processor Time",
-            "\\Process(_Total)\\Thread Count",
-            "\\Process(_Total)\\Handle Count",
-            "\\Process(System)\\Working Set",
-            "\\Process(System)\\% Processor Time",
-            "\\Process(Idle)\\% Processor Time",
-            "\\Process(explorer)\\Working Set",
-            "\\Process(explorer)\\% Processor Time",
-            "\\Process(chrome)\\Working Set",
-            "\\Process(chrome)\\% Processor Time",
-            "\\Process(devenv)\\Working Set",
-            "\\Process(devenv)\\% Processor Time",
-            
-            // Thread カウンター
-            "\\Thread(*)\\% Processor Time",
-            "\\Thread(*)\\Context Switches/sec",
-            "\\Thread(System/Idle)\\% Processor Time",
-            "\\Thread(explorer/0)\\% Processor Time",
-            
-            // Cache カウンター
-            "\\Cache\\Data Map Hits %",
-            "\\Cache\\Data Map Pins/sec",
-            "\\Cache\\Copy Read Hits %",
-            "\\Cache\\MDL Read Hits %",
-            
-            // Paging File カウンター
-            "\\Paging File(_Total)\\% Usage",
-            "\\Paging File(_Total)\\% Usage Peak",
-            "\\Paging File(C:\\pagefile.sys)\\% Usage",
-            
-            // Server カウンター
-            "\\Server\\Bytes Total/sec",
-            "\\Server\\Sessions",
-            "\\Server\\Files Open",
-            
-            // Redirector カウンター
-            "\\Redirector\\Bytes Total/sec",
-            "\\Redirector\\File Read Operations/sec",
-            "\\Redirector\\File Write Operations/sec",
-            
-            // TCP v4 カウンター
-            "\\TCPv4\\Connections Established",
-            "\\TCPv4\\Connection Failures",
-            "\\TCPv4\\Connections Reset",
-            "\\TCPv4\\Segments/sec",
-            "\\TCPv4\\Segments Received/sec",
-            "\\TCPv4\\Segments Sent/sec",
-            
-            // UDP v4 カウンター
-            "\\UDPv4\\Datagrams/sec",
-            "\\UDPv4\\Datagrams Received/sec",
-            "\\UDPv4\\Datagrams Sent/sec",
-            
-            // IPv4 カウンター
-            "\\IPv4\\Datagrams/sec",
-            "\\IPv4\\Datagrams Received/sec",
-            "\\IPv4\\Datagrams Sent/sec",
-            "\\IPv4\\Datagrams Forwarded/sec",
-            
-            // Objects カウンター
-            "\\Objects\\Events",
-            "\\Objects\\Mutexes",
-            "\\Objects\\Processes",
-            "\\Objects\\Sections",
-            "\\Objects\\Semaphores",
-            "\\Objects\\Threads"
-        };
 
-        GenerateSampleCounterData(counters);
-        return counters;
-    }
-
-    private void GenerateSampleCounterData(List<string> counters)
-    {
-        // サンプルデータを生成
-        var random = new Random();
-        var startTime = DateTime.Now.AddMinutes(-30);
-        
-        foreach (var counter in counters)
-        {
-            var dataPoints = new List<PerformanceDataPoint>();
-            
-            for (int i = 0; i < 180; i++) // 30分間、10秒間隔
-            {
-                var timestamp = startTime.AddSeconds(i * 10);
-                var value = GenerateSampleValue(counter, random, i);
-                
-                dataPoints.Add(new PerformanceDataPoint
-                {
-                    Timestamp = timestamp,
-                    Value = value,
-                    Counter = counter
-                });
-            }
-            
-            _counterData[counter] = dataPoints;
-        }
-    }
-    
     private void BuildCounterTree(List<string> counters)
     {
         // カウンターを解析してオブジェクト別にグループ化
@@ -574,135 +382,6 @@ public partial class MainWindow : Window
             
             _counterTreeNodes.Add(objectNode);
         }
-    }
-
-    private double GenerateSampleValue(string counter, Random random, int index)
-    {
-        // カウンターの種類に応じてリアルなサンプルデータを生成
-        return counter switch
-        {
-            // Processor関連
-            var c when c.Contains("% Processor Time") => Math.Max(0, Math.Min(100, 
-                20 + 30 * Math.Sin(index * 0.1) + random.NextDouble() * 10)),
-            var c when c.Contains("% User Time") => Math.Max(0, Math.Min(100,
-                15 + 20 * Math.Sin(index * 0.1) + random.NextDouble() * 8)),
-            var c when c.Contains("% Privileged Time") => Math.Max(0, Math.Min(100,
-                5 + 10 * Math.Sin(index * 0.1) + random.NextDouble() * 5)),
-            var c when c.Contains("% Idle Time") => Math.Max(0, Math.Min(100,
-                70 + 20 * Math.Sin(index * 0.1) + random.NextDouble() * 10)),
-            var c when c.Contains("% Interrupt Time") => Math.Max(0, Math.Min(100,
-                1 + 2 * Math.Sin(index * 0.2) + random.NextDouble() * 1)),
-            var c when c.Contains("Interrupts/sec") => Math.Max(0,
-                1000 + 500 * Math.Sin(index * 0.15) + random.NextDouble() * 200),
-                
-            // Memory関連
-            var c when c.Contains("Available MBytes") => Math.Max(1000, 
-                4000 + 1000 * Math.Sin(index * 0.05) + random.NextDouble() * 500),
-            var c when c.Contains("Available KBytes") => Math.Max(1000000,
-                4000000 + 1000000 * Math.Sin(index * 0.05) + random.NextDouble() * 500000),
-            var c when c.Contains("Committed Bytes") => Math.Max(100000000,
-                8000000000 + 2000000000 * Math.Sin(index * 0.03) + random.NextDouble() * 1000000000),
-            var c when c.Contains("Pool Nonpaged Bytes") => Math.Max(50000000,
-                200000000 + 50000000 * Math.Sin(index * 0.1) + random.NextDouble() * 20000000),
-            var c when c.Contains("Pool Paged Bytes") => Math.Max(100000000,
-                500000000 + 100000000 * Math.Sin(index * 0.08) + random.NextDouble() * 50000000),
-            var c when c.Contains("Pages/sec") => Math.Max(0,
-                100 + 50 * Math.Sin(index * 0.2) + random.NextDouble() * 30),
-            var c when c.Contains("Page Faults/sec") => Math.Max(0,
-                500 + 200 * Math.Sin(index * 0.15) + random.NextDouble() * 100),
-            var c when c.Contains("Cache Bytes") => Math.Max(100000000,
-                1000000000 + 200000000 * Math.Sin(index * 0.05) + random.NextDouble() * 100000000),
-            var c when c.Contains("Cache Faults/sec") => Math.Max(0,
-                50 + 20 * Math.Sin(index * 0.2) + random.NextDouble() * 15),
-                
-            // Disk関連
-            var c when c.Contains("Disk Reads/sec") => Math.Max(0, 
-                50 + 20 * Math.Sin(index * 0.2) + random.NextDouble() * 30),
-            var c when c.Contains("Disk Writes/sec") => Math.Max(0, 
-                30 + 15 * Math.Sin(index * 0.15) + random.NextDouble() * 20),
-            var c when c.Contains("Disk Read Bytes/sec") => Math.Max(0,
-                2000000 + 1000000 * Math.Sin(index * 0.2) + random.NextDouble() * 500000),
-            var c when c.Contains("Disk Write Bytes/sec") => Math.Max(0,
-                1500000 + 800000 * Math.Sin(index * 0.15) + random.NextDouble() * 400000),
-            var c when c.Contains("Avg. Disk Queue Length") => Math.Max(0,
-                2 + 1.5 * Math.Sin(index * 0.1) + random.NextDouble() * 1),
-            var c when c.Contains("% Disk Time") => Math.Max(0, Math.Min(100,
-                30 + 20 * Math.Sin(index * 0.1) + random.NextDouble() * 15)),
-            var c when c.Contains("Current Disk Queue Length") => Math.Max(0,
-                1 + 2 * Math.Sin(index * 0.2) + random.NextDouble() * 1),
-            var c when c.Contains("Free Megabytes") => Math.Max(1000,
-                50000 + 10000 * Math.Sin(index * 0.02) + random.NextDouble() * 5000),
-            var c when c.Contains("% Free Space") => Math.Max(5, Math.Min(95,
-                60 + 10 * Math.Sin(index * 0.02) + random.NextDouble() * 8)),
-                
-            // Network関連
-            var c when c.Contains("Bytes Total/sec") => Math.Max(0, 
-                1000000 + 500000 * Math.Sin(index * 0.1) + random.NextDouble() * 200000),
-            var c when c.Contains("Bytes Received/sec") => Math.Max(0,
-                600000 + 300000 * Math.Sin(index * 0.1) + random.NextDouble() * 150000),
-            var c when c.Contains("Bytes Sent/sec") => Math.Max(0,
-                400000 + 200000 * Math.Sin(index * 0.1) + random.NextDouble() * 100000),
-            var c when c.Contains("Packets/sec") => Math.Max(0,
-                1000 + 500 * Math.Sin(index * 0.15) + random.NextDouble() * 300),
-            var c when c.Contains("Packets Received/sec") => Math.Max(0,
-                600 + 300 * Math.Sin(index * 0.15) + random.NextDouble() * 200),
-            var c when c.Contains("Packets Sent/sec") => Math.Max(0,
-                400 + 200 * Math.Sin(index * 0.15) + random.NextDouble() * 150),
-                
-            // System関連
-            var c when c.Contains("Context Switches/sec") => Math.Max(0, 
-                5000 + 2000 * Math.Sin(index * 0.3) + random.NextDouble() * 1000),
-            var c when c.Contains("System Calls/sec") => Math.Max(0,
-                10000 + 5000 * Math.Sin(index * 0.2) + random.NextDouble() * 2000),
-            var c when c.Contains("Processor Queue Length") => Math.Max(0,
-                2 + 1 * Math.Sin(index * 0.1) + random.NextDouble() * 1),
-            var c when c.Contains("Processes") => Math.Max(50,
-                150 + 20 * Math.Sin(index * 0.01) + random.NextDouble() * 10),
-            var c when c.Contains("Threads") => Math.Max(500,
-                2000 + 300 * Math.Sin(index * 0.02) + random.NextDouble() * 200),
-            var c when c.Contains("System Up Time") => index * 10, // 秒単位でアップタイム
-            var c when c.Contains("File Read Operations/sec") => Math.Max(0,
-                100 + 50 * Math.Sin(index * 0.2) + random.NextDouble() * 30),
-            var c when c.Contains("File Write Operations/sec") => Math.Max(0,
-                80 + 40 * Math.Sin(index * 0.15) + random.NextDouble() * 25),
-                
-            // Process関連
-            var c when c.Contains("Working Set") => Math.Max(100000000, 
-                2000000000 + 500000000 * Math.Sin(index * 0.05) + random.NextDouble() * 100000000),
-            var c when c.Contains("Virtual Bytes") => Math.Max(1000000000,
-                4000000000 + 1000000000 * Math.Sin(index * 0.03) + random.NextDouble() * 500000000),
-            var c when c.Contains("Private Bytes") => Math.Max(50000000,
-                1000000000 + 200000000 * Math.Sin(index * 0.05) + random.NextDouble() * 100000000),
-            var c when c.Contains("Thread Count") => Math.Max(1,
-                20 + 10 * Math.Sin(index * 0.1) + random.NextDouble() * 5),
-            var c when c.Contains("Handle Count") => Math.Max(100,
-                2000 + 500 * Math.Sin(index * 0.05) + random.NextDouble() * 200),
-                
-            // TCP/UDP/IP関連
-            var c when c.Contains("Connections Established") => Math.Max(0,
-                100 + 50 * Math.Sin(index * 0.1) + random.NextDouble() * 20),
-            var c when c.Contains("Connection Failures") => Math.Max(0,
-                5 + 3 * Math.Sin(index * 0.2) + random.NextDouble() * 2),
-            var c when c.Contains("Connections Reset") => Math.Max(0,
-                2 + 1 * Math.Sin(index * 0.15) + random.NextDouble() * 1),
-            var c when c.Contains("Segments") => Math.Max(0,
-                10000 + 5000 * Math.Sin(index * 0.1) + random.NextDouble() * 2000),
-            var c when c.Contains("Datagrams") => Math.Max(0,
-                5000 + 2000 * Math.Sin(index * 0.15) + random.NextDouble() * 1000),
-                
-            // その他
-            var c when c.Contains("Events") => Math.Max(0,
-                500 + 100 * Math.Sin(index * 0.1) + random.NextDouble() * 50),
-            var c when c.Contains("Mutexes") => Math.Max(0,
-                50 + 20 * Math.Sin(index * 0.05) + random.NextDouble() * 10),
-            var c when c.Contains("Sections") => Math.Max(0,
-                200 + 50 * Math.Sin(index * 0.08) + random.NextDouble() * 30),
-            var c when c.Contains("Semaphores") => Math.Max(0,
-                30 + 10 * Math.Sin(index * 0.1) + random.NextDouble() * 8),
-                
-            // デフォルト
-            _ => random.NextDouble() * 100
-        };
     }
 
     private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
