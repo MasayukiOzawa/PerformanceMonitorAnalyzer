@@ -46,6 +46,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="350"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="200"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左側: カウンター一覧 -->
@@ -189,44 +190,15 @@
                 </Grid>
             </GroupBox>
 
-            <!-- 右側: グラフ表示 -->
-            <GroupBox Grid.Column="1" Header="グラフ表示">
+            <!-- 中央: グラフ表示 -->
+            <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- スケール変更コントロールパネル -->
-                    <Border Grid.Row="0" Background="LightBlue" Padding="8,4" 
-                            x:Name="ScaleControlPanel" Visibility="Collapsed">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="カウンター:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <ComboBox x:Name="CounterScaleComboBox" Width="200" 
-                                      VerticalAlignment="Center" Margin="0,0,10,0"
-                                      SelectionChanged="CounterScaleComboBox_SelectionChanged"/>
-                            <TextBlock Text="スケール:" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                            <ComboBox x:Name="ScaleValueComboBox" Width="80" 
-                                      VerticalAlignment="Center" Margin="0,0,10,0"
-                                      SelectionChanged="ScaleValueComboBox_SelectionChanged">
-                                <ComboBoxItem Content="10" Tag="10"/>
-                                <ComboBoxItem Content="1.0" Tag="1.0"/>
-                                <ComboBoxItem Content="0.1" Tag="0.1"/>
-                                <ComboBoxItem Content="0.01" Tag="0.01"/>
-                                <ComboBoxItem Content="0.001" Tag="0.001"/>
-                            </ComboBox>
-                            <Button Content="適用" Click="ApplyScale_Click" 
-                                    Padding="10,2" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-                    
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
-                                      Grid.Row="1"
                                       Background="White" />
                     
                     <!-- データなしの場合のメッセージ -->
-                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                               x:Name="NoDataMessagePanel" 
                               Visibility="Visible">
                         <TextBlock x:Name="NoDataMessage" 
@@ -249,6 +221,28 @@
                                  FontWeight="Bold"
                                  Margin="5"/>
                     </StackPanel>
+                </Grid>
+            </GroupBox>
+
+            <!-- 右側: スケール設定 -->
+            <GroupBox Grid.Column="2" Header="スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- 説明テキスト -->
+                    <TextBlock Grid.Row="0" Text="各カウンターのスケールを調整:"
+                             FontSize="11" Foreground="DarkGray" 
+                             Margin="5,5,5,10" TextWrapping="Wrap"/>
+                    
+                    <!-- カウンタースケール設定リスト -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="CounterScaleStackPanel" Margin="5">
+                            <!-- カウンター別スケール設定が動的に追加される -->
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </GroupBox>
         </Grid>

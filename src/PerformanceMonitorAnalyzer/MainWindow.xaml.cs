@@ -125,7 +125,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _counterScales = new();
     
     // サポートされるスケール値
-    private readonly double[] SupportedScales = { 1.0, 0.1, 0.01, 0.001 };
+    private readonly double[] SupportedScales = { 10.0, 1.0, 0.1, 0.01, 0.001 };
 
     public MainWindow()
     {
@@ -143,9 +143,6 @@ public partial class MainWindow : Window
         
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
-        
-        // スケールコントロールの初期化
-        ScaleValueComboBox.SelectedIndex = 0; // 1.0をデフォルトに設定
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -1914,57 +1911,110 @@ public partial class MainWindow : Window
     #region スケール変更機能
 
     /// <summary>
-    /// カウンター選択時のイベントハンドラー
+    /// カウンター別スケール設定コントロールを作成
     /// </summary>
-    private void CounterScaleComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private Border CreateCounterScaleControl(string counter)
     {
-        if (CounterScaleComboBox.SelectedItem is string selectedCounter)
+        var border = new Border
         {
-            // 選択されたカウンターの現在のスケールを表示
-            var currentScale = _counterScales.GetValueOrDefault(selectedCounter, 1.0);
-            
-            // ScaleValueComboBoxで該当するアイテムを選択
-            foreach (ComboBoxItem item in ScaleValueComboBox.Items)
+            BorderBrush = System.Windows.Media.Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            Margin = new Thickness(0, 2),
+            Padding = new Thickness(5),
+            Background = System.Windows.Media.Brushes.White
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // カウンター名表示
+        var counterLabel = new TextBlock
+        {
+            Text = GetCounterDisplayName(counter),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = System.Windows.Media.Brushes.DarkBlue,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 3)
+        };
+        Grid.SetRow(counterLabel, 0);
+        grid.Children.Add(counterLabel);
+
+        // スケール選択コンボボックス
+        var scaleComboBox = new ComboBox
+        {
+            Width = 160,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Tag = counter
+        };
+
+        // スケール値を追加
+        var scaleItems = new[] { "10", "1.0", "0.1", "0.01", "0.001" };
+        foreach (var scaleValue in scaleItems)
+        {
+            scaleComboBox.Items.Add(new ComboBoxItem 
+            { 
+                Content = $"× {scaleValue}", 
+                Tag = scaleValue 
+            });
+        }
+
+        // 現在のスケール値を選択
+        var currentScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        var currentScaleString = currentScale.ToString("0.###");
+        foreach (ComboBoxItem item in scaleComboBox.Items)
+        {
+            if (item.Tag?.ToString() == currentScaleString)
             {
-                if (item.Tag != null && 
-                    item.Tag.ToString() is string tagString &&
-                    double.Parse(tagString) == currentScale)
-                {
-                    ScaleValueComboBox.SelectedItem = item;
-                    break;
-                }
+                scaleComboBox.SelectedItem = item;
+                break;
             }
         }
-    }
 
-    /// <summary>
-    /// スケール値選択時のイベントハンドラー
-    /// </summary>
-    private void ScaleValueComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        // 自動適用はしない（適用ボタンクリック時に適用）
-    }
-
-    /// <summary>
-    /// スケール適用ボタンクリック時のイベントハンドラー
-    /// </summary>
-    private void ApplyScale_Click(object sender, RoutedEventArgs e)
-    {
-        if (CounterScaleComboBox.SelectedItem is string selectedCounter &&
-            ScaleValueComboBox.SelectedItem is ComboBoxItem selectedScaleItem &&
-            selectedScaleItem.Tag != null &&
-            selectedScaleItem.Tag.ToString() is string scaleTagString)
+        // イベントハンドラー追加
+        scaleComboBox.SelectionChanged += (sender, e) =>
         {
-            var newScale = double.Parse(scaleTagString);
+            if (sender is ComboBox comboBox && 
+                comboBox.Tag is string counterName &&
+                comboBox.SelectedItem is ComboBoxItem selectedItem &&
+                selectedItem.Tag is string scaleString)
+            {
+                if (double.TryParse(scaleString, out double newScale))
+                {
+                    _counterScales[counterName] = newScale;
+                    RefreshCounterInChart(counterName);
+                    LogError($"Counter '{counterName}' scale changed to {newScale}");
+                }
+            }
+        };
+
+        Grid.SetRow(scaleComboBox, 1);
+        grid.Children.Add(scaleComboBox);
+
+        border.Child = grid;
+        return border;
+    }
+
+    /// <summary>
+    /// スケールコントロールパネルの表示/非表示を更新
+    /// </summary>
+    private void UpdateScaleControlVisibility()
+    {
+        bool hasChartData = _chartSeries.Any();
+        ScaleControlGroupBox.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
+        
+        if (hasChartData)
+        {
+            // 既存のコントロールをクリア
+            CounterScaleStackPanel.Children.Clear();
             
-            // スケール設定を保存
-            _counterScales[selectedCounter] = newScale;
-            
-            // グラフを更新
-            RefreshCounterInChart(selectedCounter);
-            
-            // ログ出力
-            LogError($"Counter '{selectedCounter}' scale changed to {newScale}");
+            // 各カウンターのスケール設定コントロールを追加
+            foreach (var counter in _chartSeries.Keys.OrderBy(c => c))
+            {
+                var control = CreateCounterScaleControl(counter);
+                CounterScaleStackPanel.Children.Add(control);
+            }
         }
     }
 
@@ -1980,31 +2030,6 @@ public partial class MainWindow : Window
             
             // 新しいスケールで再追加
             AddCounterToChart(counter);
-        }
-    }
-
-    /// <summary>
-    /// スケールコントロールパネルの表示/非表示を更新
-    /// </summary>
-    private void UpdateScaleControlVisibility()
-    {
-        bool hasChartData = _chartSeries.Any();
-        ScaleControlPanel.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
-        
-        if (hasChartData)
-        {
-            // カウンターComboBoxを更新
-            CounterScaleComboBox.Items.Clear();
-            foreach (var counter in _chartSeries.Keys)
-            {
-                CounterScaleComboBox.Items.Add(counter);
-            }
-            
-            // 最初のアイテムを選択
-            if (CounterScaleComboBox.Items.Count > 0)
-            {
-                CounterScaleComboBox.SelectedIndex = 0;
-            }
         }
     }
 
