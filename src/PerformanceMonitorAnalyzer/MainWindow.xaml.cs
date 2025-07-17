@@ -10,6 +10,8 @@ using System.Collections.ObjectModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
+using System.Windows.Media.Animation;
+using System.Windows.Media;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -141,8 +143,11 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}", 
-                              "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowToastNotification(
+                    "読み込みエラー",
+                    $"ファイルの読み込みに失敗しました: {ex.Message}",
+                    ToastType.Error,
+                    6000);
                 LogError($"Failed to load BLG file: {ex}");
             }
         }
@@ -156,8 +161,11 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "コマンドライン読み込みエラー",
+                $"指定されたBLGファイルの読み込みに失敗しました: {ex.Message}",
+                ToastType.Error,
+                7000);
             LogError($"Failed to load BLG file from command line: {ex}");
         }
     }
@@ -209,19 +217,23 @@ public partial class MainWindow : Window
             var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
             var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
             
-            MessageBox.Show($"BLGファイルが読み込まれました。\n\n" +
-                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
-                           $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個\n\n" +
-                           $"左側のツリーから表示したいカウンターを選択してください。", 
-                           "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowToastNotification(
+                "読み込み完了",
+                $"BLGファイルが正常に読み込まれました。\n" +
+                $"📊 オブジェクト: {_counterTreeNodes.Count}個, 🏷️ インスタンス: {totalInstances}個, 📈 カウンター: {totalCounters}個\n" +
+                $"左側のツリーからカウンターを選択してデータを表示できます。",
+                ToastType.Success,
+                5000);
         }
         catch (Exception ex)
         {
             LogError($"LoadBlgFileAsync failed: {ex}");
             var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
-            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。\n場所: {logPath}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "読み込みエラー", 
+                $"ファイルの読み込みに失敗しました: {ex.Message}\n詳細はerror.logを確認してください。",
+                ToastType.Error,
+                7000);
         }
         finally
         {
@@ -720,7 +732,11 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in AddCounterTab: {ex.Message}");
-            MessageBox.Show($"タブ作成でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "タブ作成エラー",
+                $"データテーブルタブの作成でエラーが発生しました: {ex.Message}",
+                ToastType.Error,
+                5000);
         }
     }
 
@@ -881,14 +897,20 @@ public partial class MainWindow : Window
                 
                 File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
                 
-                MessageBox.Show($"CSVファイルが保存されました。\n{saveFileDialog.FileName}", 
-                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToastNotification(
+                    "エクスポート完了",
+                    $"CSVファイルが正常に保存されました。\nファイル: {Path.GetFileName(saveFileDialog.FileName)}",
+                    ToastType.Success,
+                    4000);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "エクスポートエラー",
+                $"CSVファイルの保存に失敗しました: {ex.Message}",
+                ToastType.Error,
+                5000);
             LogError($"CSV export failed: {ex}");
         }
     }
@@ -1025,13 +1047,19 @@ public partial class MainWindow : Window
             // 全てのタブを削除
             DataTabControl.Items.Clear();
             
-            MessageBox.Show("全てのデータテーブルタブが閉じられました。", 
-                          "タブクリア完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowToastNotification(
+                "タブクリア完了",
+                "全てのデータテーブルタブが閉じられました。新しいカウンターを選択してデータを表示できます。",
+                ToastType.Info,
+                3000);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"タブのクリアに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "エラー",
+                $"タブのクリアに失敗しました: {ex.Message}",
+                ToastType.Error,
+                5000);
             LogError($"Failed to close all tabs: {ex}");
         }
     }
@@ -1042,8 +1070,11 @@ public partial class MainWindow : Window
         {
             if (!_counterData.Any())
             {
-                MessageBox.Show("エクスポートするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。", 
-                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToastNotification(
+                    "データなし",
+                    "エクスポートするデータがありません。BLGファイルを読み込んでカウンターを選択してください。",
+                    ToastType.Warning,
+                    4000);
                 return;
             }
 
@@ -1085,17 +1116,22 @@ public partial class MainWindow : Window
                 
                 File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
                 
-                MessageBox.Show($"全データがCSVファイルに保存されました。\n" +
-                              $"ファイル: {saveFileDialog.FileName}\n" +
-                              $"カウンター数: {_counterData.Count}個\n" +
-                              $"データポイント数: {allData.Count}個", 
-                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                ShowToastNotification(
+                    "全データエクスポート完了",
+                    $"全カウンターデータがCSVファイルに保存されました。\n" +
+                    $"ファイル: {Path.GetFileName(saveFileDialog.FileName)}\n" +
+                    $"カウンター数: {_counterData.Count}個, データポイント数: {allData.Count}個",
+                    ToastType.Success,
+                    5000);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowToastNotification(
+                "エクスポートエラー",
+                $"CSVファイルの保存に失敗しました: {ex.Message}",
+                ToastType.Error,
+                5000);
             LogError($"All data CSV export failed: {ex}");
         }
     }
@@ -1121,4 +1157,136 @@ public partial class MainWindow : Window
             // ログ出力に失敗した場合は何もしない
         }
     }
+
+    #region トースト通知システム
+
+    /// <summary>
+    /// トースト通知の種類
+    /// </summary>
+    public enum ToastType
+    {
+        Info,
+        Success,
+        Warning,
+        Error
+    }
+
+    /// <summary>
+    /// トースト通知を表示
+    /// </summary>
+    /// <param name="title">タイトル</param>
+    /// <param name="message">メッセージ</param>
+    /// <param name="type">通知種類</param>
+    /// <param name="duration">表示時間（ミリ秒）</param>
+    private void ShowToastNotification(string title, string message, ToastType type = ToastType.Info, int duration = 4000)
+    {
+        try
+        {
+            // UIスレッドで実行
+            Dispatcher.Invoke(() =>
+            {
+                // アイコンと色を設定
+                string icon = type switch
+                {
+                    ToastType.Success => "✅",
+                    ToastType.Warning => "⚠️",
+                    ToastType.Error => "❌",
+                    _ => "ℹ️"
+                };
+
+                ToastIcon.Text = icon;
+                ToastTitle.Text = title;
+                ToastMessage.Text = message;
+
+                // 背景色を通知種類に応じて変更
+                var border = ToastNotificationPanel.Child as Border;
+                if (border != null)
+                {
+                    border.Background = new SolidColorBrush(type switch
+                    {
+                        ToastType.Success => Color.FromRgb(46, 125, 50),
+                        ToastType.Warning => Color.FromRgb(255, 152, 0),
+                        ToastType.Error => Color.FromRgb(211, 47, 47),
+                        _ => Color.FromRgb(51, 51, 51)
+                    });
+                }
+
+                // アニメーション付きでトーストを表示
+                ShowToastAnimation(duration);
+            });
+        }
+        catch (Exception ex)
+        {
+            // トースト表示に失敗した場合はDebugに出力
+            Debug.WriteLine($"Toast notification failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// トーストアニメーションを実行
+    /// </summary>
+    private void ShowToastAnimation(int duration)
+    {
+        var storyboard = new Storyboard();
+        
+        // スライドイン アニメーション
+        var slideInAnimation = new DoubleAnimation
+        {
+            From = 500,
+            To = 0,
+            Duration = TimeSpan.FromMilliseconds(300),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+        
+        Storyboard.SetTarget(slideInAnimation, ToastTransform);
+        Storyboard.SetTargetProperty(slideInAnimation, new PropertyPath(TranslateTransform.XProperty));
+        storyboard.Children.Add(slideInAnimation);
+
+        // 表示
+        ToastNotificationPanel.Visibility = Visibility.Visible;
+        storyboard.Begin();
+
+        // 指定時間後にスライドアウト
+        var timer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(duration)
+        };
+        
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            HideToastAnimation();
+        };
+        
+        timer.Start();
+    }
+
+    /// <summary>
+    /// トーストを非表示にするアニメーション
+    /// </summary>
+    private void HideToastAnimation()
+    {
+        var storyboard = new Storyboard();
+        
+        var slideOutAnimation = new DoubleAnimation
+        {
+            From = 0,
+            To = 500,
+            Duration = TimeSpan.FromMilliseconds(300),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+        };
+        
+        Storyboard.SetTarget(slideOutAnimation, ToastTransform);
+        Storyboard.SetTargetProperty(slideOutAnimation, new PropertyPath(TranslateTransform.XProperty));
+        
+        storyboard.Completed += (s, e) =>
+        {
+            ToastNotificationPanel.Visibility = Visibility.Collapsed;
+        };
+        
+        storyboard.Children.Add(slideOutAnimation);
+        storyboard.Begin();
+    }
+
+    #endregion
 }
