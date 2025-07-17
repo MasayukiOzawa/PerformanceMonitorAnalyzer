@@ -492,7 +492,6 @@ public partial class MainWindow : Window
             _counterData[counter] = dataPoints;
         }
     }
-    }
     
     private void BuildCounterTree(List<string> counters)
     {
