@@ -151,10 +151,25 @@ public static class PdhApi
         bool bRefresh);
 
     /// <summary>
-    /// BLGログファイル内のカウンターを列挙
+    /// BLGログファイル内のカウンターを列挙（IntPtr版）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectItemsH(
+        IntPtr hDataSource,
+        string? szMachineName,
+        string szObjectName,
+        IntPtr mszCounterList,
+        ref uint pcchCounterListLength,
+        IntPtr mszInstanceList,
+        ref uint pcchInstanceListLength,
+        uint dwDetailLevel,
+        uint dwFlags);
+
+    /// <summary>
+    /// BLGログファイル内のカウンターを列挙（StringBuilder版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode, EntryPoint = "PdhEnumObjectItemsH")]
+    public static extern uint PdhEnumObjectItemsHSB(
         IntPtr hDataSource,
         string? szMachineName,
         string szObjectName,

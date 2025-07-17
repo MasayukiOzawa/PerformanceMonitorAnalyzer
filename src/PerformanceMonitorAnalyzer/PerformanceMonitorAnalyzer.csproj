@@ -1,9 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <OutputType Condition="'$(BuildWindowsWpf)' == 'true'">WinExe</OutputType>
+    <OutputType Condition="'$(BuildWindowsWpf)' != 'true'">Exe</OutputType>
+    <TargetFramework Condition="'$(BuildWindowsWpf)' == 'true'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(BuildWindowsWpf)' != 'true'">net8.0</TargetFramework>
+    <UseWPF Condition="'$(BuildWindowsWpf)' == 'true'">true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
@@ -15,10 +17,28 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
-  <!-- Windows 以外の環境では警告を表示してビルドをスキップ -->
-  <Target Name="CheckPlatform" BeforeTargets="Build" Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
-    <Warning Text="このプロジェクトはWindows専用のWPFアプリケーションです。Linux/macOSではビルドできません。" />
-    <Error Text="WPFはWindows専用の技術です。Windows環境でビルドしてください。" />
-  </Target>
+  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
+    <PackageReference Include="LiveCharts.Wpf" Version="0.9.7" />
+  </ItemGroup>
+
+  <!-- WPFファイルを条件付きで含める -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' == 'true'">
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Page Include="MainWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+
+  <!-- コンソール版では WPF 関連ファイルを除外 -->
+  <ItemGroup Condition="'$(BuildWindowsWpf)' != 'true'">
+    <Compile Remove="App.xaml.cs" />
+    <Compile Remove="MainWindow.xaml.cs" />
+    <None Remove="App.xaml" />
+    <None Remove="MainWindow.xaml" />
+  </ItemGroup>
 
 </Project>

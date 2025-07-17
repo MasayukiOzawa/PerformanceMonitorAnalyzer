@@ -1,6 +1,6 @@
-using System.Text;
-using System.Runtime.InteropServices;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -254,7 +254,7 @@ public class BlgFileAnalyzer : IDisposable
                 uint instanceBufferSize = 0;
 
                 // まずバッファサイズを取得
-                uint result = PdhApi.PdhEnumObjectItemsH(
+                uint result = PdhApi.PdhEnumObjectItemsHSB(
                     _dataSource,
                     machineName,
                     objectName,
@@ -270,75 +270,155 @@ public class BlgFileAnalyzer : IDisposable
                 var counters = new List<string>();
                 var instances = new List<string>();
 
-                if (result == PdhApi.PDH_MORE_DATA)
+                if (result == PdhApi.PDH_MORE_DATA && (counterBufferSize > 0 || instanceBufferSize > 0))
                 {
-                    StringBuilder? counterBuffer = null;
-                    StringBuilder? instanceBuffer = null;
+                    // バッファサイズを保存（呼び出し後に変更される可能性があるため）
+                    uint originalCounterBufferSize = counterBufferSize;
+                    uint originalInstanceBufferSize = instanceBufferSize;
 
-                    if (counterBufferSize > 0)
+                    // char単位でバッファを確保（Unicode文字列のため）
+                    IntPtr counterBuffer = IntPtr.Zero;
+                    IntPtr instanceBuffer = IntPtr.Zero;
+
+                    try
                     {
-                        counterBuffer = new StringBuilder((int)counterBufferSize);
-                    }
-
-                    if (instanceBufferSize > 0)
-                    {
-                        instanceBuffer = new StringBuilder((int)instanceBufferSize);
-                    }
-
-                    result = PdhApi.PdhEnumObjectItemsH(
-                        _dataSource,
-                        machineName,
-                        objectName,
-                        counterBuffer,
-                        ref counterBufferSize,
-                        instanceBuffer,
-                        ref instanceBufferSize,
-                        100,
-                        0);
-
-                    progress?.Report($"カウンター・インスタンス列挙結果: {PdhApi.GetErrorMessage(result)}");
-
-                    if (result == PdhApi.ERROR_SUCCESS)
-                    {
-                        // カウンター名を解析
-                        if (counterBuffer != null)
+                        if (counterBufferSize > 0)
                         {
-                            var counterList = counterBuffer.ToString();
-                            progress?.Report($"生のカウンターバッファ長: {counterList.Length}, 最初の200文字: {counterList[..Math.Min(200, counterList.Length)].Replace("\0", "\\0")}");
-                            
-                            var counterNames = counterList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                            progress?.Report($"分割後のカウンター数: {counterNames.Length}");
-                            
-                            // 最初の10個のカウンター名を表示
-                            for (int i = 0; i < Math.Min(10, counterNames.Length); i++)
-                            {
-                                progress?.Report($"カウンター[{i}]: '{counterNames[i]}'");
-                            }
-                            
-                            counters.AddRange(counterNames);
+                            counterBuffer = Marshal.AllocHGlobal((int)counterBufferSize * 2); // char = 2 bytes
+                            Marshal.Copy(new byte[counterBufferSize * 2], 0, counterBuffer, (int)counterBufferSize * 2);
                         }
 
-                        // インスタンス名を解析
-                        if (instanceBuffer != null)
+                        if (instanceBufferSize > 0)
                         {
-                            var instanceList = instanceBuffer.ToString();
-                            progress?.Report($"生のインスタンスバッファ長: {instanceList.Length}, 最初の200文字: {instanceList[..Math.Min(200, instanceList.Length)].Replace("\0", "\\0")}");
+                            instanceBuffer = Marshal.AllocHGlobal((int)instanceBufferSize * 2); // char = 2 bytes
+                            Marshal.Copy(new byte[instanceBufferSize * 2], 0, instanceBuffer, (int)instanceBufferSize * 2);
+                        }
+
+                        result = PdhApi.PdhEnumObjectItemsH(
+                            _dataSource,
+                            machineName,
+                            objectName,
+                            counterBuffer,
+                            ref counterBufferSize,
+                            instanceBuffer,
+                            ref instanceBufferSize,
+                            100,
+                            0);
                             
-                            var instanceNames = instanceList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                            progress?.Report($"分割後のインスタンス数: {instanceNames.Length}");
-                            
-                            // 最初の10個のインスタンス名を表示
-                            for (int i = 0; i < Math.Min(10, instanceNames.Length); i++)
+                        progress?.Report($"API呼び出し後のバッファサイズ - カウンター: {counterBufferSize}/{originalCounterBufferSize}, インスタンス: {instanceBufferSize}/{originalInstanceBufferSize}");
+
+                        progress?.Report($"カウンター・インスタンス列挙結果: {PdhApi.GetErrorMessage(result)}");
+
+                        if (result == PdhApi.ERROR_SUCCESS)
+                        {
+                            // カウンター名を解析（Unicode文字列から直接変換）
+                            if (counterBuffer != IntPtr.Zero && counterBufferSize > 0)
                             {
-                                progress?.Report($"インスタンス[{i}]: '{instanceNames[i]}'");
+                                var counterList = Marshal.PtrToStringUni(counterBuffer, (int)counterBufferSize - 1); // 最後のnull文字は除外
+                                if (counterList != null)
+                                {
+                                    progress?.Report($"生のカウンターバッファ長: {counterList.Length}, 要求サイズ: {counterBufferSize}");
+                                    
+                                    // null文字位置の詳細調査
+                                    int nullCount = 0;
+                                    var counterNames = new List<string>();
+                                    var currentCounter = new StringBuilder();
+                                    
+                                    for (int i = 0; i < counterList.Length; i++)
+                                    {
+                                        if (counterList[i] == '\0')
+                                        {
+                                            nullCount++;
+                                            if (currentCounter.Length > 0)
+                                            {
+                                                counterNames.Add(currentCounter.ToString());
+                                                currentCounter.Clear();
+                                            }
+                                        }
+                                        else
+                                        {
+                                            currentCounter.Append(counterList[i]);
+                                        }
+                                    }
+                                    
+                                    // 最後のカウンター名を追加（null終端がない場合）
+                                    if (currentCounter.Length > 0)
+                                    {
+                                        counterNames.Add(currentCounter.ToString());
+                                    }
+                                    
+                                    progress?.Report($"合計null文字数: {nullCount}, 抽出されたカウンター数: {counterNames.Count}");
+                                    
+                                    // 最初の10個のカウンター名を表示
+                                    for (int i = 0; i < Math.Min(10, counterNames.Count); i++)
+                                    {
+                                        progress?.Report($"カウンター[{i}]: '{counterNames[i]}'");
+                                    }
+                                    
+                                    counters.AddRange(counterNames);
+                                }
                             }
-                            
-                            instances.AddRange(instanceNames);
+
+                            // インスタンス名を解析
+                            if (instanceBuffer != IntPtr.Zero && instanceBufferSize > 0)
+                            {
+                                var instanceList = Marshal.PtrToStringUni(instanceBuffer, (int)instanceBufferSize - 1); // 最後のnull文字は除外
+                                if (instanceList != null)
+                                {
+                                    progress?.Report($"生のインスタンスバッファ長: {instanceList.Length}, 要求サイズ: {instanceBufferSize}");
+                                    
+                                    var instanceNames = new List<string>();
+                                    var currentInstance = new StringBuilder();
+                                    
+                                    for (int i = 0; i < instanceList.Length; i++)
+                                    {
+                                        if (instanceList[i] == '\0')
+                                        {
+                                            if (currentInstance.Length > 0)
+                                            {
+                                                instanceNames.Add(currentInstance.ToString());
+                                                currentInstance.Clear();
+                                            }
+                                        }
+                                        else
+                                        {
+                                            currentInstance.Append(instanceList[i]);
+                                        }
+                                    }
+                                    
+                                    // 最後のインスタンス名を追加（null終端がない場合）
+                                    if (currentInstance.Length > 0)
+                                    {
+                                        instanceNames.Add(currentInstance.ToString());
+                                    }
+                                    
+                                    progress?.Report($"抽出されたインスタンス数: {instanceNames.Count}");
+                                    
+                                    // 最初の10個のインスタンス名を表示
+                                    for (int i = 0; i < Math.Min(10, instanceNames.Count); i++)
+                                    {
+                                        progress?.Report($"インスタンス[{i}]: '{instanceNames[i]}'");
+                                    }
+                                    
+                                    instances.AddRange(instanceNames);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception($"カウンター列挙に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                         }
                     }
-                    else
+                    finally
                     {
-                        throw new Exception($"カウンター列挙に失敗しました: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                        if (counterBuffer != IntPtr.Zero)
+                        {
+                            Marshal.FreeHGlobal(counterBuffer);
+                        }
+                        if (instanceBuffer != IntPtr.Zero)
+                        {
+                            Marshal.FreeHGlobal(instanceBuffer);
+                        }
                     }
                 }
                 else if (result != PdhApi.ERROR_SUCCESS)
