@@ -304,7 +304,17 @@ public class BlgFileAnalyzer : IDisposable
                         if (counterBuffer != null)
                         {
                             var counterList = counterBuffer.ToString();
+                            progress?.Report($"生のカウンターバッファ長: {counterList.Length}, 最初の200文字: {counterList[..Math.Min(200, counterList.Length)].Replace("\0", "\\0")}");
+                            
                             var counterNames = counterList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                            progress?.Report($"分割後のカウンター数: {counterNames.Length}");
+                            
+                            // 最初の10個のカウンター名を表示
+                            for (int i = 0; i < Math.Min(10, counterNames.Length); i++)
+                            {
+                                progress?.Report($"カウンター[{i}]: '{counterNames[i]}'");
+                            }
+                            
                             counters.AddRange(counterNames);
                         }
 
@@ -312,7 +322,17 @@ public class BlgFileAnalyzer : IDisposable
                         if (instanceBuffer != null)
                         {
                             var instanceList = instanceBuffer.ToString();
+                            progress?.Report($"生のインスタンスバッファ長: {instanceList.Length}, 最初の200文字: {instanceList[..Math.Min(200, instanceList.Length)].Replace("\0", "\\0")}");
+                            
                             var instanceNames = instanceList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                            progress?.Report($"分割後のインスタンス数: {instanceNames.Length}");
+                            
+                            // 最初の10個のインスタンス名を表示
+                            for (int i = 0; i < Math.Min(10, instanceNames.Length); i++)
+                            {
+                                progress?.Report($"インスタンス[{i}]: '{instanceNames[i]}'");
+                            }
+                            
                             instances.AddRange(instanceNames);
                         }
                     }
