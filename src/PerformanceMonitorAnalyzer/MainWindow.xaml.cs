@@ -1305,9 +1305,36 @@ public partial class MainWindow : Window
             progress?.Report("relog.exe でCSVファイルを生成中...");
             
             // relog.exe で指定された時間範囲とカウンターでCSV生成
-            var arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
-                           $"-b \"{startTime:MM/dd/yyyy HH:mm:ss}\" " +
-                           $"-e \"{endTime:MM/dd/yyyy HH:mm:ss}\" -y";
+            // 時間制約有効かどうかを判定（スライダーが初期値でない場合は時間制約を適用）
+            bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
+            
+            string arguments;
+            if (useTimeConstraints)
+            {
+                // 複数の時間形式を試す
+                var formats = new[]
+                {
+                    "MM/dd/yyyy HH:mm:ss",     // 米国形式
+                    "yyyy-MM-dd HH:mm:ss",     // ISO形式
+                    "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
+                    "M/d/yyyy H:mm:ss"         // 短縮形式
+                };
+                
+                arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
+                           $"-b \"{startTime.ToString(formats[0], System.Globalization.CultureInfo.InvariantCulture)}\" " +
+                           $"-e \"{endTime.ToString(formats[0], System.Globalization.CultureInfo.InvariantCulture)}\" -y";
+            }
+            else
+            {
+                // 時間制約なし
+                arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
+            }
+            
+            // デバッグ情報をログに出力
+            LogInfo($"Executing relog.exe with arguments: {arguments}");
+            LogInfo($"Use time constraints: {useTimeConstraints}");
+            LogInfo($"Start time: {startTime:yyyy-MM-dd HH:mm:ss}, End time: {endTime:yyyy-MM-dd HH:mm:ss}");
+            LogInfo($"Selected counters count: {counters.Count}");
             
             // 特定のカウンターのみを指定する場合（relog.exeの制限により全カウンターを一度取得）
             var processInfo = new ProcessStartInfo
@@ -1327,7 +1354,84 @@ public partial class MainWindow : Window
             
             await process.WaitForExitAsync();
             
-            if (process.ExitCode == 0 && File.Exists(tempCsvPath))
+            // Exit code 11で時間制約使用時は、異なる時間形式を試す
+            if (process.ExitCode == 11 && useTimeConstraints)
+            {
+                LogInfo("Exit code 11 detected, trying different time formats...");
+                
+                var timeFormats = new[]
+                {
+                    "yyyy-MM-dd HH:mm:ss",     // ISO形式
+                    "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
+                    "M/d/yyyy H:mm:ss",        // 短縮形式
+                    "yyyy/MM/dd HH:mm:ss"      // 別の形式
+                };
+                
+                foreach (var format in timeFormats)
+                {
+                    LogInfo($"Trying time format: {format}");
+                    var altArguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
+                                      $"-b \"{startTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" " +
+                                      $"-e \"{endTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" -y";
+                    
+                    var altProcessInfo = new ProcessStartInfo
+                    {
+                        FileName = "relog.exe",
+                        Arguments = altArguments,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true,
+                        StandardOutputEncoding = Encoding.UTF8,
+                        StandardErrorEncoding = Encoding.UTF8
+                    };
+                    
+                    using var altProcess = new Process { StartInfo = altProcessInfo };
+                    altProcess.Start();
+                    await altProcess.WaitForExitAsync();
+                    
+                    if (altProcess.ExitCode == 0 && File.Exists(tempCsvPath))
+                    {
+                        LogInfo($"Success with time format: {format}");
+                        break;
+                    }
+                    else
+                    {
+                        LogInfo($"Failed with time format: {format}, exit code: {altProcess.ExitCode}");
+                    }
+                }
+                
+                // 全ての形式で失敗した場合は時間制約なしで実行
+                if (!File.Exists(tempCsvPath))
+                {
+                    LogInfo("All time formats failed, falling back to no time constraints");
+                    var fallbackArguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
+                    
+                    var fallbackProcessInfo = new ProcessStartInfo
+                    {
+                        FileName = "relog.exe",
+                        Arguments = fallbackArguments,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true,
+                        StandardOutputEncoding = Encoding.UTF8,
+                        StandardErrorEncoding = Encoding.UTF8
+                    };
+                    
+                    using var fallbackProcess = new Process { StartInfo = fallbackProcessInfo };
+                    fallbackProcess.Start();
+                    await fallbackProcess.WaitForExitAsync();
+                    
+                    if (fallbackProcess.ExitCode != 0)
+                    {
+                        var fallbackError = await fallbackProcess.StandardError.ReadToEndAsync();
+                        LogError($"Fallback execution also failed - Exit code: {fallbackProcess.ExitCode}, Error: {fallbackError}");
+                    }
+                }
+            }
+            
+            if (File.Exists(tempCsvPath) && new FileInfo(tempCsvPath).Length > 0)
             {
                 progress?.Report("CSVデータを解析中...");
                 await LoadSelectedCountersFromCsv(tempCsvPath, counters, progress);
@@ -1335,6 +1439,11 @@ public partial class MainWindow : Window
             else
             {
                 var error = await process.StandardError.ReadToEndAsync();
+                var output = await process.StandardOutput.ReadToEndAsync();
+                LogError($"relog.exe failed - Exit code: {process.ExitCode}");
+                LogError($"relog.exe error output: {error}");
+                LogError($"relog.exe standard output: {output}");
+                LogError($"Command line: relog.exe {arguments}");
                 throw new Exception($"relog.exe の実行に失敗しました。Exit code: {process.ExitCode}, Error: {error}");
             }
         }
@@ -1485,6 +1594,21 @@ public partial class MainWindow : Window
                 File.WriteAllText(logPath + ".logged", ""); // フラグファイル作成
                 Debug.WriteLine($"Error log file location: {logPath}");
             }
+        }
+        catch
+        {
+            // ログ出力に失敗した場合は何もしない
+        }
+    }
+
+    private void LogInfo(string message)
+    {
+        try
+        {
+            // アプリケーション実行ディレクトリのerror.logに出力（デバッグ情報も同じファイルに）
+            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            var logMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] INFO: {message}\n";
+            File.AppendAllText(logPath, logMessage);
         }
         catch
         {
