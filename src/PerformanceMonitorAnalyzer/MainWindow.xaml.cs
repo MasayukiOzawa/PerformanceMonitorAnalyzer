@@ -1311,9 +1311,10 @@ public partial class MainWindow : Window
             string arguments;
             if (useTimeConstraints)
             {
-                // 複数の時間形式を試す
+                // 複数の時間形式を試す（日本語環境対応のため yyyy/MM/dd を最優先）
                 var formats = new[]
                 {
+                    "yyyy/MM/dd HH:mm:ss",     // 日本語環境推奨形式
                     "MM/dd/yyyy HH:mm:ss",     // 米国形式
                     "yyyy-MM-dd HH:mm:ss",     // ISO形式
                     "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
@@ -1336,7 +1337,7 @@ public partial class MainWindow : Window
                 RelogStatusExpander.Visibility = Visibility.Visible;
                 RelogCommandDisplay.Text = $"relog.exe {arguments}";
                 RelogResultDisplay.Text = "実行中...";
-                RelogStatusExpander.IsExpanded = true;
+                // デフォルトで折りたたまれた状態を維持
             });
             
             // デバッグ情報をログに出力
@@ -1354,8 +1355,8 @@ public partial class MainWindow : Window
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
+                StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
             };
 
             using var process = new Process { StartInfo = processInfo };
@@ -1385,10 +1386,11 @@ public partial class MainWindow : Window
                 
                 var timeFormats = new[]
                 {
+                    "yyyy/MM/dd HH:mm:ss",     // 日本語環境推奨形式
                     "yyyy-MM-dd HH:mm:ss",     // ISO形式
                     "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
                     "M/d/yyyy H:mm:ss",        // 短縮形式
-                    "yyyy/MM/dd HH:mm:ss"      // 別の形式
+                    "MM/dd/yyyy HH:mm:ss"      // 米国形式
                 };
                 
                 foreach (var format in timeFormats)
@@ -1413,8 +1415,8 @@ public partial class MainWindow : Window
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.UTF8,
-                        StandardErrorEncoding = Encoding.UTF8
+                        StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
+                        StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
                     };
                     
                     using var altProcess = new Process { StartInfo = altProcessInfo };
@@ -1468,8 +1470,8 @@ public partial class MainWindow : Window
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.UTF8,
-                        StandardErrorEncoding = Encoding.UTF8
+                        StandardOutputEncoding = Encoding.GetEncoding("CP932"), // 日本語環境対応
+                        StandardErrorEncoding = Encoding.GetEncoding("CP932")   // 日本語環境対応
                     };
                     
                     using var fallbackProcess = new Process { StartInfo = fallbackProcessInfo };
