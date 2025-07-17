@@ -1178,7 +1178,7 @@ public partial class MainWindow : Window
     /// <param name="message">メッセージ</param>
     /// <param name="type">通知種類</param>
     /// <param name="duration">表示時間（ミリ秒）</param>
-    private void ShowToastNotification(string title, string message, ToastType type = ToastType.Info, int duration = 4000)
+    public void ShowToastNotification(string title, string message, ToastType type = ToastType.Info, int duration = 4000)
     {
         try
         {
