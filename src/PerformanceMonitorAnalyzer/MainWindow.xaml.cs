@@ -111,17 +111,9 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
-    private RelogCsvAnalyzer? _currentRelogAnalyzer;
-    
-    // 時間範囲管理用の変数
-    private RelogCsvAnalyzer.BlgTimeRange? _fullTimeRange;
-    private DateTime? _selectedStartTime;
-    private DateTime? _selectedEndTime;
-    private bool _isTimeRangeUpdateInProgress = false;
-    
-    // relog実行状況管理用の変数
-    private readonly HashSet<string> _selectedCountersForRelog = new();
-    private bool _isRelogExecuting = false;
+    private DateTime _fileStartTime;
+    private DateTime _fileEndTime;
+    private bool _timeRangeDetected = false;
 
     public MainWindow()
     {
@@ -156,87 +148,6 @@ public partial class MainWindow : Window
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 LogError($"Failed to load BLG file: {ex}");
             }
-        }
-    }
-
-    private async void OpenBlgFileWithRelog_Click(object sender, RoutedEventArgs e)
-    {
-        var openFileDialog = new OpenFileDialog
-        {
-            Filter = "Performance Monitor Files (*.blg)|*.blg|All Files (*.*)|*.*",
-            Title = "BLGファイルを選択してください (relog.exe使用)"
-        };
-
-        if (openFileDialog.ShowDialog() == true)
-        {
-            try
-            {
-                await LoadBlgFileWithRelogAsync(openFileDialog.FileName);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}", 
-                              "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                LogError($"Failed to load BLG file with relog: {ex}");
-            }
-        }
-    }
-
-    private async void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
-            if (!File.Exists(sampleFilePath))
-            {
-                // リリースビルド用の代替パス
-                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
-            }
-            
-            if (File.Exists(sampleFilePath))
-            {
-                await LoadBlgFileAsync(sampleFilePath);
-            }
-            else
-            {
-                MessageBox.Show("サンプルBLGファイルが見つかりません。", 
-                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to load sample BLG file: {ex}");
-        }
-    }
-
-    private async void LoadSampleBlgFileWithRelog_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
-            if (!File.Exists(sampleFilePath))
-            {
-                // リリースビルド用の代替パス
-                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
-            }
-            
-            if (File.Exists(sampleFilePath))
-            {
-                await LoadBlgFileWithRelogAsync(sampleFilePath);
-            }
-            else
-            {
-                MessageBox.Show("サンプルBLGファイルが見つかりません。", 
-                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to load sample BLG file with relog: {ex}");
         }
     }
 
@@ -294,6 +205,10 @@ public partial class MainWindow : Window
             ProgressStatusText.Text = "カウンター階層を構築中...";
             BuildCounterTree(counters);
 
+            // 時間範囲を検出
+            ProgressStatusText.Text = "時間範囲を検出中...";
+            await DetectTimeRangeAsync(fileName, progress);
+
             NoDataMessage.Visibility = Visibility.Collapsed;
             
             LogError($"Counter tree built successfully with {_counterTreeNodes.Count} root nodes"); // デバッグ用ログ
@@ -301,11 +216,15 @@ public partial class MainWindow : Window
             var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
             var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
             
+            var timeRangeInfo = _timeRangeDetected 
+                ? $"\n⏰ 時間範囲: {_fileStartTime:yyyy/MM/dd HH:mm:ss} ～ {_fileEndTime:yyyy/MM/dd HH:mm:ss}" 
+                : "\n⚠️ 時間範囲の検出に失敗しました";
+            
             MessageBox.Show($"BLGファイルが読み込まれました。\n\n" +
                            $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
                            $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個\n\n" +
-                           $"左側のツリーから表示したいカウンターを選択してください。", 
+                           $"📈 カウンター: {totalCounters}個{timeRangeInfo}\n\n" +
+                           $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。", 
                            "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
@@ -319,138 +238,6 @@ public partial class MainWindow : Window
         {
             // プログレスバーを非表示
             ProgressGrid.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    private async Task LoadBlgFileWithRelogAsync(string fileName)
-    {
-        _currentBlgFile = fileName;
-        
-        // ファイル名を表示
-        FileNameDisplay.Text = $"読み込みファイル: {Path.GetFileName(fileName)} (relog.exe使用)";
-        
-        // プログレスバーを表示
-        ProgressGrid.Visibility = Visibility.Visible;
-        ProgressStatusText.Text = "relog.exe を使用してBLGファイルを解析中...";
-        
-        // UI状態をリセット
-        _counterTreeNodes.Clear();
-        DataTabControl.Items.Clear();
-        _counterData.Clear();
-        
-        // 時間範囲UI初期化
-        TimeRangeGroup.Visibility = Visibility.Collapsed;
-        RelogStatusGroup.Visibility = Visibility.Collapsed;
-        _fullTimeRange = null;
-        _selectedStartTime = null;
-        _selectedEndTime = null;
-        _selectedCountersForRelog.Clear();
-        UpdateRelogExecuteButtonState();
-
-        RelogCsvAnalyzer? analyzer = null;
-
-        try
-        {
-            // relog.exe を使用してBLGファイルを非同期で解析
-            var progress = new Progress<string>(status => 
-            {
-                ProgressStatusText.Text = status;
-                LogError($"Relog Progress: {status}"); // デバッグ用ログ追加
-            });
-            
-            analyzer = new RelogCsvAnalyzer();
-            
-            // まず時間範囲情報を取得
-            try
-            {
-                _fullTimeRange = await analyzer.GetBlgTimeRangeAsync(fileName, progress);
-                if (_fullTimeRange != null)
-                {
-                    // 時間範囲UIを表示・設定
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        TimeRangeGroup.Visibility = Visibility.Visible;
-                        RelogStatusGroup.Visibility = Visibility.Visible;
-                        FullTimeRangeDisplay.Text = $"全期間: {_fullTimeRange.StartTime:yyyy/MM/dd HH:mm:ss} ～ {_fullTimeRange.EndTime:yyyy/MM/dd HH:mm:ss} ({_fullTimeRange.FormattedDuration})";
-                        
-                        // スライダーの初期設定
-                        _isTimeRangeUpdateInProgress = true;
-                        StartTimeSlider.Value = 0;
-                        EndTimeSlider.Value = 100;
-                        _selectedStartTime = _fullTimeRange.StartTime;
-                        _selectedEndTime = _fullTimeRange.EndTime;
-                        UpdateSelectedTimeRangeDisplay();
-                        _isTimeRangeUpdateInProgress = false;
-                        
-                        // relog状況表示を更新
-                        UpdateRelogStatus("初期化完了", "");
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                LogError($"Failed to get time range, proceeding without time range selection: {ex.Message}");
-                // 時間範囲取得に失敗しても処理を継続
-            }
-            
-            // BLGファイルをCSVに変換（時間範囲指定なし）
-            var converted = await analyzer.ConvertBlgToCsvAsync(fileName, progress, _selectedStartTime, _selectedEndTime);
-            if (!converted)
-            {
-                throw new Exception("BLGファイルのCSV変換に失敗しました。");
-            }
-            
-            // 現在のアナライザーを保存（時間範囲再選択用）
-            _currentRelogAnalyzer?.Dispose();
-            _currentRelogAnalyzer = analyzer;
-            
-            // 利用可能なカウンターを取得
-            var counters = await analyzer.GetAvailableCountersAsync(progress);
-            
-            LogError($"Relog CSV parsing completed with {counters.Count} counters"); // デバッグ用ログ
-            
-            if (counters.Count == 0)
-            {
-                throw new Exception("CSVファイルからカウンターを取得できませんでした。ファイルが破損しているか、対応していない形式の可能性があります。");
-            }
-            
-            // 階層構造を作成（UIスレッドで実行）
-            ProgressStatusText.Text = "カウンター階層を構築中...";
-            BuildCounterTree(counters);
-
-            NoDataMessage.Visibility = Visibility.Collapsed;
-            
-            LogError($"Counter tree built successfully with {_counterTreeNodes.Count} root nodes (relog)"); // デバッグ用ログ
-            
-            var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
-            var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
-            
-            MessageBox.Show($"BLGファイルが読み込まれました（relog.exe使用）。\n\n" +
-                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
-                           $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個\n\n" +
-                           $"左側のツリーから表示したいカウンターを選択してください。\n\n" +
-                           $"💡 relog.exe による変換では、すべてのカウンターデータが即座に利用可能です。", 
-                           "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        catch (Exception ex)
-        {
-            LogError($"LoadBlgFileWithRelogAsync failed: {ex}");
-            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
-            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。\n場所: {logPath}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            // プログレスバーを非表示
-            ProgressGrid.Visibility = Visibility.Collapsed;
-            // analyzernはDisposeしない（カウンター選択時にCSVファイルを読み取るため）
-            // 代わりにウィンドウクローズ時にDispose
-            if (analyzer != null)
-            {
-                // 現在のアナライザーを保持（プロパティまたはフィールドで管理する必要がある）
-                _currentRelogAnalyzer = analyzer;
-            }
         }
     }
 
@@ -723,63 +510,19 @@ public partial class MainWindow : Window
                 if (checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
                 {
                     System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked for: {counter}");
-                    LogError($"Counter checked: {counter}");
                     
-                    // 選択されたカウンターリストに追加
-                    _selectedCountersForRelog.Add(counter);
-                    UpdateRelogExecuteButtonState();
-                    UpdateRelogStatus($"カウンター選択: {GetCounterDisplayName(counter)}", $"選択済み: {_selectedCountersForRelog.Count}個");
-                    
-                    // relog.exeアナライザーが利用可能な場合のみ、即座にデータを読み込み
-                    if (_currentRelogAnalyzer != null)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"_counterData contains counter: {_counterData.ContainsKey(counter)}");
-                        
-                        if (_counterData.ContainsKey(counter))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
-                            // データが既にある場合は即座にタブを作成
-                            AddCounterTab(counter);
-                        }
-                        else
-                        {
-                            // データがない場合は手動実行ボタンまたは自動実行を促す
-                            System.Diagnostics.Debug.WriteLine($"Data not loaded yet for: {counter}");
-                            LogError($"Data not loaded yet for counter: {counter}");
-                            
-                            // 自動でデータ読み込みを実行
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await LoadSingleCounterDataAsync(counter);
-                                }
-                                catch (Exception ex)
-                                {
-                                    LogError($"Auto-load failed for {counter}: {ex.Message}");
-                                }
-                            });
-                        }
-                    }
-                    else
-                    {
-                        // PDH APIを使用している場合
-                        if (_counterData.ContainsKey(counter))
-                        {
-                            AddCounterTab(counter);
-                        }
-                    }
+                    // 自動データ読み込みは行わず、チェック状態のみ保持
+                    // 実際のデータ読み込みは「実行」ボタンで行う
+                    System.Diagnostics.Debug.WriteLine($"Counter {counter} marked for execution");
                 }
                 else
                 {
                     System.Diagnostics.Debug.WriteLine($"CheckBox Tag is not a valid string. Tag: {checkBox.Tag}");
-                    LogError($"Invalid checkbox tag: {checkBox.Tag}");
                 }
             }
             else
             {
                 System.Diagnostics.Debug.WriteLine("Sender is not a CheckBox");
-                LogError("Sender is not a CheckBox in CounterCheckBox_Checked");
             }
         }
         catch (Exception ex)
@@ -798,13 +541,8 @@ public partial class MainWindow : Window
             if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
             {
                 System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for: {counter}");
-                LogError($"Counter unchecked: {counter}");
                 
-                // 選択されたカウンターリストから削除
-                _selectedCountersForRelog.Remove(counter);
-                UpdateRelogExecuteButtonState();
-                UpdateRelogStatus($"カウンター選択解除: {GetCounterDisplayName(counter)}", $"選択済み: {_selectedCountersForRelog.Count}個");
-                
+                // チェック解除時はデータテーブルからも削除
                 RemoveCounterFromChart(counter);
             }
         }
@@ -817,47 +555,27 @@ public partial class MainWindow : Window
 
 
 
-    private async void AddCounterToChart(string counter)
+    private void AddCounterToChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
         
         if (!_counterData.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
+            System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
             
-            // relog.exeアナライザーが利用可能な場合、動的にデータを読み込み
-            if (_currentRelogAnalyzer != null)
-            {
-                try
-                {
-                    System.Diagnostics.Debug.WriteLine($"Loading counter data dynamically with relog analyzer: {counter}");
-                    await LoadSingleCounterDataAsync(counter);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Failed to load counter data: {ex.Message}");
-                    LogError($"Failed to load counter data for {counter}: {ex}");
-                    MessageBox.Show($"カウンターデータの読み込みに失敗しました: {ex.Message}", 
-                                  "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
-                
-                // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
-                System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
-                return;
-            }
+            // カウンターデータが存在しない場合は何もしない（ファイルに含まれるデータのみ処理）
+            System.Diagnostics.Debug.WriteLine($"Counter data not available for: {counter}");
+            return;
         }
 
-        // データが読み込まれた場合はタブを作成
-        if (_counterData.ContainsKey(counter))
-        {
-            System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
-            AddCounterTab(counter);
-        }
+        System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
+        
+        // ScottPlot機能は現在無効化されています
+        // チャート表示機能は後で実装される予定です
+        
+        // データテーブルタブを作成（チェックボックス経由）
+        AddCounterTab(counter);
     }
 
     private void RemoveCounterFromChart(string counter)
@@ -1185,48 +903,14 @@ public partial class MainWindow : Window
                 foreach (var counterNode in instanceNode.Children)
                 {
                     counterNode.IsChecked = isChecked;
-                    
-                    // 選択状態に応じてrelog対象リストを更新
-                    if (isChecked)
-                    {
-                        _selectedCountersForRelog.Add(counterNode.FullPath);
-                    }
-                    else
-                    {
-                        _selectedCountersForRelog.Remove(counterNode.FullPath);
-                    }
                 }
             }
         }
-        
-        UpdateRelogExecuteButtonState();
-        UpdateRelogStatus(isChecked ? "すべて選択" : "すべて解除", $"選択済み: {_selectedCountersForRelog.Count}個");
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e)
     {
-        CleanupResources();
         Application.Current.Shutdown();
-    }
-
-    protected override void OnClosed(EventArgs e)
-    {
-        CleanupResources();
-        base.OnClosed(e);
-    }
-
-    private void CleanupResources()
-    {
-        try
-        {
-            _currentRelogAnalyzer?.Dispose();
-            _currentRelogAnalyzer = null;
-            _selectedCountersForRelog.Clear();
-        }
-        catch (Exception ex)
-        {
-            LogError($"Error during cleanup: {ex.Message}");
-        }
     }
 
 
@@ -1343,335 +1027,448 @@ public partial class MainWindow : Window
         }
     }
 
-    #region 時間範囲選択機能
-
     /// <summary>
-    /// 開始時刻スライダーの値変更イベント
+    /// BLGファイルの時間範囲を検出する
     /// </summary>
-    private void StartTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private async Task<bool> DetectTimeRangeAsync(string blgFilePath, IProgress<string>? progress = null)
     {
-        if (_isTimeRangeUpdateInProgress || _fullTimeRange == null)
-            return;
-
-        var percentage = e.NewValue / 100.0;
-        var totalDuration = _fullTimeRange.Duration;
-        _selectedStartTime = _fullTimeRange.StartTime.Add(TimeSpan.FromTicks((long)(totalDuration.Ticks * percentage)));
-        
-        // 開始時刻が終了時刻を超えないように調整
-        if (_selectedEndTime.HasValue && _selectedStartTime > _selectedEndTime)
+        try
         {
-            _isTimeRangeUpdateInProgress = true;
-            EndTimeSlider.Value = e.NewValue;
-            _selectedEndTime = _selectedStartTime;
-            _isTimeRangeUpdateInProgress = false;
+            progress?.Report("BLGファイルの時間範囲を検出中...");
+            
+            // relog.exe を使用してBLGファイルの情報を取得
+            var tempCsvPath = Path.GetTempFileName();
+            
+            try
+            {
+                var processInfo = new ProcessStartInfo
+                {
+                    FileName = "relog.exe",
+                    Arguments = $"\"{blgFilePath}\" -f CSV -o \"{tempCsvPath}\" -y",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                using var process = new Process { StartInfo = processInfo };
+                process.Start();
+                
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                
+                await process.WaitForExitAsync();
+                
+                if (process.ExitCode == 0 && File.Exists(tempCsvPath))
+                {
+                    // CSVファイルから最初と最後のタイムスタンプを取得
+                    var lines = await File.ReadAllLinesAsync(tempCsvPath, Encoding.UTF8);
+                    if (lines.Length >= 2)
+                    {
+                        // ヘッダー行をスキップして最初のデータ行を取得
+                        var firstDataLine = lines.Skip(1).FirstOrDefault(line => !string.IsNullOrWhiteSpace(line));
+                        var lastDataLine = lines.Skip(1).LastOrDefault(line => !string.IsNullOrWhiteSpace(line));
+                        
+                        if (firstDataLine != null && lastDataLine != null)
+                        {
+                            var firstTimestamp = ParseTimestampFromCsvLine(firstDataLine);
+                            var lastTimestamp = ParseTimestampFromCsvLine(lastDataLine);
+                            
+                            if (firstTimestamp.HasValue && lastTimestamp.HasValue)
+                            {
+                                _fileStartTime = firstTimestamp.Value;
+                                _fileEndTime = lastTimestamp.Value;
+                                _timeRangeDetected = true;
+                                
+                                // UIを更新
+                                UpdateTimeRangeUI();
+                                
+                                LogError($"Time range detected: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                                return true;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    LogError($"relog.exe failed. Exit code: {process.ExitCode}, Error: {error}");
+                }
+            }
+            finally
+            {
+                // 一時ファイルを削除
+                if (File.Exists(tempCsvPath))
+                {
+                    try { File.Delete(tempCsvPath); } catch { }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"Time range detection failed: {ex.Message}");
         }
         
-        UpdateSelectedTimeRangeDisplay();
+        return false;
     }
 
     /// <summary>
-    /// 終了時刻スライダーの値変更イベント
+    /// CSV行からタイムスタンプを解析
     /// </summary>
-    private void EndTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private DateTime? ParseTimestampFromCsvLine(string csvLine)
     {
-        if (_isTimeRangeUpdateInProgress || _fullTimeRange == null)
-            return;
-
-        var percentage = e.NewValue / 100.0;
-        var totalDuration = _fullTimeRange.Duration;
-        _selectedEndTime = _fullTimeRange.StartTime.Add(TimeSpan.FromTicks((long)(totalDuration.Ticks * percentage)));
-        
-        // 終了時刻が開始時刻より前にならないように調整
-        if (_selectedStartTime.HasValue && _selectedEndTime < _selectedStartTime)
+        try
         {
-            _isTimeRangeUpdateInProgress = true;
-            StartTimeSlider.Value = e.NewValue;
-            _selectedStartTime = _selectedEndTime;
-            _isTimeRangeUpdateInProgress = false;
+            var parts = csvLine.Split(',');
+            if (parts.Length > 0)
+            {
+                var timestampStr = parts[0].Trim('"');
+                if (DateTime.TryParse(timestampStr, out var timestamp))
+                {
+                    return timestamp;
+                }
+            }
         }
-        
-        UpdateSelectedTimeRangeDisplay();
+        catch (Exception ex)
+        {
+            LogError($"Failed to parse timestamp from CSV line: {ex.Message}");
+        }
+        return null;
     }
 
     /// <summary>
-    /// 選択された時間範囲表示を更新
+    /// 時間範囲UIを更新
     /// </summary>
-    private void UpdateSelectedTimeRangeDisplay()
+    private void UpdateTimeRangeUI()
     {
-        if (!_selectedStartTime.HasValue || !_selectedEndTime.HasValue)
+        if (_timeRangeDetected)
         {
-            SelectedTimeRangeDisplay.Text = "選択範囲: 全期間";
-            return;
+            TimeRangeExpander.Visibility = Visibility.Visible;
+            TimeRangeDisplay.Text = $"{_fileStartTime:yyyy/MM/dd HH:mm:ss} ～ {_fileEndTime:yyyy/MM/dd HH:mm:ss}";
+            
+            // スライダーを初期化
+            StartTimeSlider.Minimum = 0;
+            StartTimeSlider.Maximum = 100;
+            StartTimeSlider.Value = 0;
+            
+            EndTimeSlider.Minimum = 0;
+            EndTimeSlider.Maximum = 100;
+            EndTimeSlider.Value = 100;
+            
+            UpdateTimeSliderTexts();
+            
+            // 実行ボタンを有効化
+            ExecuteButton.IsEnabled = true;
         }
-
-        var duration = _selectedEndTime.Value - _selectedStartTime.Value;
-        var formattedDuration = duration.TotalHours >= 1 
-            ? $"{duration.TotalHours:F1}時間" 
-            : $"{duration.TotalMinutes:F0}分";
-
-        SelectedTimeRangeDisplay.Text = $"選択範囲: {_selectedStartTime:MM/dd HH:mm:ss} ～ {_selectedEndTime:MM/dd HH:mm:ss} ({formattedDuration})";
+        else
+        {
+            TimeRangeExpander.Visibility = Visibility.Collapsed;
+            ExecuteButton.IsEnabled = false;
+        }
     }
 
     /// <summary>
-    /// 時間範囲適用ボタンのクリックイベント
+    /// スライダーのテキスト表示を更新
     /// </summary>
-    private async void ApplyTimeRange_Click(object sender, RoutedEventArgs e)
+    private void UpdateTimeSliderTexts()
     {
-        if (_currentBlgFile == null || !_selectedStartTime.HasValue || !_selectedEndTime.HasValue)
+        if (_timeRangeDetected)
+        {
+            var totalDuration = _fileEndTime - _fileStartTime;
+            var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
+            var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
+            
+            var selectedStartTime = _fileStartTime + startOffset;
+            var selectedEndTime = _fileStartTime + endOffset;
+            
+            StartTimeText.Text = selectedStartTime.ToString("MM/dd HH:mm:ss");
+            EndTimeText.Text = selectedEndTime.ToString("MM/dd HH:mm:ss");
+        }
+    }
+
+    /// <summary>
+    /// 時間範囲スライダーの値変更イベント
+    /// </summary>
+    private void TimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_timeRangeDetected)
+        {
+            // 開始時間が終了時間を超えないように調整
+            if (StartTimeSlider.Value >= EndTimeSlider.Value)
+            {
+                if (sender == StartTimeSlider)
+                {
+                    EndTimeSlider.Value = Math.Min(100, StartTimeSlider.Value + 1);
+                }
+                else
+                {
+                    StartTimeSlider.Value = Math.Max(0, EndTimeSlider.Value - 1);
+                }
+            }
+            
+            UpdateTimeSliderTexts();
+        }
+    }
+
+    /// <summary>
+    /// 選択されたカウンターを実行するボタンのクリックイベント
+    /// </summary>
+    private async void ExecuteSelectedCounters_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_currentBlgFile) || !_timeRangeDetected)
+        {
+            MessageBox.Show("BLGファイルが読み込まれていないか、時間範囲が検出されていません。", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
+        }
+
+        var selectedCounters = GetSelectedCounters();
+        if (selectedCounters.Count == 0)
+        {
+            MessageBox.Show("実行するカウンターが選択されていません。\nチェックボックスを選択してからボタンを押してください。", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         try
         {
             // プログレスバーを表示
             ProgressGrid.Visibility = Visibility.Visible;
-            ProgressStatusText.Text = "選択された時間範囲でBLGファイルを再読み込み中...";
+            ProgressStatusText.Text = $"選択されたカウンター ({selectedCounters.Count}個) を処理中...";
             
-            // UI状態をリセット
-            _counterTreeNodes.Clear();
-            DataTabControl.Items.Clear();
-            _counterData.Clear();
-
-            var progress = new Progress<string>(status => 
-            {
-                ProgressStatusText.Text = status;
-                LogError($"Time Range Relog Progress: {status}");
-            });
+            ExecuteButton.IsEnabled = false;
             
-            // 新しいアナライザーで時間範囲指定してCSV変換
-            var analyzer = new RelogCsvAnalyzer();
+            var progress = new Progress<string>(status => ProgressStatusText.Text = status);
             
-            var converted = await analyzer.ConvertBlgToCsvAsync(_currentBlgFile, progress, _selectedStartTime, _selectedEndTime);
-            if (!converted)
-            {
-                throw new Exception("指定された時間範囲でのCSV変換に失敗しました。");
-            }
+            // 選択された時間範囲を計算
+            var totalDuration = _fileEndTime - _fileStartTime;
+            var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
+            var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
             
-            // 古いアナライザーを破棄して新しいものに置き換え
-            _currentRelogAnalyzer?.Dispose();
-            _currentRelogAnalyzer = analyzer;
+            var selectedStartTime = _fileStartTime + startOffset;
+            var selectedEndTime = _fileStartTime + endOffset;
             
-            // 利用可能なカウンターを取得
-            var counters = await analyzer.GetAvailableCountersAsync(progress);
+            await ExecuteRelogForSelectedCounters(selectedCounters, selectedStartTime, selectedEndTime, progress);
             
-            if (counters.Count == 0)
-            {
-                throw new Exception("指定された時間範囲にデータが見つかりませんでした。");
-            }
-            
-            // 階層構造を作成
-            ProgressStatusText.Text = "カウンター階層を構築中...";
-            BuildCounterTree(counters);
-
-            NoDataMessage.Visibility = Visibility.Collapsed;
-            
-            var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
-            var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
-            
-            MessageBox.Show($"指定された時間範囲でBLGファイルが再読み込みされました。\n\n" +
-                           $"📅 時間範囲: {_selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {_selectedEndTime:yyyy/MM/dd HH:mm:ss}\n" +
-                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
-                           $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個\n\n" +
-                           $"⭐ 左側のツリーからカウンターを選択してデータを表示できます。", 
-                          "時間範囲読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"カウンターデータの読み込みが完了しました。\n\n" +
+                           $"処理されたカウンター数: {selectedCounters.Count}個\n" +
+                           $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}",
+                           "処理完了", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"時間範囲での再読み込みに失敗しました: {ex.Message}", 
+            MessageBox.Show($"カウンターデータの処理に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Time range reload failed: {ex}");
+            LogError($"Execute selected counters failed: {ex}");
         }
         finally
         {
             ProgressGrid.Visibility = Visibility.Collapsed;
-        }
-    }
-
-    #endregion
-
-    #region relog実行機能
-
-    /// <summary>
-    /// 単一カウンターのデータを非同期で読み込み
-    /// </summary>
-    private async Task LoadSingleCounterDataAsync(string counter)
-    {
-        if (_currentRelogAnalyzer == null)
-            return;
-
-        try
-        {
-            await Dispatcher.InvokeAsync(() =>
-            {
-                UpdateRelogStatus($"データ読み込み中: {GetCounterDisplayName(counter)}", "CSVファイルを解析中...");
-            });
-
-            var progress = new Progress<string>(status =>
-            {
-                Dispatcher.InvokeAsync(() =>
-                {
-                    UpdateRelogStatus($"処理中: {GetCounterDisplayName(counter)}", status);
-                });
-            });
-
-            var counterData = await _currentRelogAnalyzer.LoadCounterDataAsync(counter, progress);
-
-            if (counterData != null && counterData.DataPoints.Count > 0)
-            {
-                var dataPoints = new List<PerformanceDataPoint>();
-
-                foreach (var dataPoint in counterData.DataPoints)
-                {
-                    if (dataPoint.IsValid)
-                    {
-                        var unit = EstimateUnit(counter);
-                        var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
-
-                        dataPoints.Add(new PerformanceDataPoint
-                        {
-                            Counter = counter,
-                            Value = dataPoint.Value,
-                            Timestamp = dataPoint.Timestamp,
-                            FormattedValue = formattedValue,
-                            Unit = unit
-                        });
-                    }
-                }
-
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    _counterData[counter] = dataPoints;
-                    AddCounterTab(counter);
-                    UpdateRelogStatus($"完了: {GetCounterDisplayName(counter)}", $"データポイント: {dataPoints.Count}個");
-                });
-
-                LogError($"Successfully loaded {dataPoints.Count} data points for: {counter}");
-            }
-            else
-            {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    UpdateRelogStatus($"データなし: {GetCounterDisplayName(counter)}", "有効なデータポイントが見つかりませんでした");
-                });
-                LogError($"No valid data points found for: {counter}");
-            }
-        }
-        catch (Exception ex)
-        {
-            await Dispatcher.InvokeAsync(() =>
-            {
-                UpdateRelogStatus($"エラー: {GetCounterDisplayName(counter)}", ex.Message);
-            });
-            LogError($"Failed to load counter data for {counter}: {ex}");
+            ExecuteButton.IsEnabled = true;
         }
     }
 
     /// <summary>
-    /// 手動実行ボタンのクリックイベント
+    /// 選択されたカウンターの一覧を取得
     /// </summary>
-    private async void ExecuteRelog_Click(object sender, RoutedEventArgs e)
+    private List<string> GetSelectedCounters()
     {
-        if (_isRelogExecuting || _selectedCountersForRelog.Count == 0 || _currentRelogAnalyzer == null)
-            return;
-
-        try
+        var selected = new List<string>();
+        
+        foreach (var objectNode in _counterTreeNodes)
         {
-            _isRelogExecuting = true;
-            UpdateRelogExecuteButtonState();
-
-            var selectedCounters = _selectedCountersForRelog.ToList();
-            UpdateRelogStatus("バッチ実行開始", $"対象カウンター: {selectedCounters.Count}個");
-
-            var processedCount = 0;
-            var errorCount = 0;
-
-            foreach (var counter in selectedCounters)
+            foreach (var instanceNode in objectNode.Children)
             {
-                try
+                foreach (var counterNode in instanceNode.Children)
                 {
-                    if (!_counterData.ContainsKey(counter))
+                    if (counterNode.IsChecked)
                     {
-                        await LoadSingleCounterDataAsync(counter);
-                        processedCount++;
+                        selected.Add(counterNode.FullPath);
                     }
-                    else
-                    {
-                        // 既にデータがある場合はタブが存在するか確認してタブを作成
-                        await Dispatcher.InvokeAsync(() =>
-                        {
-                            var existingTab = DataTabControl.Items.Cast<TabItem>()
-                                .FirstOrDefault(tab => (string)tab.Tag == counter);
-                            if (existingTab == null)
-                            {
-                                AddCounterTab(counter);
-                            }
-                        });
-                        processedCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                    LogError($"Failed to process counter {counter}: {ex.Message}");
                 }
             }
+        }
+        
+        return selected;
+    }
 
-            UpdateRelogStatus("バッチ実行完了", $"成功: {processedCount}個, エラー: {errorCount}個");
-
-            if (errorCount == 0)
+    /// <summary>
+    /// 選択されたカウンターに対してrelog.exeを実行
+    /// </summary>
+    private async Task ExecuteRelogForSelectedCounters(List<string> counters, DateTime startTime, DateTime endTime, IProgress<string>? progress)
+    {
+        var tempCsvPath = Path.GetTempFileName();
+        
+        try
+        {
+            progress?.Report("relog.exe でCSVファイルを生成中...");
+            
+            // relog.exe で指定された時間範囲とカウンターでCSV生成
+            var arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
+                           $"-b \"{startTime:MM/dd/yyyy HH:mm:ss}\" " +
+                           $"-e \"{endTime:MM/dd/yyyy HH:mm:ss}\" -y";
+            
+            // 特定のカウンターのみを指定する場合（relog.exeの制限により全カウンターを一度取得）
+            var processInfo = new ProcessStartInfo
             {
-                MessageBox.Show($"選択されたカウンターのデータ読み込みが完了しました。\n\n" +
-                               $"✅ 処理完了: {processedCount}個\n" +
-                               $"📊 データテーブルタブが作成されました。",
-                               "relog実行完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                FileName = "relog.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+
+            using var process = new Process { StartInfo = processInfo };
+            process.Start();
+            
+            await process.WaitForExitAsync();
+            
+            if (process.ExitCode == 0 && File.Exists(tempCsvPath))
+            {
+                progress?.Report("CSVデータを解析中...");
+                await LoadSelectedCountersFromCsv(tempCsvPath, counters, progress);
             }
             else
             {
-                MessageBox.Show($"カウンターデータの読み込みが完了しました。\n\n" +
-                               $"✅ 成功: {processedCount}個\n" +
-                               $"❌ エラー: {errorCount}個\n\n" +
-                               $"詳細はerror.logファイルを確認してください。",
-                               "relog実行完了（一部エラーあり）", MessageBoxButton.OK, MessageBoxImage.Warning);
+                var error = await process.StandardError.ReadToEndAsync();
+                throw new Exception($"relog.exe の実行に失敗しました。Exit code: {process.ExitCode}, Error: {error}");
             }
-        }
-        catch (Exception ex)
-        {
-            UpdateRelogStatus("実行エラー", ex.Message);
-            MessageBox.Show($"relog実行中にエラーが発生しました: {ex.Message}",
-                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"ExecuteRelog_Click failed: {ex}");
         }
         finally
         {
-            _isRelogExecuting = false;
-            UpdateRelogExecuteButtonState();
+            // 一時ファイルを削除
+            if (File.Exists(tempCsvPath))
+            {
+                try { File.Delete(tempCsvPath); } catch { }
+            }
         }
     }
 
     /// <summary>
-    /// relog実行状況を更新
+    /// CSVファイルから選択されたカウンターのデータを読み込み
     /// </summary>
-    private void UpdateRelogStatus(string currentTask, string progressDetail)
+    private async Task LoadSelectedCountersFromCsv(string csvPath, List<string> selectedCounters, IProgress<string>? progress)
     {
-        CurrentProcessingCounter.Text = $"処理中のカウンター: {currentTask}";
-        RelogProgressText.Text = progressDetail;
+        await Task.Run(() =>
+        {
+            var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
+            if (lines.Length < 2) return;
+            
+            var headers = ParseCsvLine(lines[0]);
+            var counterColumns = new Dictionary<string, int>();
+            
+            // ヘッダーから該当するカウンターのカラムインデックスを取得
+            for (int i = 1; i < headers.Count; i++)
+            {
+                var headerName = headers[i];
+                var matchingCounter = selectedCounters.FirstOrDefault(c => 
+                    headerName.Contains(c) || c.Contains(headerName) || 
+                    NormalizeCounterPath(c) == NormalizeCounterPath(headerName));
+                
+                if (!string.IsNullOrEmpty(matchingCounter))
+                {
+                    counterColumns[matchingCounter] = i;
+                }
+            }
+            
+            progress?.Report($"対象カウンター {counterColumns.Count}個 のデータを読み込み中...");
+            
+            // 各カウンターのデータを読み込み
+            foreach (var kvp in counterColumns)
+            {
+                var counterPath = kvp.Key;
+                var columnIndex = kvp.Value;
+                var dataPoints = new List<PerformanceDataPoint>();
+                
+                for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
+                {
+                    var values = ParseCsvLine(lines[lineIndex]);
+                    if (values.Count > columnIndex)
+                    {
+                        if (DateTime.TryParse(values[0], out var timestamp) &&
+                            double.TryParse(values[columnIndex], out var value))
+                        {
+                            var unit = EstimateUnit(counterPath);
+                            var formattedValue = FormatValueWithUnit(value, unit);
+                            
+                            dataPoints.Add(new PerformanceDataPoint
+                            {
+                                Counter = counterPath,
+                                Value = value,
+                                Timestamp = timestamp,
+                                FormattedValue = formattedValue,
+                                Unit = unit
+                            });
+                        }
+                    }
+                }
+                
+                if (dataPoints.Count > 0)
+                {
+                    _counterData[counterPath] = dataPoints;
+                    
+                    // UIスレッドでデータテーブルを更新
+                    Dispatcher.Invoke(() =>
+                    {
+                        AddCounterTab(counterPath);
+                    });
+                }
+            }
+        });
     }
 
     /// <summary>
-    /// relog実行ボタンの状態を更新
+    /// カウンターパスを正規化（比較用）
     /// </summary>
-    private void UpdateRelogExecuteButtonState()
+    private string NormalizeCounterPath(string path)
     {
-        ExecuteRelogButton.IsEnabled = !_isRelogExecuting && 
-                                      _selectedCountersForRelog.Count > 0 && 
-                                      _currentRelogAnalyzer != null;
-        
-        ExecuteRelogButton.Content = _isRelogExecuting ? 
-            "🔄 実行中..." : 
-            $"🚀 選択されたカウンターでrelog実行 ({_selectedCountersForRelog.Count}個)";
+        return path.Replace("\\", "/").Replace("\"", "").Trim().ToLowerInvariant();
     }
 
-    #endregion
+    /// <summary>
+    /// CSV行を解析（カンマ区切り、ダブルクォート対応）
+    /// </summary>
+    private List<string> ParseCsvLine(string csvLine)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        bool inQuotes = false;
+        
+        for (int i = 0; i < csvLine.Length; i++)
+        {
+            char c = csvLine[i];
+            
+            if (c == '"')
+            {
+                if (inQuotes && i + 1 < csvLine.Length && csvLine[i + 1] == '"')
+                {
+                    // エスケープされたダブルクォート
+                    current.Append('"');
+                    i++; // 次の文字をスキップ
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        
+        result.Add(current.ToString());
+        return result;
+    }
 
     private void LogError(string message)
     {
