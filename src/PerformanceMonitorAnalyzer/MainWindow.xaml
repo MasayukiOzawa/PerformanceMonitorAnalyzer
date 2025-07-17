@@ -27,7 +27,7 @@
         <!-- 上部: カウンター選択とグラフ表示 -->
         <Grid Grid.Row="1" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="350"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -36,17 +36,39 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="選択してグラフに表示:" Margin="5"/>
+                    <!-- ファイル名表示 -->
+                    <TextBlock Grid.Row="0" x:Name="FileNameDisplay" 
+                             Text="ファイルが選択されていません" 
+                             Margin="5,5,5,10" 
+                             FontWeight="Bold"
+                             Foreground="DarkBlue"
+                             TextWrapping="Wrap"/>
                     
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="CounterPanel" Margin="5"/>
+                    <TextBlock Grid.Row="1" Text="選択してグラフに表示:" Margin="5,0,5,5"/>
+                    
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <TreeView x:Name="CounterTreeView" Margin="5">
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding IsChecked}" 
+                                                Checked="CounterCheckBox_Checked"
+                                                Unchecked="CounterCheckBox_Unchecked"
+                                                Tag="{Binding FullPath}"
+                                                Visibility="{Binding CheckBoxVisibility}"/>
+                                        <TextBlock Text="{Binding DisplayName}" Margin="5,0,0,0"/>
+                                    </StackPanel>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
                     </ScrollViewer>
 
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="すべて選択" Click="SelectAll_Click" Margin="0,0,5,0"/>
                         <Button Content="すべて解除" Click="UnselectAll_Click"/>
                     </StackPanel>
