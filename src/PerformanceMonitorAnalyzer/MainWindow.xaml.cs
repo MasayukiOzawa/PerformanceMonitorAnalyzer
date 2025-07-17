@@ -777,8 +777,12 @@ public partial class MainWindow : Window
             LogError($"CSV export failed: {ex}");
         }
     }
+
+    /// <summary>
+    /// カウンター名を短縮して表示用の名前を生成
+    /// </summary>
+    private string GetCounterDisplayName(string counter)
     {
-        // カウンター名を短縮して表示用の名前を生成
         var parts = counter.Split('\\');
         if (parts.Length >= 3)
         {
