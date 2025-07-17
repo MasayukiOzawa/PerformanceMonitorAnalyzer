@@ -638,11 +638,17 @@ public class BlgFileAnalyzer : IDisposable
 
             if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
             {
-                // Unicodeバッファを確保（2バイト文字、文字数単位でサイズ指定）
+                // Unicodeバッファを確保（文字数単位でサイズ指定、1文字=2バイト）
                 IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2);
 
                 try
                 {
+                    // バッファをゼロで初期化
+                    for (int i = 0; i < bufferSize * 2; i++)
+                    {
+                        Marshal.WriteByte(buffer, i, 0);
+                    }
+
                     result = PdhApi.PdhEnumObjectsH(
                         _dataSource,
                         machineName,
@@ -655,23 +661,51 @@ public class BlgFileAnalyzer : IDisposable
 
                     if (result == PdhApi.ERROR_SUCCESS)
                     {
-                        // Unicode文字列として解析
-                        var rawData = Marshal.PtrToStringUni(buffer);
-                        progress?.Report($"PdhEnumObjectsH 生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
-
-                        if (!string.IsNullOrEmpty(rawData))
+                        // 手動でUnicode文字列を解析（複数のnull終端文字列を処理）
+                        var objectNames = new List<string>();
+                        var currentString = new StringBuilder();
+                        
+                        // 文字単位で処理（bufferSizeは文字数）
+                        for (int i = 0; i < bufferSize; i++)
                         {
-                            // null文字で分割して複数のオブジェクト名を取得
-                            var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                            progress?.Report($"PdhEnumObjectsH 分割後のオブジェクト数: {objectNames.Length}");
-
-                            for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
+                            // 2バイトずつ読み取ってUnicode文字を取得
+                            char ch = (char)Marshal.ReadInt16(buffer, i * 2);
+                            
+                            if (ch == '\0')
                             {
-                                progress?.Report($"PdhEnumObjectsH オブジェクト[{i}]: '{objectNames[i]}'");
+                                // null文字の場合、現在の文字列を完了
+                                if (currentString.Length > 0)
+                                {
+                                    objectNames.Add(currentString.ToString());
+                                    currentString.Clear();
+                                }
+                                // 連続するnull文字は文字列リストの終端を示す
+                                else if (objectNames.Count > 0)
+                                {
+                                    break;
+                                }
                             }
-
-                            objects.AddRange(objectNames);
+                            else
+                            {
+                                // 通常の文字を追加
+                                currentString.Append(ch);
+                            }
                         }
+                        
+                        // 最後の文字列が残っている場合は追加
+                        if (currentString.Length > 0)
+                        {
+                            objectNames.Add(currentString.ToString());
+                        }
+
+                        progress?.Report($"PdhEnumObjectsH 分割後のオブジェクト数: {objectNames.Count}");
+
+                        for (int i = 0; i < Math.Min(objectNames.Count, 10); i++)
+                        {
+                            progress?.Report($"PdhEnumObjectsH オブジェクト[{i}]: '{objectNames[i]}'");
+                        }
+
+                        objects.AddRange(objectNames);
                     }
                     else
                     {
