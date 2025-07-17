@@ -112,6 +112,7 @@ public partial class MainWindow : Window
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
     private BlgFileAnalyzer? _blgAnalyzer;
+    private BlgFileAnalyzerSimple? _safeBlgAnalyzer;
 
     public MainWindow()
     {
@@ -120,7 +121,10 @@ public partial class MainWindow : Window
         CounterTreeView.ItemsSource = _counterTreeNodes;
         
         // ウィンドウが閉じられる時のクリーンアップ処理
-        Closed += (sender, e) => _blgAnalyzer?.Dispose();
+        Closed += (sender, e) => {
+            _blgAnalyzer?.Dispose();
+            _safeBlgAnalyzer?.Dispose();
+        };
     }
 
     private void InitializeChart()
@@ -253,30 +257,34 @@ public partial class MainWindow : Window
         
         try
         {
-            progress?.Report("PDH APIを使用してBLGファイルを解析中...");
-            LogError($"Starting PDH API parsing for file: {fileName}");
+            progress?.Report("安全なPDH APIを使用してBLGファイルを解析中...");
+            LogError($"Starting safe PDH API parsing for file: {fileName}");
             
             // 前のアナライザーがあれば廃棄
             _blgAnalyzer?.Dispose();
-            _blgAnalyzer = new BlgFileAnalyzer();
+            _blgAnalyzer = null; // 旧アナライザーを無効化
+            
+            // 新しい安全なアナライザーを使用
+            var safeAnalyzer = new BlgFileAnalyzerSimple();
             
             // BLGファイルを開く
-            var opened = await _blgAnalyzer.OpenBlgFileAsync(fileName, progress);
+            var opened = await safeAnalyzer.OpenBlgFileAsync(fileName, progress);
             if (!opened)
             {
                 throw new Exception("BLGファイルを開くことができませんでした。");
             }
             
-            // BLGファイルから実際に利用可能なカウンターパスを取得
-            counters = await _blgAnalyzer.GetAvailableCounterPathsAsync(progress);
+            // アナライザーを保存（カウンター読み込み時に使用）
+            _safeBlgAnalyzer = safeAnalyzer;
             
-            LogError($"PDH API parsing completed with {counters.Count} counters");
+            // BLGファイルから実際に利用可能なカウンターパスを取得
+            counters = await safeAnalyzer.GetAvailableCounterPathsAsync(progress);
+            
+            LogError($"Safe PDH API parsing completed with {counters.Count} counters");
             
             if (counters.Count > 0)
             {
                 progress?.Report("カウンターパス準備完了...");
-                // カウンターデータは要求時に動的に読み込む
-                await LoadCounterDataWithPdhApiAsync(_blgAnalyzer, counters, progress);
                 return counters;
             }
             else
@@ -287,33 +295,14 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            LogError($"PDH API execution failed: {ex.Message}");
-            _blgAnalyzer?.Dispose();
-            _blgAnalyzer = null;
+            LogError($"Safe PDH API execution failed: {ex.Message}");
+            _safeBlgAnalyzer?.Dispose();
+            _safeBlgAnalyzer = null;
             throw new Exception($"PDH API解析エラー: {ex.Message}", ex);
         }
     }
 
 
-
-    private async Task LoadCounterDataWithPdhApiAsync(BlgFileAnalyzer analyzer, List<string> counters, IProgress<string>? progress)
-    {
-        try
-        {
-            progress?.Report("パフォーマンスデータを取得中...");
-            LogError($"Loading counter data for {counters.Count} counters using PDH API");
-            
-            // カウンターデータは要求時に動的に読み込むため、ここでは何もしない
-            // チェックボックスがクリックされた時に個別に読み込む
-            LogError($"Counter paths stored for on-demand loading: {counters.Count} counters");
-            progress?.Report($"カウンターパス準備完了: {counters.Count}個（データは選択時に読み込み）");
-        }
-        catch (Exception ex)
-        {
-            LogError($"Counter data preparation failed: {ex.Message}");
-            throw;
-        }
-    }
 
     private void BuildCounterTree(List<string> counters)
     {
@@ -513,9 +502,9 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task LoadCounterDataOnDemandAsync(string counter)
     {
-        if (_blgAnalyzer == null)
+        if (_safeBlgAnalyzer == null)
         {
-            LogError("BLG analyzer not available for on-demand loading");
+            LogError("Safe BLG analyzer not available for on-demand loading");
             MessageBox.Show("BLGファイルアナライザーが利用できません。\nファイルを再度読み込んでください。", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -531,18 +520,18 @@ public partial class MainWindow : Window
                 LogError($"LoadCounterData Progress: {status}");
             });
             
-            var counterInfo = await _blgAnalyzer.LoadCounterDataAsync(counter, progress);
+            var dataPoints = await _safeBlgAnalyzer.LoadCounterDataAsync(counter, progress);
             
-            if (counterInfo != null && counterInfo.DataPoints.Count > 0)
+            if (dataPoints != null && dataPoints.Count > 0)
             {
-                var dataPoints = new List<PerformanceDataPoint>();
+                var perfDataPoints = new List<PerformanceDataPoint>();
                 
-                foreach (var dataPoint in counterInfo.DataPoints)
+                foreach (var dataPoint in dataPoints)
                 {
                     var unit = EstimateUnit(counter);
                     var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
                     
-                    dataPoints.Add(new PerformanceDataPoint
+                    perfDataPoints.Add(new PerformanceDataPoint
                     {
                         Counter = counter,
                         Value = dataPoint.Value,
@@ -552,14 +541,34 @@ public partial class MainWindow : Window
                     });
                 }
                 
-                _counterData[counter] = dataPoints;
-                LogError($"Successfully loaded {dataPoints.Count} data points for counter: {counter}");
+                _counterData[counter] = perfDataPoints;
+                LogError($"Successfully loaded {perfDataPoints.Count} data points for counter: {counter}");
                 
                 // 最初と最後のデータポイントの情報をログ出力
-                if (dataPoints.Count > 0)
+                if (perfDataPoints.Count > 0)
                 {
-                    var first = dataPoints.First();
-                    var last = dataPoints.Last();
+                    var first = perfDataPoints.First();
+                    var last = perfDataPoints.Last();
+                    LogError($"First data point: {first.Timestamp:yyyy-MM-dd HH:mm:ss} = {first.FormattedValue}");
+                    LogError($"Last data point: {last.Timestamp:yyyy-MM-dd HH:mm:ss} = {last.FormattedValue}");
+                }
+            }
+            else
+            {
+                LogError($"No data points loaded for counter: {counter}");
+                MessageBox.Show($"カウンター '{counter}' のデータが取得できませんでした。", 
+                              "情報", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"Failed to load data on-demand for counter {counter}: {ex.Message}");
+            LogError($"Exception details: {ex}");
+            
+            MessageBox.Show($"カウンターデータの読み込みに失敗しました。\nカウンター: {counter}\nエラー: {ex.Message}\n\n詳細はerror.logを確認してください。", 
+                          "データ読み込みエラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
                     LogError($"Data range: {first.Timestamp:yyyy-MM-dd HH:mm:ss} to {last.Timestamp:yyyy-MM-dd HH:mm:ss}");
                     LogError($"Sample values: First={first.Value:F2}, Last={last.Value:F2}");
                 }
