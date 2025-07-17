@@ -12,6 +12,8 @@ public class BlgFileAnalyzer : IDisposable
     private IntPtr _dataSource = IntPtr.Zero;
     private IntPtr _query = IntPtr.Zero;
     private bool _disposed = false;
+    private string _filePath = string.Empty;
+    private readonly Dictionary<string, IntPtr> _counterQueries = new();
 
     public class CounterInfo
     {
@@ -45,6 +47,9 @@ public class BlgFileAnalyzer : IDisposable
         }
 
         progress?.Report("BLGファイルを開いています...");
+        
+        // ファイルパスを保存（カウンター読み込み時に使用）
+        _filePath = filePath;
 
         return await Task.Run(() =>
         {
@@ -503,15 +508,16 @@ public class BlgFileAnalyzer : IDisposable
     /// </summary>
     public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
     {
-        if (_query == IntPtr.Zero)
+        if (string.IsNullOrEmpty(_filePath))
         {
-            throw new InvalidOperationException("クエリが開かれていません。");
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
 
         progress?.Report($"カウンターデータを読み込み中: {counterPath}");
 
         return await Task.Run(() =>
         {
+            IntPtr counterQuery = IntPtr.Zero;
             IntPtr counter = IntPtr.Zero;
             var counterInfo = new CounterInfo
             {
@@ -523,8 +529,17 @@ public class BlgFileAnalyzer : IDisposable
 
             try
             {
+                // このカウンター専用のクエリを作成
+                progress?.Report($"カウンター専用クエリを作成中: {counterPath}");
+                uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out counterQuery);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"カウンター専用クエリの作成に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+
                 // カウンターをクエリに追加
-                uint result = PdhApi.PdhAddCounter(_query, counterPath, IntPtr.Zero, out counter);
+                progress?.Report($"カウンターを専用クエリに追加中: {counterPath}");
+                result = PdhApi.PdhAddCounter(counterQuery, counterPath, IntPtr.Zero, out counter);
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
                     throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
@@ -534,12 +549,11 @@ public class BlgFileAnalyzer : IDisposable
 
                 // BLGファイルの場合は履歴データを取得する必要がある
                 // PdhSetQueryTimeRangeを使用してBLGファイル全体のデータを読み込む
-                result = PdhApi.PdhSetQueryTimeRange(_query, IntPtr.Zero);
+                result = PdhApi.PdhSetQueryTimeRange(counterQuery, IntPtr.Zero);
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
                     progress?.Report($"タイムレンジ設定警告: {PdhApi.GetErrorMessage(result)}");
                 }
-
                 // BLGファイルからすべてのデータを読み込むためのループ
                 var allDataPoints = new List<CounterDataPoint>();
                 bool hasMoreData = true;
@@ -550,8 +564,8 @@ public class BlgFileAnalyzer : IDisposable
                 {
                     currentIteration++;
                     
-                    // データを収集
-                    result = PdhApi.PdhCollectQueryData(_query);
+                    // データを収集（専用クエリを使用）
+                    result = PdhApi.PdhCollectQueryData(counterQuery);
                     
                     if (result == PdhApi.ERROR_SUCCESS)
                     {
@@ -737,6 +751,12 @@ public class BlgFileAnalyzer : IDisposable
                 if (counter != IntPtr.Zero)
                 {
                     PdhApi.PdhRemoveCounter(counter);
+                }
+                
+                // 専用クエリをクローズ
+                if (counterQuery != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(counterQuery);
                 }
             }
         });
@@ -1003,6 +1023,16 @@ public class BlgFileAnalyzer : IDisposable
     {
         if (!_disposed)
         {
+            // まず個別のカウンタークエリをクリーンアップ
+            foreach (var query in _counterQueries.Values)
+            {
+                if (query != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(query);
+                }
+            }
+            _counterQueries.Clear();
+
             // クエリを先に閉じる
             if (_query != IntPtr.Zero)
             {
