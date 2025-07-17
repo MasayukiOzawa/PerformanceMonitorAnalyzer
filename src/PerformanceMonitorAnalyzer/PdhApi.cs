@@ -175,7 +175,7 @@ public static class PdhApi
         ref uint pcchBufferSize);
 
     /// <summary>
-    /// データソースを開く
+    /// データソースを開く（BLGファイル専用）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhOpenLog(
@@ -184,8 +184,16 @@ public static class PdhApi
         out uint lpdwLogType,
         IntPtr hQuery,
         uint dwMaxSize,
-        string szUserCaption,
+        string? szUserCaption,
         out IntPtr phDataSource);
+
+    /// <summary>
+    /// PDHクエリにデータソースを結び付ける
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhBindInputDataSource(
+        out IntPtr phDataSource,
+        string szLogFileNameList);
 
     /// <summary>
     /// データソースを閉じる

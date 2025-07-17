@@ -50,36 +50,59 @@ public class BlgFileAnalyzer : IDisposable
         {
             try
             {
-                progress?.Report("BLGファイルをデータソースとして開いています...");
+                // 方法1: PdhBindInputDataSourceを使用
+                progress?.Report("PdhBindInputDataSourceでBLGファイルを開いています...");
+                uint result = PdhApi.PdhBindInputDataSource(out _dataSource, filePath);
                 
-                // BLGファイルをデータソースとして開く（hQueryはNULLを指定）
-                uint result = PdhApi.PdhOpenLog(
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    progress?.Report("PdhBindInputDataSourceでBLGファイルが正常に開かれました");
+                    
+                    // クエリをデータソースと関連付けて作成
+                    result = PdhApi.PdhOpenQuery(filePath, IntPtr.Zero, out _query);
+                    if (result != PdhApi.ERROR_SUCCESS)
+                    {
+                        // データソースをクリーンアップしてから例外を投げる
+                        PdhApi.PdhCloseLog(_dataSource, 0);
+                        _dataSource = IntPtr.Zero;
+                        throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    }
+                    
+                    progress?.Report("PDHクエリが正常に開かれました");
+                    return true;
+                }
+                
+                // 方法1が失敗した場合、方法2: 従来のPdhOpenLogを試行
+                progress?.Report($"PdhBindInputDataSource失敗 ({PdhApi.GetErrorMessage(result)})、PdhOpenLogを試行中...");
+                
+                // まずクエリを開く
+                result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+                
+                progress?.Report("PDHクエリが正常に開かれました");
+                
+                // その後BLGファイルをデータソースとして開く
+                result = PdhApi.PdhOpenLog(
                     filePath,
                     PdhApi.GENERIC_READ,
                     out uint logType,
-                    IntPtr.Zero,  // hQueryはNULLを指定
+                    _query,  // 作成したクエリハンドルを使用
                     0,
-                    string.Empty,
+                    null,
                     out _dataSource);
 
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
+                    // クエリをクリーンアップしてから例外を投げる
+                    PdhApi.PdhCloseQuery(_query);
+                    _query = IntPtr.Zero;
                     throw new Exception($"BLGファイルを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
                 progress?.Report($"BLGファイルが正常に開かれました（ログタイプ: {logType}）");
-
-                // データソースが開かれた後、クエリを作成
-                result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    // データソースをクリーンアップしてから例外を投げる
-                    PdhApi.PdhCloseLog(_dataSource, 0);
-                    _dataSource = IntPtr.Zero;
-                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
-
-                progress?.Report("PDHクエリが正常に開かれました");
                 return true;
             }
             catch (Exception ex)
@@ -487,12 +510,14 @@ public class BlgFileAnalyzer : IDisposable
     {
         if (!_disposed)
         {
+            // クエリを先に閉じる
             if (_query != IntPtr.Zero)
             {
                 PdhApi.PdhCloseQuery(_query);
                 _query = IntPtr.Zero;
             }
 
+            // その後データソースを閉じる
             if (_dataSource != IntPtr.Zero)
             {
                 PdhApi.PdhCloseLog(_dataSource, 0);
