@@ -13,13 +13,17 @@ public static class PdhApi
     // PDH エラーコード
     public const uint PDH_CSTATUS_VALID_DATA = 0x00000000;
     public const uint PDH_CSTATUS_NEW_DATA = 0x00000001;
+    public const uint PDH_CSTATUS_INVALID_DATA = 0xC0000BC0;
+    public const uint PDH_CSTATUS_NO_INSTANCE = 0x800007D1;
     public const uint PDH_MORE_DATA = 0x800007D2;
     public const uint ERROR_SUCCESS = 0;
+    public const uint ERROR_NO_MORE_DATA = 0x103;
 
     // PDH データ形式
     public const uint PDH_FMT_DOUBLE = 0x00000200;
     public const uint PDH_FMT_LARGE = 0x00000400;
     public const uint PDH_FMT_LONG = 0x00000100;
+    public const uint PDH_FMT_NOCAP100 = 0x00008000;
 
     // PDH ログタイプ
     public const uint PDH_LOG_TYPE_BINARY = 0x00000008;
@@ -39,6 +43,31 @@ public static class PdhApi
     {
         public uint CStatus;
         public double doubleValue;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PDH_RAW_COUNTER
+    {
+        public uint CStatus;
+        public ulong TimeStamp;
+        public long FirstValue;
+        public long SecondValue;
+        public uint MultiCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FILETIME
+    {
+        public uint dwLowDateTime;
+        public uint dwHighDateTime;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PDH_RAW_COUNTER_ITEM
+    {
+        public IntPtr szName;          // カウンター名
+        public PDH_RAW_COUNTER RawValue; // 生の値
+        public FILETIME TimeStamp;       // タイムスタンプ
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -176,6 +205,16 @@ public static class PdhApi
         uint dwFormat,
         out uint lpdwType,
         out PDH_FMT_COUNTERVALUE pValue);
+
+    /// <summary>
+    /// 生のカウンター配列を取得（履歴データ用）
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhGetRawCounterArray(
+        IntPtr hCounter,
+        ref uint lpdwBufferSize,
+        out uint lpdwItemCount,
+        IntPtr itemBuffer);
 
     /// <summary>
     /// BLGログファイル内のオブジェクトを列挙（StringBuilder版）

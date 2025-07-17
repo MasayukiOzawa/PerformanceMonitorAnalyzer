@@ -530,35 +530,101 @@ public class BlgFileAnalyzer : IDisposable
                     throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)}");
                 }
 
-                // データを収集
-                result = PdhApi.PdhCollectQueryData(_query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"データ収集に失敗: {PdhApi.GetErrorMessage(result)}");
-                }
+                // PdhGetRawCounterArrayを使用して履歴データを取得
+                uint bufferSize = 0;
+                uint itemCount = 0;
 
-                // フォーマットされた値を取得
-                result = PdhApi.PdhGetFormattedCounterValue(
-                    counter,
-                    PdhApi.PDH_FMT_DOUBLE,
-                    out uint valueType,
-                    out PdhApi.PDH_FMT_COUNTERVALUE value);
-
-                if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
+                // まずバッファサイズを取得
+                result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, IntPtr.Zero);
+                
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
-                    var dataPoint = new CounterDataPoint
+                    // バッファを確保してデータを取得
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+                    try
                     {
-                        Timestamp = DateTime.Now, // 実際の実装では適切なタイムスタンプを設定
-                        Value = value.doubleValue,
-                        Status = value.CStatus
-                    };
-                    counterInfo.DataPoints.Add(dataPoint);
+                        result = PdhApi.PdhGetRawCounterArray(counter, ref bufferSize, out itemCount, buffer);
+                        
+                        if (result == PdhApi.ERROR_SUCCESS && itemCount > 0)
+                        {
+                            progress?.Report($"履歴データ項目数: {itemCount}");
+                            
+                            // PDH_RAW_COUNTER_ITEM構造体のサイズ
+                            int itemSize = Marshal.SizeOf<PdhApi.PDH_RAW_COUNTER_ITEM>();
+                            
+                            for (uint i = 0; i < itemCount && i < 1000; i++) // 最大1000項目に制限
+                            {
+                                IntPtr itemPtr = IntPtr.Add(buffer, (int)(i * itemSize));
+                                var rawItem = Marshal.PtrToStructure<PdhApi.PDH_RAW_COUNTER_ITEM>(itemPtr);
+                                
+                                // FileTimeをDateTimeに変換
+                                DateTime timestamp;
+                                try
+                                {
+                                    timestamp = DateTime.FromFileTime(rawItem.TimeStamp.dwLowDateTime | 
+                                                                    ((long)rawItem.TimeStamp.dwHighDateTime << 32));
+                                }
+                                catch
+                                {
+                                    // FileTime変換に失敗した場合のフォールバック
+                                    timestamp = DateTime.Now.AddMinutes(-(int)i);
+                                }
+
+                                // 生の値をフォーマット済み値に変換
+                                var dataPoint = new CounterDataPoint
+                                {
+                                    Timestamp = timestamp,
+                                    Value = ConvertRawValueToDouble(rawItem.RawValue),
+                                    Status = rawItem.RawValue.CStatus
+                                };
+                                
+                                counterInfo.DataPoints.Add(dataPoint);
+                            }
+                        }
+                        else
+                        {
+                            progress?.Report($"履歴データ取得エラー: {PdhApi.GetErrorMessage(result)}");
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
                 }
                 else
                 {
-                    progress?.Report($"値取得警告: {PdhApi.GetErrorMessage(result)}");
+                    // 履歴データが取得できない場合、現在の値を試行
+                    progress?.Report($"履歴データなし、現在値を取得中: {PdhApi.GetErrorMessage(result)}");
+                    
+                    result = PdhApi.PdhCollectQueryData(_query);
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        result = PdhApi.PdhGetFormattedCounterValue(
+                            counter,
+                            PdhApi.PDH_FMT_DOUBLE | PdhApi.PDH_FMT_NOCAP100,
+                            out uint valueType,
+                            out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                        if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
+                        {
+                            var dataPoint = new CounterDataPoint
+                            {
+                                Timestamp = DateTime.Now,
+                                Value = value.doubleValue,
+                                Status = value.CStatus
+                            };
+                            counterInfo.DataPoints.Add(dataPoint);
+                        }
+                    }
                 }
 
+                progress?.Report($"取得したデータポイント数: {counterInfo.DataPoints.Count}");
+                
+                // データポイントをタイムスタンプ順にソート
+                counterInfo.DataPoints = counterInfo.DataPoints
+                    .OrderBy(dp => dp.Timestamp)
+                    .ToList();
+                
                 return counterInfo;
             }
             catch (Exception ex)
@@ -575,6 +641,24 @@ public class BlgFileAnalyzer : IDisposable
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// 生の値をdoubleに変換
+    /// </summary>
+    private static double ConvertRawValueToDouble(PdhApi.PDH_RAW_COUNTER rawValue)
+    {
+        // 生の値のタイプに応じて適切な変換を行う
+        // 多くの場合、FirstValueまたはSecondValueが実際の値
+        if (rawValue.CStatus == PdhApi.PDH_CSTATUS_VALID_DATA)
+        {
+            // 64bitの値として解釈
+            long value64 = rawValue.FirstValue | ((long)rawValue.SecondValue << 32);
+            return (double)value64;
+        }
+        
+        // ステータスが無効な場合は0を返す
+        return 0.0;
     }
 
     private static string ExtractObjectName(string counterPath)
