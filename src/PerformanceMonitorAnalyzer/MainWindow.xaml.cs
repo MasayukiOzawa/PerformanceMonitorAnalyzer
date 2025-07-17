@@ -112,6 +112,12 @@ public partial class MainWindow : Window
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
     private RelogCsvAnalyzer? _currentRelogAnalyzer;
+    
+    // 時間範囲管理用の変数
+    private RelogCsvAnalyzer.BlgTimeRange? _fullTimeRange;
+    private DateTime? _selectedStartTime;
+    private DateTime? _selectedEndTime;
+    private bool _isTimeRangeUpdateInProgress = false;
 
     public MainWindow()
     {
@@ -327,6 +333,12 @@ public partial class MainWindow : Window
         _counterTreeNodes.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
+        
+        // 時間範囲UI初期化
+        TimeRangeGroup.Visibility = Visibility.Collapsed;
+        _fullTimeRange = null;
+        _selectedStartTime = null;
+        _selectedEndTime = null;
 
         RelogCsvAnalyzer? analyzer = null;
 
@@ -341,12 +353,45 @@ public partial class MainWindow : Window
             
             analyzer = new RelogCsvAnalyzer();
             
-            // BLGファイルをCSVに変換
-            var converted = await analyzer.ConvertBlgToCsvAsync(fileName, progress);
+            // まず時間範囲情報を取得
+            try
+            {
+                _fullTimeRange = await analyzer.GetBlgTimeRangeAsync(fileName, progress);
+                if (_fullTimeRange != null)
+                {
+                    // 時間範囲UIを表示・設定
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        TimeRangeGroup.Visibility = Visibility.Visible;
+                        FullTimeRangeDisplay.Text = $"全期間: {_fullTimeRange.StartTime:yyyy/MM/dd HH:mm:ss} ～ {_fullTimeRange.EndTime:yyyy/MM/dd HH:mm:ss} ({_fullTimeRange.FormattedDuration})";
+                        
+                        // スライダーの初期設定
+                        _isTimeRangeUpdateInProgress = true;
+                        StartTimeSlider.Value = 0;
+                        EndTimeSlider.Value = 100;
+                        _selectedStartTime = _fullTimeRange.StartTime;
+                        _selectedEndTime = _fullTimeRange.EndTime;
+                        UpdateSelectedTimeRangeDisplay();
+                        _isTimeRangeUpdateInProgress = false;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to get time range, proceeding without time range selection: {ex.Message}");
+                // 時間範囲取得に失敗しても処理を継続
+            }
+            
+            // BLGファイルをCSVに変換（時間範囲指定なし）
+            var converted = await analyzer.ConvertBlgToCsvAsync(fileName, progress, _selectedStartTime, _selectedEndTime);
             if (!converted)
             {
                 throw new Exception("BLGファイルのCSV変換に失敗しました。");
             }
+            
+            // 現在のアナライザーを保存（時間範囲再選択用）
+            _currentRelogAnalyzer?.Dispose();
+            _currentRelogAnalyzer = analyzer;
             
             // 利用可能なカウンターを取得
             var counters = await analyzer.GetAvailableCountersAsync(progress);
@@ -1276,6 +1321,152 @@ public partial class MainWindow : Window
             LogError($"All data CSV export failed: {ex}");
         }
     }
+
+    #region 時間範囲選択機能
+
+    /// <summary>
+    /// 開始時刻スライダーの値変更イベント
+    /// </summary>
+    private void StartTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isTimeRangeUpdateInProgress || _fullTimeRange == null)
+            return;
+
+        var percentage = e.NewValue / 100.0;
+        var totalDuration = _fullTimeRange.Duration;
+        _selectedStartTime = _fullTimeRange.StartTime.Add(TimeSpan.FromTicks((long)(totalDuration.Ticks * percentage)));
+        
+        // 開始時刻が終了時刻を超えないように調整
+        if (_selectedEndTime.HasValue && _selectedStartTime > _selectedEndTime)
+        {
+            _isTimeRangeUpdateInProgress = true;
+            EndTimeSlider.Value = e.NewValue;
+            _selectedEndTime = _selectedStartTime;
+            _isTimeRangeUpdateInProgress = false;
+        }
+        
+        UpdateSelectedTimeRangeDisplay();
+    }
+
+    /// <summary>
+    /// 終了時刻スライダーの値変更イベント
+    /// </summary>
+    private void EndTimeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isTimeRangeUpdateInProgress || _fullTimeRange == null)
+            return;
+
+        var percentage = e.NewValue / 100.0;
+        var totalDuration = _fullTimeRange.Duration;
+        _selectedEndTime = _fullTimeRange.StartTime.Add(TimeSpan.FromTicks((long)(totalDuration.Ticks * percentage)));
+        
+        // 終了時刻が開始時刻より前にならないように調整
+        if (_selectedStartTime.HasValue && _selectedEndTime < _selectedStartTime)
+        {
+            _isTimeRangeUpdateInProgress = true;
+            StartTimeSlider.Value = e.NewValue;
+            _selectedStartTime = _selectedEndTime;
+            _isTimeRangeUpdateInProgress = false;
+        }
+        
+        UpdateSelectedTimeRangeDisplay();
+    }
+
+    /// <summary>
+    /// 選択された時間範囲表示を更新
+    /// </summary>
+    private void UpdateSelectedTimeRangeDisplay()
+    {
+        if (!_selectedStartTime.HasValue || !_selectedEndTime.HasValue)
+        {
+            SelectedTimeRangeDisplay.Text = "選択範囲: 全期間";
+            return;
+        }
+
+        var duration = _selectedEndTime.Value - _selectedStartTime.Value;
+        var formattedDuration = duration.TotalHours >= 1 
+            ? $"{duration.TotalHours:F1}時間" 
+            : $"{duration.TotalMinutes:F0}分";
+
+        SelectedTimeRangeDisplay.Text = $"選択範囲: {_selectedStartTime:MM/dd HH:mm:ss} ～ {_selectedEndTime:MM/dd HH:mm:ss} ({formattedDuration})";
+    }
+
+    /// <summary>
+    /// 時間範囲適用ボタンのクリックイベント
+    /// </summary>
+    private async void ApplyTimeRange_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentBlgFile == null || !_selectedStartTime.HasValue || !_selectedEndTime.HasValue)
+            return;
+
+        try
+        {
+            // プログレスバーを表示
+            ProgressGrid.Visibility = Visibility.Visible;
+            ProgressStatusText.Text = "選択された時間範囲でBLGファイルを再読み込み中...";
+            
+            // UI状態をリセット
+            _counterTreeNodes.Clear();
+            DataTabControl.Items.Clear();
+            _counterData.Clear();
+
+            var progress = new Progress<string>(status => 
+            {
+                ProgressStatusText.Text = status;
+                LogError($"Time Range Relog Progress: {status}");
+            });
+            
+            // 新しいアナライザーで時間範囲指定してCSV変換
+            var analyzer = new RelogCsvAnalyzer();
+            
+            var converted = await analyzer.ConvertBlgToCsvAsync(_currentBlgFile, progress, _selectedStartTime, _selectedEndTime);
+            if (!converted)
+            {
+                throw new Exception("指定された時間範囲でのCSV変換に失敗しました。");
+            }
+            
+            // 古いアナライザーを破棄して新しいものに置き換え
+            _currentRelogAnalyzer?.Dispose();
+            _currentRelogAnalyzer = analyzer;
+            
+            // 利用可能なカウンターを取得
+            var counters = await analyzer.GetAvailableCountersAsync(progress);
+            
+            if (counters.Count == 0)
+            {
+                throw new Exception("指定された時間範囲にデータが見つかりませんでした。");
+            }
+            
+            // 階層構造を作成
+            ProgressStatusText.Text = "カウンター階層を構築中...";
+            BuildCounterTree(counters);
+
+            NoDataMessage.Visibility = Visibility.Collapsed;
+            
+            var totalCounters = _counterTreeNodes.Sum(obj => obj.Children.Sum(inst => inst.Children.Count));
+            var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
+            
+            MessageBox.Show($"指定された時間範囲でBLGファイルが再読み込みされました。\n\n" +
+                           $"📅 時間範囲: {_selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {_selectedEndTime:yyyy/MM/dd HH:mm:ss}\n" +
+                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
+                           $"🏷️  インスタンス: {totalInstances}個\n" +
+                           $"📈 カウンター: {totalCounters}個\n\n" +
+                           $"⭐ 左側のツリーからカウンターを選択してデータを表示できます。", 
+                          "時間範囲読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"時間範囲での再読み込みに失敗しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"Time range reload failed: {ex}");
+        }
+        finally
+        {
+            ProgressGrid.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    #endregion
 
     private void LogError(string message)
     {

@@ -68,6 +68,69 @@
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"/>
                     
+                    <!-- 時間範囲選択 -->
+                    <GroupBox x:Name="TimeRangeGroup" Header="📅 時間範囲選択" Margin="5,0,5,10" 
+                              Visibility="Collapsed" BorderBrush="LightBlue" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- 全期間表示 -->
+                            <TextBlock Grid.Row="0" x:Name="FullTimeRangeDisplay" 
+                                     Text="全期間: 取得中..." 
+                                     Margin="5,5,5,0" 
+                                     FontSize="11"
+                                     Foreground="DarkGray"/>
+                            
+                            <!-- 時間範囲スライダー -->
+                            <Grid Grid.Row="1" Margin="5,10,5,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <TextBlock Grid.Column="0" Text="開始" VerticalAlignment="Center" Margin="0,0,5,0" FontSize="10"/>
+                                
+                                <!-- 開始時刻スライダー -->
+                                <Slider Grid.Column="1" x:Name="StartTimeSlider"
+                                       Minimum="0" Maximum="100" Value="0"
+                                       TickFrequency="10" IsSnapToTickEnabled="False"
+                                       ValueChanged="StartTimeSlider_ValueChanged"
+                                       Margin="0,0,5,0"/>
+                                
+                                <TextBlock Grid.Column="2" Text="終了" VerticalAlignment="Center" FontSize="10"/>
+                            </Grid>
+                            
+                            <Slider Grid.Row="2" x:Name="EndTimeSlider"
+                                   Minimum="0" Maximum="100" Value="100"
+                                   TickFrequency="10" IsSnapToTickEnabled="False"
+                                   ValueChanged="EndTimeSlider_ValueChanged"
+                                   Margin="5,0,5,5"/>
+                            
+                            <!-- 選択された時間範囲表示 -->
+                            <StackPanel Grid.Row="3" Orientation="Vertical" Margin="5,5,5,10">
+                                <TextBlock x:Name="SelectedTimeRangeDisplay" 
+                                         Text="選択範囲: 全期間" 
+                                         FontSize="11"
+                                         FontWeight="SemiBold"
+                                         Foreground="DarkBlue"/>
+                                <Button x:Name="ApplyTimeRangeButton" 
+                                      Content="🔄 この時間範囲で再読み込み"
+                                      Click="ApplyTimeRange_Click"
+                                      Margin="0,5,0,0"
+                                      Padding="5,2"
+                                      FontSize="11"
+                                      Background="LightBlue"
+                                      BorderBrush="Blue"/>
+                            </StackPanel>
+                        </Grid>
+                    </GroupBox>
+                    
                     <TextBlock Grid.Row="1" 
                              Text="📈 表示したいカウンターをチェック:" 
                              Margin="5,0,5,5" 

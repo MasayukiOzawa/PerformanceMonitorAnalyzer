@@ -15,6 +15,14 @@ public class RelogCsvAnalyzer : IDisposable
     private string? _originalBlgPath;
     private bool _disposed = false;
 
+    public class BlgTimeRange
+    {
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public TimeSpan Duration => EndTime - StartTime;
+        public string FormattedDuration => $"{Duration.TotalHours:F1}時間 ({Duration.TotalMinutes:F0}分)";
+    }
+
     public class CounterData
     {
         public string CounterPath { get; set; } = string.Empty;
@@ -33,9 +41,166 @@ public class RelogCsvAnalyzer : IDisposable
     }
 
     /// <summary>
-    /// relog.exe を使用してBLGファイルをCSVに変換
+    /// BLGファイルの時間範囲情報を取得
     /// </summary>
-    public async Task<bool> ConvertBlgToCsvAsync(string blgFilePath, IProgress<string>? progress = null)
+    public async Task<BlgTimeRange?> GetBlgTimeRangeAsync(string blgFilePath, IProgress<string>? progress = null)
+    {
+        if (!File.Exists(blgFilePath))
+        {
+            throw new FileNotFoundException($"BLGファイルが見つかりません: {blgFilePath}");
+        }
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            throw new PlatformNotSupportedException("relog.exe はWindows環境でのみ利用可能です。");
+        }
+
+        progress?.Report("BLGファイルの時間範囲を取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // relog.exe -q でファイル情報を取得
+                var arguments = $"\"{blgFilePath}\" -q";
+                
+                progress?.Report($"実行コマンド: relog.exe {arguments}");
+
+                var processInfo = new ProcessStartInfo
+                {
+                    FileName = "relog.exe",
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                using var process = new Process { StartInfo = processInfo };
+                
+                var outputBuilder = new StringBuilder();
+                var errorBuilder = new StringBuilder();
+                
+                process.OutputDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        outputBuilder.AppendLine(e.Data);
+                    }
+                };
+                
+                process.ErrorDataReceived += (sender, e) =>
+                {
+                    if (!string.IsNullOrEmpty(e.Data))
+                    {
+                        errorBuilder.AppendLine(e.Data);
+                    }
+                };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                
+                var completed = process.WaitForExit(TimeSpan.FromMinutes(2));
+                
+                if (!completed)
+                {
+                    try { process.Kill(); } catch { }
+                    throw new TimeoutException("relog.exe の実行がタイムアウトしました（2分）");
+                }
+
+                var exitCode = process.ExitCode;
+                var output = outputBuilder.ToString();
+                var error = errorBuilder.ToString();
+
+                if (exitCode != 0)
+                {
+                    throw new Exception($"relog.exe が失敗しました。終了コード: {exitCode}\nエラー: {error}");
+                }
+
+                // 出力から時間範囲を解析
+                return ParseBlgTimeRangeFromOutput(output, progress);
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"時間範囲取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// relog.exe -q の出力から時間範囲を解析
+    /// </summary>
+    private BlgTimeRange? ParseBlgTimeRangeFromOutput(string output, IProgress<string>? progress = null)
+    {
+        try
+        {
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            DateTime? startTime = null;
+            DateTime? endTime = null;
+
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                
+                // 開始時刻を検索 (Begin:, Start:, または類似パターン)
+                if ((trimmedLine.StartsWith("Begin:", StringComparison.OrdinalIgnoreCase) ||
+                     trimmedLine.StartsWith("Start:", StringComparison.OrdinalIgnoreCase)) && 
+                    !startTime.HasValue)
+                {
+                    var timeString = trimmedLine.Substring(trimmedLine.IndexOf(':') + 1).Trim();
+                    if (DateTime.TryParse(timeString, out var parsed))
+                    {
+                        startTime = parsed;
+                        progress?.Report($"開始時刻を検出: {startTime}");
+                    }
+                }
+                
+                // 終了時刻を検索 (End:, または類似パターン)
+                if (trimmedLine.StartsWith("End:", StringComparison.OrdinalIgnoreCase) && 
+                    !endTime.HasValue)
+                {
+                    var timeString = trimmedLine.Substring(trimmedLine.IndexOf(':') + 1).Trim();
+                    if (DateTime.TryParse(timeString, out var parsed))
+                    {
+                        endTime = parsed;
+                        progress?.Report($"終了時刻を検出: {endTime}");
+                    }
+                }
+            }
+
+            if (startTime.HasValue && endTime.HasValue)
+            {
+                var timeRange = new BlgTimeRange
+                {
+                    StartTime = startTime.Value,
+                    EndTime = endTime.Value
+                };
+                
+                progress?.Report($"時間範囲: {timeRange.StartTime:yyyy/MM/dd HH:mm:ss} ～ {timeRange.EndTime:yyyy/MM/dd HH:mm:ss} ({timeRange.FormattedDuration})");
+                return timeRange;
+            }
+            else
+            {
+                progress?.Report("relog.exe の出力から時間範囲情報を取得できませんでした。");
+                progress?.Report($"出力内容:\n{output}");
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"時間範囲解析エラー: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// relog.exe を使用してBLGファイルをCSVに変換（時間範囲指定対応）
+    /// </summary>
+    public async Task<bool> ConvertBlgToCsvAsync(string blgFilePath, IProgress<string>? progress = null, DateTime? startTime = null, DateTime? endTime = null)
     {
         if (!File.Exists(blgFilePath))
         {
@@ -63,6 +228,21 @@ public class RelogCsvAnalyzer : IDisposable
             {
                 // relog.exe のコマンドライン引数を構築
                 var arguments = $"\"{blgFilePath}\" -f CSV -o \"{_csvFilePath}\"";
+                
+                // 時間範囲が指定されている場合は -b と -e オプションを追加
+                if (startTime.HasValue)
+                {
+                    var beginTime = startTime.Value.ToString("MM/dd/yyyy-HH:mm:ss");
+                    arguments += $" -b \"{beginTime}\"";
+                    progress?.Report($"開始時刻指定: {beginTime}");
+                }
+                
+                if (endTime.HasValue)
+                {
+                    var endTimeStr = endTime.Value.ToString("MM/dd/yyyy-HH:mm:ss");
+                    arguments += $" -e \"{endTimeStr}\"";
+                    progress?.Report($"終了時刻指定: {endTimeStr}");
+                }
                 
                 progress?.Report($"実行コマンド: relog.exe {arguments}");
 
