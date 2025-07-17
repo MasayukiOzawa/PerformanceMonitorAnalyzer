@@ -441,7 +441,7 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
-    /// BLGファイルから実際に利用可能なカウンターパスを取得
+    /// BLGファイルから実際に利用可能なカウンターパスを取得（互換性のあるAPI使用）
     /// </summary>
     public async Task<List<string>> GetAvailableCounterPathsAsync(IProgress<string>? progress = null)
     {
@@ -457,54 +457,57 @@ public class BlgFileAnalyzer : IDisposable
             try
             {
                 var counterPaths = new List<string>();
-                uint bufferSize = 0;
 
-                // まずバッファサイズを取得
-                uint result = PdhApi.PdhEnumLogFileCounters(_dataSource, IntPtr.Zero, ref bufferSize);
+                // まずマシン名を取得
+                var machines = GetMachinesFromLogFile();
+                progress?.Report($"取得したマシン名: {machines.Count} 個");
 
-                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                foreach (var machine in machines)
                 {
-                    progress?.Report($"必要なバッファサイズ: {bufferSize} バイト");
+                    progress?.Report($"マシン {machine} のオブジェクトを取得中...");
+                    
+                    // 各マシンのオブジェクトを取得
+                    var objects = GetObjectsFromLogFile(machine);
+                    progress?.Report($"マシン {machine} のオブジェクト: {objects.Count} 個");
 
-                    // バッファを確保してカウンターパスを取得
-                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
-                    try
+                    foreach (var objectName in objects)
                     {
-                        result = PdhApi.PdhEnumLogFileCounters(_dataSource, buffer, ref bufferSize);
-
-                        if (result == PdhApi.ERROR_SUCCESS)
+                        try
                         {
-                            // null区切りの文字列リストを解析
-                            string counterList = Marshal.PtrToStringUni(buffer) ?? "";
-                            
-                            // null区切りの文字列を分割
-                            var paths = counterList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                            
-                            foreach (var path in paths)
+                            // 各オブジェクトのカウンターとインスタンスを取得
+                            var (counters, instances) = GetCountersAndInstancesFromLogFile(machine, objectName);
+
+                            if (instances.Count > 0)
                             {
-                                if (!string.IsNullOrWhiteSpace(path))
+                                // インスタンス付きカウンター
+                                foreach (var instance in instances)
                                 {
-                                    counterPaths.Add(path);
+                                    foreach (var counter in counters)
+                                    {
+                                        var fullPath = $"\\{machine}\\{objectName}({instance})\\{counter}";
+                                        counterPaths.Add(fullPath);
+                                    }
                                 }
                             }
-
-                            progress?.Report($"BLGファイルから {counterPaths.Count} 個のカウンターパスを取得しました");
+                            else
+                            {
+                                // インスタンスなしカウンター
+                                foreach (var counter in counters)
+                                {
+                                    var fullPath = $"\\{machine}\\{objectName}\\{counter}";
+                                    counterPaths.Add(fullPath);
+                                }
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            throw new Exception($"カウンターパスの取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                            // 個別のオブジェクトでエラーが発生してもログに記録して続行
+                            System.Diagnostics.Debug.WriteLine($"オブジェクト {objectName} の処理中にエラー: {ex.Message}");
                         }
                     }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(buffer);
-                    }
-                }
-                else if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"カウンターパスのバッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
+                progress?.Report($"BLGファイルから {counterPaths.Count} 個のカウンターパスを生成しました");
                 return counterPaths;
             }
             catch (Exception ex)
@@ -513,6 +516,171 @@ public class BlgFileAnalyzer : IDisposable
                 throw;
             }
         });
+    }
+
+    /// <summary>
+    /// BLGファイルからマシン名を取得
+    /// </summary>
+    private List<string> GetMachinesFromLogFile()
+    {
+        var machines = new List<string>();
+        uint bufferSize = 0;
+
+        // まずバッファサイズを取得
+        uint result = PdhApi.PdhEnumMachinesH(_dataSource, IntPtr.Zero, ref bufferSize);
+
+        if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+        {
+            IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+            try
+            {
+                result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
+
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    string machineList = Marshal.PtrToStringUni(buffer) ?? "";
+                    var machineNames = machineList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                    
+                    foreach (var machineName in machineNames)
+                    {
+                        if (!string.IsNullOrWhiteSpace(machineName))
+                        {
+                            machines.Add(machineName);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        // マシン名が取得できない場合は空の文字列を使用（ローカルマシン）
+        if (machines.Count == 0)
+        {
+            machines.Add("");
+        }
+
+        return machines;
+    }
+
+    /// <summary>
+    /// BLGファイルから指定マシンのオブジェクト名を取得
+    /// </summary>
+    private List<string> GetObjectsFromLogFile(string machineName)
+    {
+        var objects = new List<string>();
+        uint bufferSize = 0;
+
+        // まずバッファサイズを取得
+        uint result = PdhApi.PdhEnumObjectsH(_dataSource, machineName, IntPtr.Zero, ref bufferSize, PdhApi.PERF_DETAIL_WIZARD, false);
+
+        if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+        {
+            IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+            try
+            {
+                result = PdhApi.PdhEnumObjectsH(_dataSource, machineName, buffer, ref bufferSize, PdhApi.PERF_DETAIL_WIZARD, false);
+
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    string objectList = Marshal.PtrToStringUni(buffer) ?? "";
+                    var objectNames = objectList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                    
+                    foreach (var objectName in objectNames)
+                    {
+                        if (!string.IsNullOrWhiteSpace(objectName))
+                        {
+                            objects.Add(objectName);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        return objects;
+    }
+
+    /// <summary>
+    /// BLGファイルから指定オブジェクトのカウンターとインスタンスを取得
+    /// </summary>
+    private (List<string> counters, List<string> instances) GetCountersAndInstancesFromLogFile(string machineName, string objectName)
+    {
+        var counters = new List<string>();
+        var instances = new List<string>();
+        
+        uint counterBufferSize = 0;
+        uint instanceBufferSize = 0;
+
+        // まずバッファサイズを取得
+        uint result = PdhApi.PdhEnumObjectItemsH(_dataSource, machineName, objectName, IntPtr.Zero, ref counterBufferSize, IntPtr.Zero, ref instanceBufferSize, PdhApi.PERF_DETAIL_WIZARD, 0);
+
+        if (result == PdhApi.PDH_MORE_DATA)
+        {
+            IntPtr counterBuffer = IntPtr.Zero;
+            IntPtr instanceBuffer = IntPtr.Zero;
+
+            try
+            {
+                if (counterBufferSize > 0)
+                {
+                    counterBuffer = Marshal.AllocHGlobal((int)counterBufferSize);
+                }
+                if (instanceBufferSize > 0)
+                {
+                    instanceBuffer = Marshal.AllocHGlobal((int)instanceBufferSize);
+                }
+
+                result = PdhApi.PdhEnumObjectItemsH(_dataSource, machineName, objectName, counterBuffer, ref counterBufferSize, instanceBuffer, ref instanceBufferSize, PdhApi.PERF_DETAIL_WIZARD, 0);
+
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    // カウンター名を解析
+                    if (counterBuffer != IntPtr.Zero)
+                    {
+                        string counterList = Marshal.PtrToStringUni(counterBuffer) ?? "";
+                        var counterNames = counterList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                        
+                        foreach (var counterName in counterNames)
+                        {
+                            if (!string.IsNullOrWhiteSpace(counterName))
+                            {
+                                counters.Add(counterName);
+                            }
+                        }
+                    }
+
+                    // インスタンス名を解析
+                    if (instanceBuffer != IntPtr.Zero)
+                    {
+                        string instanceList = Marshal.PtrToStringUni(instanceBuffer) ?? "";
+                        var instanceNames = instanceList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                        
+                        foreach (var instanceName in instanceNames)
+                        {
+                            if (!string.IsNullOrWhiteSpace(instanceName))
+                            {
+                                instances.Add(instanceName);
+                            }
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (counterBuffer != IntPtr.Zero)
+                    Marshal.FreeHGlobal(counterBuffer);
+                if (instanceBuffer != IntPtr.Zero)
+                    Marshal.FreeHGlobal(instanceBuffer);
+            }
+        }
+
+        return (counters, instances);
     }
 
     /// <summary>
