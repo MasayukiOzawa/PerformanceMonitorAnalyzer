@@ -93,19 +93,19 @@
             <GroupBox Grid.Column="1" Header="グラフ表示">
                 <Grid>
                     <Grid x:Name="PerformanceChart" Background="White" />
-                    <TextBlock Text="ScottPlotは現在無効です。チャート機能は後で実装されます。"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
-                             FontSize="14"
-                             Foreground="DarkGray"
-                             TextWrapping="Wrap"
-                             Margin="10"/>
-                    <TextBlock x:Name="NoDataMessage" 
-                             Text="BLGファイルを開いてカウンターを選択してください"
-                             HorizontalAlignment="Center"
-                             VerticalAlignment="Center"
-                             FontSize="16"
-                             Foreground="Gray"/>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="NoDataMessage" 
+                                 Text="BLGファイルを開いてカウンターを選択してください"
+                                 HorizontalAlignment="Center"
+                                 FontSize="16"
+                                 Foreground="Gray"
+                                 Margin="10"/>
+                        <TextBlock Text="※グラフ機能は現在開発中です"
+                                 HorizontalAlignment="Center"
+                                 FontSize="12"
+                                 Foreground="DarkGray"
+                                 Margin="5"/>
+                    </StackPanel>
                 </Grid>
             </GroupBox>
         </Grid>
