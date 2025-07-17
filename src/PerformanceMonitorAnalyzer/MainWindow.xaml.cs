@@ -125,7 +125,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _counterScales = new();
     
     // サポートされるスケール値
-    private readonly double[] SupportedScales = { 10.0, 1.0, 0.1, 0.01, 0.001 };
+    private readonly double[] SupportedScales = { 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001 };
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
@@ -780,6 +780,32 @@ public partial class MainWindow : Window
         
         // スケールコントロールの表示を更新
         UpdateScaleControlVisibility();
+    }
+
+    /// <summary>
+    /// グラフ表示エリアを現在選択されているチェックの内容で初期化
+    /// </summary>
+    private void InitializeChartWithSelectedCounters()
+    {
+        System.Diagnostics.Debug.WriteLine("InitializeChartWithSelectedCounters called");
+        
+        // 現在選択されているカウンターを取得
+        var selectedCounters = GetSelectedCounters().ToHashSet();
+        
+        // 現在グラフに表示されているカウンターのリストを作成
+        var currentChartCounters = _chartSeries.Keys.ToList();
+        
+        // 選択されていないカウンターをグラフから削除
+        foreach (var counter in currentChartCounters)
+        {
+            if (!selectedCounters.Contains(counter))
+            {
+                System.Diagnostics.Debug.WriteLine($"Removing unselected counter from chart: {counter}");
+                RemoveCounterFromChart(counter);
+            }
+        }
+        
+        System.Diagnostics.Debug.WriteLine($"Chart initialized with {selectedCounters.Count} selected counters");
     }
     
     private void UpdateChartVisibility()
@@ -1491,6 +1517,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        // グラフ表示エリアを現在のチェック内容で初期化
+        InitializeChartWithSelectedCounters();
+
         try
         {
             // プログレスバーを表示
@@ -2017,7 +2046,7 @@ public partial class MainWindow : Window
         };
 
         // スケール値を追加
-        var scaleItems = new[] { "10", "1.0", "0.1", "0.01", "0.001" };
+        var scaleItems = new[] { "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001" };
         foreach (var scaleValue in scaleItems)
         {
             scaleComboBox.Items.Add(new ComboBoxItem 
