@@ -70,7 +70,14 @@
                              FontWeight="SemiBold"/>
                     
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                        <TreeView x:Name="CounterTreeView" Margin="5" SelectedItemChanged="CounterTreeView_SelectedItemChanged">
+                        <TreeView x:Name="CounterTreeView" Margin="5" 
+                                  SelectedItemChanged="CounterTreeView_SelectedItemChanged"
+                                  PreviewMouseLeftButtonUp="CounterTreeView_PreviewMouseLeftButtonUp">
+                            <TreeView.ItemContainerStyle>
+                                <Style TargetType="TreeViewItem">
+                                    <EventSetter Event="MouseLeftButtonUp" Handler="TreeViewItem_MouseLeftButtonUp"/>
+                                </Style>
+                            </TreeView.ItemContainerStyle>
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                                     <StackPanel Orientation="Horizontal">

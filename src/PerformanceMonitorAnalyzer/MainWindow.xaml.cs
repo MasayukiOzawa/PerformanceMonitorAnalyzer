@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -501,18 +502,146 @@ public partial class MainWindow : Window
 
     private void CounterTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is CounterTreeNode selectedNode && selectedNode.Type == NodeType.Counter)
+        try
         {
-            // カウンターが選択された場合、データテーブルタブを表示
-            string counter = selectedNode.FullPath;
-            if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
+            System.Diagnostics.Debug.WriteLine($"TreeView SelectedItemChanged: e.NewValue = {e.NewValue}");
+            
+            if (e.NewValue is CounterTreeNode selectedNode)
             {
-                // チェックボックスをチェック状態にする
-                selectedNode.IsChecked = true;
+                System.Diagnostics.Debug.WriteLine($"Selected node: DisplayName={selectedNode.DisplayName}, Type={selectedNode.Type}, FullPath={selectedNode.FullPath}");
                 
-                // データテーブルに追加
-                AddCounterTab(counter);
+                if (selectedNode.Type == NodeType.Counter)
+                {
+                    // カウンターが選択された場合、データテーブルタブを表示
+                    string counter = selectedNode.FullPath;
+                    System.Diagnostics.Debug.WriteLine($"Counter selected: {counter}");
+                    System.Diagnostics.Debug.WriteLine($"_counterData.ContainsKey(counter): {_counterData.ContainsKey(counter)}");
+                    
+                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Adding counter tab for: {counter}");
+                        
+                        // チェックボックスをチェック状態にする
+                        selectedNode.IsChecked = true;
+                        
+                        // データテーブルに追加
+                        AddCounterTab(counter);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Counter not found in data or empty: {counter}");
+                    }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Selected node is not a counter: {selectedNode.Type}");
+                }
             }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Selected item is not a CounterTreeNode");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterTreeView_SelectedItemChanged: {ex.Message}");
+            MessageBox.Show($"エラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void CounterTreeView_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            // マウスがクリックされた場所のTreeViewItemを取得
+            var treeView = sender as TreeView;
+            var hitTest = e.OriginalSource as FrameworkElement;
+            
+            System.Diagnostics.Debug.WriteLine($"PreviewMouseLeftButtonUp: OriginalSource = {e.OriginalSource}");
+            
+            // CheckBoxがクリックされた場合は処理をスキップ
+            if (hitTest is CheckBox)
+            {
+                System.Diagnostics.Debug.WriteLine("CheckBox clicked, skipping TreeView selection handling");
+                return;
+            }
+            
+            // TreeViewItemを検索
+            while (hitTest != null && !(hitTest is TreeViewItem))
+            {
+                hitTest = hitTest.Parent as FrameworkElement ?? 
+                         System.Windows.Media.VisualTreeHelper.GetParent(hitTest) as FrameworkElement;
+            }
+            
+            if (hitTest is TreeViewItem treeViewItem)
+            {
+                var dataContext = treeViewItem.DataContext;
+                System.Diagnostics.Debug.WriteLine($"TreeViewItem clicked: DataContext = {dataContext}");
+                
+                if (dataContext is CounterTreeNode selectedNode && selectedNode.Type == NodeType.Counter)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Counter node clicked: {selectedNode.FullPath}");
+                    
+                    // カウンターが選択された場合、データテーブルタブを表示
+                    string counter = selectedNode.FullPath;
+                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Adding counter tab via mouse click for: {counter}");
+                        
+                        // チェックボックスをチェック状態にする
+                        selectedNode.IsChecked = true;
+                        
+                        // データテーブルに追加
+                        AddCounterTab(counter);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterTreeView_PreviewMouseLeftButtonUp: {ex.Message}");
+        }
+    }
+
+    private void TreeViewItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            var treeViewItem = sender as TreeViewItem;
+            if (treeViewItem?.DataContext is CounterTreeNode selectedNode)
+            {
+                System.Diagnostics.Debug.WriteLine($"TreeViewItem direct click: {selectedNode.DisplayName}, Type: {selectedNode.Type}");
+                
+                if (selectedNode.Type == NodeType.Counter)
+                {
+                    // CheckBoxがクリックされたかどうかを確認
+                    var hitTest = e.OriginalSource as FrameworkElement;
+                    if (hitTest is CheckBox)
+                    {
+                        System.Diagnostics.Debug.WriteLine("CheckBox clicked directly, skipping");
+                        return;
+                    }
+                    
+                    string counter = selectedNode.FullPath;
+                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Adding counter tab via TreeViewItem click for: {counter}");
+                        
+                        // チェックボックスをチェック状態にする
+                        selectedNode.IsChecked = true;
+                        
+                        // データテーブルに追加
+                        AddCounterTab(counter);
+                        
+                        // イベントをマークして、親要素に伝播させない
+                        e.Handled = true;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in TreeViewItem_MouseLeftButtonUp: {ex.Message}");
         }
     }
 
@@ -534,82 +663,113 @@ public partial class MainWindow : Window
 
     private void AddCounterTab(string counter)
     {
-        if (!_counterData.ContainsKey(counter)) return;
-
-        var tabItem = new TabItem
+        try
         {
-            Header = GetCounterDisplayName(counter),
-            Tag = counter
-        };
+            System.Diagnostics.Debug.WriteLine($"AddCounterTab called for: {counter}");
+            
+            if (!_counterData.ContainsKey(counter))
+            {
+                System.Diagnostics.Debug.WriteLine($"Counter data not found for: {counter}");
+                return;
+            }
 
-        // メインコンテナを作成
-        var mainGrid = new Grid();
-        mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            // 既存のタブがあるかチェック
+            var existingTab = DataTabControl.Items.Cast<TabItem>()
+                .FirstOrDefault(tab => (string)tab.Tag == counter);
+            if (existingTab != null)
+            {
+                System.Diagnostics.Debug.WriteLine($"Tab already exists for: {counter}");
+                DataTabControl.SelectedItem = existingTab;
+                return;
+            }
 
-        // データグリッドを作成
-        var dataGrid = new DataGrid
+            System.Diagnostics.Debug.WriteLine($"Creating new tab for: {counter}");
+
+            var tabItem = new TabItem
+            {
+                Header = GetCounterDisplayName(counter),
+                Tag = counter
+            };
+
+            // メインコンテナを作成
+            var mainGrid = new Grid();
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            // データグリッドを作成
+            var dataGrid = new DataGrid
+            {
+                AutoGenerateColumns = false,
+                IsReadOnly = true,
+                ItemsSource = _counterData[counter],
+                AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
+                GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+                HeadersVisibility = DataGridHeadersVisibility.Column
+            };
+
+            System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
+
+            // 列を定義
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "時間",
+                Binding = new System.Windows.Data.Binding("Timestamp") 
+                { 
+                    StringFormat = "yyyy/MM/dd HH:mm:ss" 
+                },
+                Width = 150
+            });
+
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "値",
+                Binding = new System.Windows.Data.Binding("Value") 
+                { 
+                    StringFormat = "N2" 
+                },
+                Width = 100
+            });
+
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "フォーマット済み値",
+                Binding = new System.Windows.Data.Binding("FormattedValue"),
+                Width = 120
+            });
+
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "単位",
+                Binding = new System.Windows.Data.Binding("Unit"),
+                Width = 80
+            });
+
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "カウンター",
+                Binding = new System.Windows.Data.Binding("Counter"),
+                Width = DataGridLength.SizeToCells
+            });
+
+            Grid.SetRow(dataGrid, 0);
+            mainGrid.Children.Add(dataGrid);
+
+            // 統計情報パネルを作成
+            var statisticsPanel = CreateStatisticsPanel(counter, _counterData[counter]);
+            Grid.SetRow(statisticsPanel, 1);
+            mainGrid.Children.Add(statisticsPanel);
+
+            tabItem.Content = mainGrid;
+            DataTabControl.Items.Add(tabItem);
+            DataTabControl.SelectedItem = tabItem;
+
+            System.Diagnostics.Debug.WriteLine($"Tab created and added successfully for: {counter}");
+        }
+        catch (Exception ex)
         {
-            AutoGenerateColumns = false,
-            IsReadOnly = true,
-            ItemsSource = _counterData[counter],
-            AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
-            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            HeadersVisibility = DataGridHeadersVisibility.Column
-        };
-
-        // 列を定義
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "時間",
-            Binding = new System.Windows.Data.Binding("Timestamp") 
-            { 
-                StringFormat = "yyyy/MM/dd HH:mm:ss" 
-            },
-            Width = 150
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "値",
-            Binding = new System.Windows.Data.Binding("Value") 
-            { 
-                StringFormat = "N2" 
-            },
-            Width = 100
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "フォーマット済み値",
-            Binding = new System.Windows.Data.Binding("FormattedValue"),
-            Width = 120
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "単位",
-            Binding = new System.Windows.Data.Binding("Unit"),
-            Width = 80
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "カウンター",
-            Binding = new System.Windows.Data.Binding("Counter"),
-            Width = DataGridLength.SizeToCells
-        });
-
-        Grid.SetRow(dataGrid, 0);
-        mainGrid.Children.Add(dataGrid);
-
-        // 統計情報パネルを作成
-        var statisticsPanel = CreateStatisticsPanel(counter, _counterData[counter]);
-        Grid.SetRow(statisticsPanel, 1);
-        mainGrid.Children.Add(statisticsPanel);
-
-        tabItem.Content = mainGrid;
-        DataTabControl.Items.Add(tabItem);
+            System.Diagnostics.Debug.WriteLine($"Error in AddCounterTab: {ex.Message}");
+            MessageBox.Show($"タブ作成でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void RemoveCounterTab(string counter)
