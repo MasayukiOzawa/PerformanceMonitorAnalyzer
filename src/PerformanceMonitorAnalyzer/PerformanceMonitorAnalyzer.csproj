@@ -6,7 +6,8 @@
     <TargetFramework Condition="'$(BuildWindowsWpf)' == 'true'">net8.0-windows</TargetFramework>
     <TargetFramework Condition="'$(BuildWindowsWpf)' != 'true'">net8.0</TargetFramework>
     <UseWPF Condition="'$(BuildWindowsWpf)' == 'true'">true</UseWPF>
-    <EnableDefaultPageItems Condition="'$(BuildWindowsWpf)' == 'true'">false</EnableDefaultPageItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
@@ -32,6 +33,14 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Compile Include="App.xaml.cs">
+      <DependentUpon>App.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="MainWindow.xaml.cs">
+      <DependentUpon>MainWindow.xaml</DependentUpon>
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
 
   <!-- コンソール版では WPF 関連ファイルを除外 -->
