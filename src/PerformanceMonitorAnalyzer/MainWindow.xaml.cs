@@ -845,7 +845,7 @@ public partial class MainWindow : Window
 
         var stackPanel = new StackPanel
         {
-            Orientation = Orientation.Horizontal
+            Orientation = System.Windows.Controls.Orientation.Horizontal
         };
 
         // 統計情報を表示するテキストブロックを作成
@@ -866,7 +866,7 @@ public partial class MainWindow : Window
                 Text = item,
                 Margin = new Thickness(0, 0, 20, 0),
                 FontSize = 12,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
             };
             stackPanel.Children.Add(textBlock);
         }
@@ -877,7 +877,7 @@ public partial class MainWindow : Window
             Content = "CSV出力",
             Padding = new Thickness(10, 2, 10, 2),
             Margin = new Thickness(10, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
         };
         exportButton.Click += (sender, e) => ExportCounterDataToCsv(counter, dataPoints);
         stackPanel.Children.Add(exportButton);
