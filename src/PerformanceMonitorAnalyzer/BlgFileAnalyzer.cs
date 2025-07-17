@@ -347,12 +347,16 @@ public class BlgFileAnalyzer : IDisposable
         var allPaths = new List<string>();
         var objects = await EnumerateObjectsAsync(progress);
 
+        progress?.Report($"見つかったオブジェクト数: {objects.Count}");
+        
         foreach (var objectName in objects)
         {
             try
             {
+                progress?.Report($"処理中のオブジェクト: {objectName}");
                 var (counters, instances) = await EnumerateCountersAndInstancesAsync(objectName, progress);
 
+                var pathsForThisObject = 0;
                 foreach (var counterName in counters)
                 {
                     if (instances.Count > 0)
@@ -362,6 +366,7 @@ public class BlgFileAnalyzer : IDisposable
                         {
                             var path = $"\\{objectName}({instanceName})\\{counterName}";
                             allPaths.Add(path);
+                            pathsForThisObject++;
                         }
                     }
                     else
@@ -369,8 +374,11 @@ public class BlgFileAnalyzer : IDisposable
                         // インスタンスなしの場合
                         var path = $"\\{objectName}\\{counterName}";
                         allPaths.Add(path);
+                        pathsForThisObject++;
                     }
                 }
+                
+                progress?.Report($"{objectName}: {counters.Count}カウンター × {Math.Max(1, instances.Count)}インスタンス = {pathsForThisObject}パス");
             }
             catch (Exception ex)
             {
@@ -381,6 +389,14 @@ public class BlgFileAnalyzer : IDisposable
         }
 
         progress?.Report($"合計 {allPaths.Count} 個のカウンターパスを生成しました");
+        
+        // 最初のいくつかのパスをログ出力（デバッグ用）
+        if (allPaths.Count > 0)
+        {
+            var samplePaths = allPaths.Take(10).ToList();
+            progress?.Report($"サンプルパス（最初の10個）: {string.Join(", ", samplePaths)}");
+        }
+        
         return allPaths;
     }
 

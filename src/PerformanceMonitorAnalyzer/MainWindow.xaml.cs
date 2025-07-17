@@ -276,6 +276,13 @@ public partial class MainWindow : Window
     {
         LogError($"Building counter tree with {counters.Count} counters");
         
+        // 最初のいくつかのカウンターをログ出力
+        if (counters.Count > 0)
+        {
+            var sampleCounters = counters.Take(10).ToList();
+            LogError($"Sample counters: {string.Join(", ", sampleCounters)}");
+        }
+        
         // カウンターを解析してオブジェクト別にグループ化
         var objectGroups = new Dictionary<string, Dictionary<string, List<string>>>();
         
@@ -283,7 +290,11 @@ public partial class MainWindow : Window
         {
             // パフォーマンスカウンターのパス解析: \ObjectName(InstanceName)\CounterName
             var parts = counter.Split('\\');
-            if (parts.Length < 3) continue;
+            if (parts.Length < 3) 
+            {
+                LogError($"Skipping invalid counter path: {counter}");
+                continue;
+            }
             
             var objectName = parts[1];
             var counterName = parts[2];
@@ -302,6 +313,7 @@ public partial class MainWindow : Window
             if (!objectGroups.ContainsKey(objectName))
             {
                 objectGroups[objectName] = new Dictionary<string, List<string>>();
+                LogError($"Created new object group: {objectName}");
             }
             
             if (!objectGroups[objectName].ContainsKey(instanceName))
@@ -313,6 +325,21 @@ public partial class MainWindow : Window
         }
         
         LogError($"Created {objectGroups.Count} object groups");
+        
+        // 各オブジェクトグループの詳細をログ出力
+        foreach (var objGroup in objectGroups)
+        {
+            LogError($"Object '{objGroup.Key}' has {objGroup.Value.Count} instances, total counters: {objGroup.Value.Sum(x => x.Value.Count)}");
+            
+            // LogicalDiskの詳細を特に出力
+            if (objGroup.Key == "LogicalDisk")
+            {
+                foreach (var instGroup in objGroup.Value)
+                {
+                    LogError($"  LogicalDisk instance '{instGroup.Key}' has {instGroup.Value.Count} counters");
+                }
+            }
+        }
         
         // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
         _counterTreeNodes.Clear();
@@ -355,11 +382,22 @@ public partial class MainWindow : Window
         
         LogError($"Counter tree built with {_counterTreeNodes.Count} root nodes");
         
-        // 各オブジェクトグループの詳細をログ出力
-        foreach (var objNode in _counterTreeNodes.Take(3)) // 最初の3個のオブジェクトのみ
+        // 各ルートノードの詳細をログ出力
+        foreach (var objNode in _counterTreeNodes)
         {
-            LogError($"Object '{objNode.DisplayName}' has {objNode.Children.Count} instances");
+            LogError($"Tree node '{objNode.DisplayName}' has {objNode.Children.Count} child instances");
+            
+            // LogicalDiskノードの詳細
+            if (objNode.DisplayName == "LogicalDisk")
+            {
+                foreach (var instNode in objNode.Children)
+                {
+                    LogError($"  LogicalDisk instance '{instNode.DisplayName}' has {instNode.Children.Count} counters");
+                }
+            }
         }
+        
+        LogError("TreeView structure updated via ObservableCollection");
     }
 
     private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
