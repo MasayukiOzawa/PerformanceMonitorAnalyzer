@@ -125,7 +125,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _counterScales = new();
     
     // サポートされるスケール値
-    private readonly double[] SupportedScales = { 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001 };
+    private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
@@ -2046,12 +2046,12 @@ public partial class MainWindow : Window
         };
 
         // スケール値を追加
-        var scaleItems = new[] { "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001" };
+        var scaleItems = new[] { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
         foreach (var scaleValue in scaleItems)
         {
             scaleComboBox.Items.Add(new ComboBoxItem 
             { 
-                Content = $"× {scaleValue}", 
+                Content = scaleValue, 
                 Tag = scaleValue 
             });
         }
