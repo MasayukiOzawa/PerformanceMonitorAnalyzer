@@ -209,6 +209,7 @@
                             <ComboBox x:Name="ScaleValueComboBox" Width="80" 
                                       VerticalAlignment="Center" Margin="0,0,10,0"
                                       SelectionChanged="ScaleValueComboBox_SelectionChanged">
+                                <ComboBoxItem Content="10" Tag="10"/>
                                 <ComboBoxItem Content="1.0" Tag="1.0"/>
                                 <ComboBoxItem Content="0.1" Tag="0.1"/>
                                 <ComboBoxItem Content="0.01" Tag="0.01"/>
