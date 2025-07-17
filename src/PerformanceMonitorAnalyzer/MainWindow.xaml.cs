@@ -510,10 +510,3 @@ public partial class MainWindow : Window
         }
     }
 }
-
-public class PerformanceDataPoint
-{
-    public DateTime Timestamp { get; set; }
-    public double Value { get; set; }
-    public string Counter { get; set; } = string.Empty;
-}
