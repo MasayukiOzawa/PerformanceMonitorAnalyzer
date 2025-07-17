@@ -320,6 +320,15 @@ public static class PdhApi
         out IntPtr phDataSource);
 
     /// <summary>
+    /// BLGログファイル内のカウンターパスを列挙
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumLogFileCounters(
+        IntPtr hDataSource,
+        IntPtr mszCounterList,
+        ref uint pcchBufferSize);
+
+    /// <summary>
     /// PDHクエリにデータソースを結び付ける
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]

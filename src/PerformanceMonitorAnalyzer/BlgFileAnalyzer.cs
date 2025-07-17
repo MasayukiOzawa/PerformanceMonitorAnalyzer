@@ -441,7 +441,82 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
-    /// 全てのカウンターパスを生成
+    /// BLGファイルから実際に利用可能なカウンターパスを取得
+    /// </summary>
+    public async Task<List<string>> GetAvailableCounterPathsAsync(IProgress<string>? progress = null)
+    {
+        if (_dataSource == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report("BLGファイルから利用可能なカウンターパスを取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var counterPaths = new List<string>();
+                uint bufferSize = 0;
+
+                // まずバッファサイズを取得
+                uint result = PdhApi.PdhEnumLogFileCounters(_dataSource, IntPtr.Zero, ref bufferSize);
+
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                {
+                    progress?.Report($"必要なバッファサイズ: {bufferSize} バイト");
+
+                    // バッファを確保してカウンターパスを取得
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+                    try
+                    {
+                        result = PdhApi.PdhEnumLogFileCounters(_dataSource, buffer, ref bufferSize);
+
+                        if (result == PdhApi.ERROR_SUCCESS)
+                        {
+                            // null区切りの文字列リストを解析
+                            string counterList = Marshal.PtrToStringUni(buffer) ?? "";
+                            
+                            // null区切りの文字列を分割
+                            var paths = counterList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                            
+                            foreach (var path in paths)
+                            {
+                                if (!string.IsNullOrWhiteSpace(path))
+                                {
+                                    counterPaths.Add(path);
+                                }
+                            }
+
+                            progress?.Report($"BLGファイルから {counterPaths.Count} 個のカウンターパスを取得しました");
+                        }
+                        else
+                        {
+                            throw new Exception($"カウンターパスの取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
+                }
+                else if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"カウンターパスのバッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+
+                return counterPaths;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"カウンターパス取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// 全てのカウンターパスを生成（従来の方法 - 参考用）
     /// </summary>
     public async Task<List<string>> GenerateAllCounterPathsAsync(IProgress<string>? progress = null)
     {

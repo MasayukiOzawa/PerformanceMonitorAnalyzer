@@ -267,8 +267,8 @@ public partial class MainWindow : Window
                 throw new Exception("BLGファイルを開くことができませんでした。");
             }
             
-            // 全てのカウンターパスを生成
-            counters = await _blgAnalyzer.GenerateAllCounterPathsAsync(progress);
+            // BLGファイルから実際に利用可能なカウンターパスを取得
+            counters = await _blgAnalyzer.GetAvailableCounterPathsAsync(progress);
             
             LogError($"PDH API parsing completed with {counters.Count} counters");
             
