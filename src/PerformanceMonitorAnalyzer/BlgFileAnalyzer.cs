@@ -50,8 +50,17 @@ public class BlgFileAnalyzer : IDisposable
         {
             try
             {
-                // データソースを開く（BLGログファイル用）
-                uint result = PdhApi.PdhOpenLog(
+                // クエリを開く（BLGファイルをデータソースとして指定）
+                uint result = PdhApi.PdhOpenQuery(filePath, IntPtr.Zero, out _query);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+
+                progress?.Report("PDHクエリが正常に開かれました");
+                
+                // データソースハンドルを取得（列挙用）
+                result = PdhApi.PdhOpenLog(
                     filePath,
                     PdhApi.GENERIC_READ,
                     out uint logType,
@@ -62,19 +71,14 @@ public class BlgFileAnalyzer : IDisposable
 
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
-                    throw new Exception($"BLGファイルを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    progress?.Report($"警告: データソースハンドル取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    // データソースが取得できない場合でも、クエリが開かれていれば継続
                 }
-
-                progress?.Report($"BLGファイルが正常に開かれました（ログタイプ: {logType}）");
-
-                // クエリを開く（データソースを指定）
-                result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
-                if (result != PdhApi.ERROR_SUCCESS)
+                else
                 {
-                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    progress?.Report($"データソースハンドルが正常に取得されました（ログタイプ: {logType}）");
                 }
 
-                progress?.Report("PDHクエリが正常に開かれました");
                 return true;
             }
             catch (Exception ex)
@@ -90,7 +94,7 @@ public class BlgFileAnalyzer : IDisposable
     /// </summary>
     public async Task<List<string>> EnumerateObjectsAsync(IProgress<string>? progress = null)
     {
-        if (_dataSource == IntPtr.Zero)
+        if (_query == IntPtr.Zero && _dataSource == IntPtr.Zero)
         {
             throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
@@ -103,6 +107,9 @@ public class BlgFileAnalyzer : IDisposable
             {
                 var objects = new List<string>();
                 
+                // データソースハンドルが利用可能な場合は使用、そうでなければnullを使用
+                IntPtr dataSourceHandle = _dataSource != IntPtr.Zero ? _dataSource : IntPtr.Zero;
+                
                 // まずマシン名を取得
                 var machineNames = GetMachineNames();
                 string? machineName = machineNames.FirstOrDefault();
@@ -111,26 +118,53 @@ public class BlgFileAnalyzer : IDisposable
                 uint bufferSize = 0;
 
                 // 必要なバッファサイズを取得
-                uint result = PdhApi.PdhEnumObjectsH(
-                    _dataSource,
-                    machineName,
-                    null,
-                    ref bufferSize,
-                    100, // PERF_DETAIL_NOVICE
-                    false);
+                uint result;
+                if (dataSourceHandle != IntPtr.Zero)
+                {
+                    result = PdhApi.PdhEnumObjectsH(
+                        dataSourceHandle,
+                        machineName,
+                        null,
+                        ref bufferSize,
+                        100, // PERF_DETAIL_NOVICE
+                        false);
+                }
+                else
+                {
+                    // データソースハンドルがない場合は通常のPdhEnumObjectsを使用
+                    result = PdhApi.PdhEnumObjects(
+                        machineName,
+                        null,
+                        ref bufferSize,
+                        100,
+                        false);
+                }
 
                 progress?.Report($"バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
 
                 if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
                     var buffer = new StringBuilder((int)bufferSize);
-                    result = PdhApi.PdhEnumObjectsH(
-                        _dataSource,
-                        machineName,
-                        buffer,
-                        ref bufferSize,
-                        100,
-                        false);
+                    
+                    if (dataSourceHandle != IntPtr.Zero)
+                    {
+                        result = PdhApi.PdhEnumObjectsH(
+                            dataSourceHandle,
+                            machineName,
+                            buffer,
+                            ref bufferSize,
+                            100,
+                            false);
+                    }
+                    else
+                    {
+                        result = PdhApi.PdhEnumObjects(
+                            machineName,
+                            buffer,
+                            ref bufferSize,
+                            100,
+                            false);
+                    }
 
                     progress?.Report($"オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
 
@@ -173,19 +207,43 @@ public class BlgFileAnalyzer : IDisposable
         
         try
         {
-            uint bufferSize = 0;
-            uint result = PdhApi.PdhEnumMachinesH(_dataSource, null, ref bufferSize);
+            IntPtr dataSourceHandle = _dataSource != IntPtr.Zero ? _dataSource : IntPtr.Zero;
             
-            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+            if (dataSourceHandle != IntPtr.Zero)
             {
-                var buffer = new StringBuilder((int)bufferSize);
-                result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
+                uint bufferSize = 0;
+                uint result = PdhApi.PdhEnumMachinesH(dataSourceHandle, null, ref bufferSize);
                 
-                if (result == PdhApi.ERROR_SUCCESS)
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
                 {
-                    var machineList = buffer.ToString();
-                    var machineNames = machineList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                    machines.AddRange(machineNames);
+                    var buffer = new StringBuilder((int)bufferSize);
+                    result = PdhApi.PdhEnumMachinesH(dataSourceHandle, buffer, ref bufferSize);
+                    
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        var machineList = buffer.ToString();
+                        var machineNames = machineList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                        machines.AddRange(machineNames);
+                    }
+                }
+            }
+            else
+            {
+                // データソースハンドルがない場合は通常のPdhEnumMachinesを使用
+                uint bufferSize = 0;
+                uint result = PdhApi.PdhEnumMachines(null, null, ref bufferSize);
+                
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                {
+                    var buffer = new StringBuilder((int)bufferSize);
+                    result = PdhApi.PdhEnumMachines(null, buffer, ref bufferSize);
+                    
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        var machineList = buffer.ToString();
+                        var machineNames = machineList.Split('\0', StringSplitOptions.RemoveEmptyEntries);
+                        machines.AddRange(machineNames);
+                    }
                 }
             }
         }
@@ -203,7 +261,7 @@ public class BlgFileAnalyzer : IDisposable
     public async Task<(List<string> counters, List<string> instances)> EnumerateCountersAndInstancesAsync(
         string objectName, IProgress<string>? progress = null)
     {
-        if (_dataSource == IntPtr.Zero)
+        if (_query == IntPtr.Zero && _dataSource == IntPtr.Zero)
         {
             throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
@@ -214,6 +272,9 @@ public class BlgFileAnalyzer : IDisposable
         {
             try
             {
+                // データソースハンドルが利用可能な場合は使用、そうでなければnullを使用
+                IntPtr dataSourceHandle = _dataSource != IntPtr.Zero ? _dataSource : IntPtr.Zero;
+                
                 // マシン名を取得
                 var machineNames = GetMachineNames();
                 string? machineName = machineNames.FirstOrDefault();
@@ -222,16 +283,32 @@ public class BlgFileAnalyzer : IDisposable
                 uint instanceBufferSize = 0;
 
                 // 必要なバッファサイズを取得
-                uint result = PdhApi.PdhEnumObjectItemsH(
-                    _dataSource,
-                    machineName,
-                    objectName,
-                    null,
-                    ref counterBufferSize,
-                    null,
-                    ref instanceBufferSize,
-                    100, // PERF_DETAIL_NOVICE
-                    0);
+                uint result;
+                if (dataSourceHandle != IntPtr.Zero)
+                {
+                    result = PdhApi.PdhEnumObjectItemsH(
+                        dataSourceHandle,
+                        machineName,
+                        objectName,
+                        null,
+                        ref counterBufferSize,
+                        null,
+                        ref instanceBufferSize,
+                        100, // PERF_DETAIL_NOVICE
+                        0);
+                }
+                else
+                {
+                    result = PdhApi.PdhEnumObjectItems(
+                        machineName,
+                        objectName,
+                        null,
+                        ref counterBufferSize,
+                        null,
+                        ref instanceBufferSize,
+                        100,
+                        0);
+                }
 
                 progress?.Report($"バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, カウンター: {counterBufferSize}, インスタンス: {instanceBufferSize}");
 
@@ -253,16 +330,31 @@ public class BlgFileAnalyzer : IDisposable
                         instanceBuffer = new StringBuilder((int)instanceBufferSize);
                     }
 
-                    result = PdhApi.PdhEnumObjectItemsH(
-                        _dataSource,
-                        machineName,
-                        objectName,
-                        counterBuffer,
-                        ref counterBufferSize,
-                        instanceBuffer,
-                        ref instanceBufferSize,
-                        100,
-                        0);
+                    if (dataSourceHandle != IntPtr.Zero)
+                    {
+                        result = PdhApi.PdhEnumObjectItemsH(
+                            dataSourceHandle,
+                            machineName,
+                            objectName,
+                            counterBuffer,
+                            ref counterBufferSize,
+                            instanceBuffer,
+                            ref instanceBufferSize,
+                            100,
+                            0);
+                    }
+                    else
+                    {
+                        result = PdhApi.PdhEnumObjectItems(
+                            machineName,
+                            objectName,
+                            counterBuffer,
+                            ref counterBufferSize,
+                            instanceBuffer,
+                            ref instanceBufferSize,
+                            100,
+                            0);
+                    }
 
                     progress?.Report($"カウンター・インスタンス列挙結果: {PdhApi.GetErrorMessage(result)}");
 

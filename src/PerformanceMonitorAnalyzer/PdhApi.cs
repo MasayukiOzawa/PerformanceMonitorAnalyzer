@@ -62,9 +62,43 @@ public static class PdhApi
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhOpenQuery(
-        string szDataSource,
+        string? szDataSource,
         IntPtr dwUserData,
         out IntPtr phQuery);
+
+    /// <summary>
+    /// オブジェクトを列挙（通常版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumObjects(
+        string? szMachineName,
+        StringBuilder? mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
+    /// マシン名を列挙（通常版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumMachines(
+        string? szDataSource,
+        StringBuilder? mszMachineList,
+        ref uint pcchBufferSize);
+
+    /// <summary>
+    /// カウンターを列挙（通常版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumObjectItems(
+        string? szMachineName,
+        string szObjectName,
+        StringBuilder? mszCounterList,
+        ref uint pcchCounterListLength,
+        StringBuilder? mszInstanceList,
+        ref uint pcchInstanceListLength,
+        uint dwDetailLevel,
+        uint dwFlags);
 
     /// <summary>
     /// クエリハンドルを閉じる
