@@ -1616,6 +1616,8 @@ public partial class MainWindow : Window
             {
                 progress?.Report("CSVデータを解析中...");
                 await LoadSelectedCountersFromCsv(tempCsvPath, counters, progress);
+                LogInfo($"CSVデータの読み込みが完了しました。ファイルサイズ: {new FileInfo(tempCsvPath).Length:N0} bytes");
+                progress?.Report("データテーブルへの読み込み完了");
             }
             else
             {
@@ -1628,10 +1630,34 @@ public partial class MainWindow : Window
         }
         finally
         {
-            // 一時ファイルを削除
+            // データテーブルロード後に一時CSVファイルを削除
             if (File.Exists(tempCsvPath))
             {
-                try { File.Delete(tempCsvPath); } catch { }
+                try 
+                { 
+                    File.Delete(tempCsvPath);
+                    LogInfo($"一時CSVファイルを削除しました: {tempCsvPath}");
+                    
+                    // UIに削除完了を表示
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        RelogResultDisplay.Text += "\n\n[完了] データテーブルロード後、一時CSVファイルを削除しました。";
+                    });
+                } 
+                catch (Exception ex)
+                { 
+                    LogError($"一時CSVファイルの削除に失敗しました: {tempCsvPath}, Error: {ex.Message}");
+                    
+                    // UIに削除失敗を表示
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        RelogResultDisplay.Text += $"\n\n[警告] 一時CSVファイルの削除に失敗しました: {ex.Message}";
+                    });
+                }
+            }
+            else
+            {
+                LogInfo("削除対象の一時CSVファイルが見つかりませんでした");
             }
         }
     }
