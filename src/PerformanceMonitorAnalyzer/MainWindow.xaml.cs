@@ -114,6 +114,7 @@ public partial class MainWindow : Window
     private DateTime _fileStartTime;
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
+    private string? _actualComputerName;
 
     public MainWindow()
     {
@@ -182,6 +183,7 @@ public partial class MainWindow : Window
         _counterTreeNodes.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
+        _actualComputerName = null;
 
         try
         {
@@ -279,6 +281,26 @@ public partial class MainWindow : Window
             if (!opened)
             {
                 throw new Exception("BLGファイルを開くことができませんでした。");
+            }
+
+            // BLGファイルから実際のコンピューター名を取得
+            try
+            {
+                var machineNames = analyzer.GetMachineNamesFromBlg();
+                _actualComputerName = machineNames.FirstOrDefault();
+                if (!string.IsNullOrEmpty(_actualComputerName))
+                {
+                    LogError($"Computer name extracted from BLG file: {_actualComputerName}");
+                }
+                else
+                {
+                    LogError("No computer name found in BLG file");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to extract computer name from BLG file: {ex.Message}");
+                _actualComputerName = null;
             }
             
             // 全てのカウンターパスを生成
@@ -965,6 +987,12 @@ public partial class MainWindow : Window
         }
         
         // \オブジェクト\カウンター の場合（ローカルコンピューター）
+        // BLGファイルから抽出した実際のコンピューター名があれば使用
+        if (!string.IsNullOrEmpty(_actualComputerName))
+        {
+            return _actualComputerName;
+        }
+        
         return "ローカルコンピューター";
     }
 

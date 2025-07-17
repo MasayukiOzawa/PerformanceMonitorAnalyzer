@@ -228,6 +228,14 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
+    /// BLGファイル内のマシン名を取得（公開メソッド）
+    /// </summary>
+    public List<string> GetMachineNamesFromBlg()
+    {
+        return GetMachineNames();
+    }
+
+    /// <summary>
     /// 指定されたオブジェクトのカウンターとインスタンスを列挙
     /// </summary>
     public async Task<(List<string> counters, List<string> instances)> EnumerateCountersAndInstancesAsync(
