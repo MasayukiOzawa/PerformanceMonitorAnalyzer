@@ -40,6 +40,7 @@ dotnet run -p:BuildWindowsWpf=true -f net8.0-windows
 - **BLGファイル読み込み**: Windows Performance Monitor のバイナリログファイルを解析
   - **PDH API方式**: Windows標準APIを使用した直接解析
   - **relog.exe方式**: relog.exeを使用した安定したCSV変換解析（推奨）
+  - **⭐時間範囲選択**: relog.exe方式で時間範囲を指定した部分解析が可能
 - **データ可視化**: パフォーマンスデータの階層表示とタブ形式データテーブル
 - **マルチカウンター表示**: 複数のパフォーマンスカウンターを同時に監視
 - **統計分析**: 平均、最大、最小、標準偏差の自動計算
