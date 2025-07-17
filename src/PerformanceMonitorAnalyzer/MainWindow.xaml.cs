@@ -486,15 +486,38 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked called");
+            
+            if (sender is CheckBox checkBox)
             {
-                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked for: {counter}");
-                AddCounterToChart(counter);
+                System.Diagnostics.Debug.WriteLine($"CheckBox found, Tag: {checkBox.Tag}");
+                
+                if (checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+                {
+                    System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked for: {counter}");
+                    System.Diagnostics.Debug.WriteLine($"_counterData contains counter: {_counterData.ContainsKey(counter)}");
+                    
+                    if (_counterData.ContainsKey(counter))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
+                    }
+                    
+                    AddCounterToChart(counter);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"CheckBox Tag is not a valid string. Tag: {checkBox.Tag}");
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Sender is not a CheckBox");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Checked: {ex.Message}");
+            LogError($"Error in CounterCheckBox_Checked: {ex}");
         }
     }
 
@@ -502,6 +525,8 @@ public partial class MainWindow : Window
     {
         try
         {
+            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked called");
+            
             if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
             {
                 System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for: {counter}");
@@ -511,159 +536,24 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Unchecked: {ex.Message}");
+            LogError($"Error in CounterCheckBox_Unchecked: {ex}");
         }
     }
 
-    private void CounterTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-    {
-        try
-        {
-            System.Diagnostics.Debug.WriteLine($"TreeView SelectedItemChanged: e.NewValue = {e.NewValue}");
-            
-            if (e.NewValue is CounterTreeNode selectedNode)
-            {
-                System.Diagnostics.Debug.WriteLine($"Selected node: DisplayName={selectedNode.DisplayName}, Type={selectedNode.Type}, FullPath={selectedNode.FullPath}");
-                
-                if (selectedNode.Type == NodeType.Counter)
-                {
-                    // カウンターが選択された場合、データテーブルタブを表示
-                    string counter = selectedNode.FullPath;
-                    System.Diagnostics.Debug.WriteLine($"Counter selected: {counter}");
-                    System.Diagnostics.Debug.WriteLine($"_counterData.ContainsKey(counter): {_counterData.ContainsKey(counter)}");
-                    
-                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Adding counter tab for: {counter}");
-                        
-                        // チェックボックスをチェック状態にする
-                        selectedNode.IsChecked = true;
-                        
-                        // データテーブルに追加
-                        AddCounterTab(counter);
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Counter not found in data or empty: {counter}");
-                    }
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"Selected node is not a counter: {selectedNode.Type}");
-                }
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("Selected item is not a CounterTreeNode");
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in CounterTreeView_SelectedItemChanged: {ex.Message}");
-            MessageBox.Show($"エラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
 
-    private void CounterTreeView_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        try
-        {
-            // マウスがクリックされた場所のTreeViewItemを取得
-            var treeView = sender as TreeView;
-            var hitTest = e.OriginalSource as FrameworkElement;
-            
-            System.Diagnostics.Debug.WriteLine($"PreviewMouseLeftButtonUp: OriginalSource = {e.OriginalSource}");
-            
-            // CheckBoxがクリックされた場合は処理をスキップ
-            if (hitTest is CheckBox)
-            {
-                System.Diagnostics.Debug.WriteLine("CheckBox clicked, skipping TreeView selection handling");
-                return;
-            }
-            
-            // TreeViewItemを検索
-            while (hitTest != null && !(hitTest is TreeViewItem))
-            {
-                hitTest = hitTest.Parent as FrameworkElement ?? 
-                         System.Windows.Media.VisualTreeHelper.GetParent(hitTest) as FrameworkElement;
-            }
-            
-            if (hitTest is TreeViewItem treeViewItem)
-            {
-                var dataContext = treeViewItem.DataContext;
-                System.Diagnostics.Debug.WriteLine($"TreeViewItem clicked: DataContext = {dataContext}");
-                
-                if (dataContext is CounterTreeNode selectedNode && selectedNode.Type == NodeType.Counter)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Counter node clicked: {selectedNode.FullPath}");
-                    
-                    // カウンターが選択された場合、データテーブルタブを表示
-                    string counter = selectedNode.FullPath;
-                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Adding counter tab via mouse click for: {counter}");
-                        
-                        // チェックボックスをチェック状態にする
-                        selectedNode.IsChecked = true;
-                        
-                        // データテーブルに追加
-                        AddCounterTab(counter);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in CounterTreeView_PreviewMouseLeftButtonUp: {ex.Message}");
-        }
-    }
-
-    private void TreeViewItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        try
-        {
-            var treeViewItem = sender as TreeViewItem;
-            if (treeViewItem?.DataContext is CounterTreeNode selectedNode)
-            {
-                System.Diagnostics.Debug.WriteLine($"TreeViewItem direct click: {selectedNode.DisplayName}, Type: {selectedNode.Type}");
-                
-                if (selectedNode.Type == NodeType.Counter)
-                {
-                    // CheckBoxがクリックされたかどうかを確認
-                    var hitTest = e.OriginalSource as FrameworkElement;
-                    if (hitTest is CheckBox)
-                    {
-                        System.Diagnostics.Debug.WriteLine("CheckBox clicked directly, skipping");
-                        return;
-                    }
-                    
-                    string counter = selectedNode.FullPath;
-                    if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Adding counter tab via TreeViewItem click for: {counter}");
-                        
-                        // チェックボックスをチェック状態にする
-                        selectedNode.IsChecked = true;
-                        
-                        // データテーブルに追加
-                        AddCounterTab(counter);
-                        
-                        // イベントをマークして、親要素に伝播させない
-                        e.Handled = true;
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in TreeViewItem_MouseLeftButtonUp: {ex.Message}");
-        }
-    }
 
     private void AddCounterToChart(string counter)
     {
-        if (!_counterData.ContainsKey(counter)) return;
-
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
+        
+        if (!_counterData.ContainsKey(counter))
+        {
+            System.Diagnostics.Debug.WriteLine($"Counter not found in _counterData: {counter}");
+            System.Diagnostics.Debug.WriteLine($"Available counters: {string.Join(", ", _counterData.Keys.Take(5))}...");
+            return;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
         // ScottPlot機能は現在無効化されています
         // チャート表示機能は後で実装される予定です
