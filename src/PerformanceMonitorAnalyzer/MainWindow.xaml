@@ -196,6 +196,7 @@
                     
                     <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="🚀 選択されたカウンターを読み込み" 
+                               AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"
                                Background="LightBlue" 
                                Padding="8,4"
