@@ -573,7 +573,7 @@ public class BlgFileAnalyzer : IDisposable
                                 try
                                 {
                                     // FileTimeからDateTimeに変換
-                                    long fileTime = rawValue.TimeStamp.dwLowDateTime | ((long)rawValue.TimeStamp.dwHighDateTime << 32);
+                                    long fileTime = (long)rawValue.TimeStamp;
                                     if (fileTime > 0)
                                     {
                                         timestamp = DateTime.FromFileTime(fileTime);

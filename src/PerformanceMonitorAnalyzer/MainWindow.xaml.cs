@@ -584,7 +584,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void AddCounterToChart(string counter)
+    private async Task AddCounterToChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
         LogError($"AddCounterToChart called for: {counter}");
