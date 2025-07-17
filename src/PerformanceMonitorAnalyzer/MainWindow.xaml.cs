@@ -148,7 +148,8 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"LoadBlgFileAsync failed: {ex}");
-            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。", 
+            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。\n場所: {logPath}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -501,8 +502,17 @@ public partial class MainWindow : Window
     {
         try
         {
+            // アプリケーション実行ディレクトリのerror.logに出力
             var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
-            File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}\n");
+            var logMessage = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}\n";
+            File.AppendAllText(logPath, logMessage);
+            
+            // 初回ログ出力時にパスを表示
+            if (!File.Exists(logPath + ".logged"))
+            {
+                File.WriteAllText(logPath + ".logged", ""); // フラグファイル作成
+                Debug.WriteLine($"Error log file location: {logPath}");
+            }
         }
         catch
         {

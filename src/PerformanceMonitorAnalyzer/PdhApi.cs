@@ -23,6 +23,10 @@ public static class PdhApi
 
     // PDH ログタイプ
     public const uint PDH_LOG_TYPE_BINARY = 0x00000008;
+    
+    // ファイルアクセスモード（標準Windows定数）
+    public const uint GENERIC_READ = 0x80000000;
+    public const uint GENERIC_WRITE = 0x40000000;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct PDH_FMT_COUNTERVALUE
@@ -101,7 +105,7 @@ public static class PdhApi
         out PDH_FMT_COUNTERVALUE pValue);
 
     /// <summary>
-    /// ログファイル内のオブジェクトを列挙
+    /// BLGログファイル内のオブジェクトを列挙
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectsH(
@@ -113,7 +117,7 @@ public static class PdhApi
         bool bRefresh);
 
     /// <summary>
-    /// ログファイル内のカウンターを列挙
+    /// BLGログファイル内のカウンターを列挙
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
     public static extern uint PdhEnumObjectItemsH(
@@ -126,6 +130,15 @@ public static class PdhApi
         ref uint pcchInstanceListLength,
         uint dwDetailLevel,
         uint dwFlags);
+
+    /// <summary>
+    /// BLGログファイル内のマシン名を列挙
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumMachinesH(
+        IntPtr hDataSource,
+        StringBuilder? mszMachineList,
+        ref uint pcchBufferSize);
 
     /// <summary>
     /// データソースを開く
