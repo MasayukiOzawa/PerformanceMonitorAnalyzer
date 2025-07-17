@@ -10,9 +10,8 @@ using System.Collections.ObjectModel;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
-using LiveCharts;
-using LiveCharts.Wpf;
-using LiveCharts.Configurations;
+using ScottPlot;
+using ScottPlot.WPF;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -119,10 +118,8 @@ public partial class MainWindow : Window
     private bool _timeRangeDetected = false;
     private string? _actualComputerName;
     
-    // LiveCharts用のプロパティ
-    public SeriesCollection SeriesCollection { get; set; } = new SeriesCollection();
-    public Func<double, string> DateTimeFormatter { get; set; }
-    public Func<double, string> ValueFormatter { get; set; }
+    // ScottPlot用のプロパティ
+    private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
 
     public MainWindow()
     {
@@ -133,22 +130,17 @@ public partial class MainWindow : Window
 
     private void InitializeChart()
     {
-        // LiveCharts の DateTime 設定
-        var dayConfig = Mappers.Xy<PerformanceDataPoint>()
-            .X(dataPoint => dataPoint.Timestamp.Ticks)
-            .Y(dataPoint => dataPoint.Value);
+        // ScottPlot グラフの初期設定
+        PerformanceChart.Plot.Clear();
+        PerformanceChart.Plot.XLabel("時間");
+        PerformanceChart.Plot.YLabel("値");
+        PerformanceChart.Plot.Title("パフォーマンスカウンター");
         
-        Charting.For<PerformanceDataPoint>(dayConfig);
+        // 時間軸の設定
+        PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
-        // フォーマッター設定
-        DateTimeFormatter = value => new DateTime((long)value).ToString("MM/dd HH:mm:ss");
-        ValueFormatter = value => value.ToString("N2");
-        
-        // データコンテキスト設定
-        DataContext = this;
-        
-        // グラフの初期設定
-        PerformanceChart.Series = SeriesCollection;
+        // グラフの更新
+        PerformanceChart.Refresh();
     }
 
     private async void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -647,25 +639,37 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
         // 既存のシリーズをチェック
-        var existingSeries = SeriesCollection.FirstOrDefault(s => s.Title == GetCounterDisplayName(counter));
-        if (existingSeries != null)
+        if (_chartSeries.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
             return;
         }
         
-        // 新しいシリーズを作成
-        var lineSeries = new LineSeries
+        // データポイントを準備
+        var dataPoints = _counterData[counter];
+        if (!dataPoints.Any())
         {
-            Title = GetCounterDisplayName(counter),
-            Values = new ChartValues<PerformanceDataPoint>(_counterData[counter]),
-            PointGeometry = null, // ポイントを非表示にしてパフォーマンス向上
-            LineSmoothness = 0, // 直線で接続
-            StrokeThickness = 2
-        };
+            System.Diagnostics.Debug.WriteLine($"No data points for counter: {counter}");
+            return;
+        }
         
-        SeriesCollection.Add(lineSeries);
+        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value).ToArray();
+        
+        // 新しいシリーズを作成
+        var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
+        scatter.LegendText = GetCounterDisplayName(counter);
+        scatter.LineWidth = 2;
+        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        
+        // シリーズを記録
+        _chartSeries[counter] = scatter;
+        
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
+        
+        // グラフを更新
+        PerformanceChart.Plot.Axes.AutoScale();
+        PerformanceChart.Refresh();
         
         // データテーブルタブを作成（チェックボックス経由）
         AddCounterTab(counter);
@@ -679,10 +683,11 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"RemoveCounterFromChart called for: {counter}");
         
         // 対応するシリーズを削除
-        var seriesToRemove = SeriesCollection.FirstOrDefault(s => s.Title == GetCounterDisplayName(counter));
-        if (seriesToRemove != null)
+        if (_chartSeries.TryGetValue(counter, out var scatter))
         {
-            SeriesCollection.Remove(seriesToRemove);
+            PerformanceChart.Plot.Remove(scatter);
+            _chartSeries.Remove(counter);
+            PerformanceChart.Refresh();
             System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
         }
         
@@ -696,7 +701,7 @@ public partial class MainWindow : Window
     private void UpdateChartVisibility()
     {
         // シリーズがある場合はメッセージを非表示、ない場合は表示
-        var hasData = SeriesCollection.Any();
+        var hasData = _chartSeries.Any();
         NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
         System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
     }

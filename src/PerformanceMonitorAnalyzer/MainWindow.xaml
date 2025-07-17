@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:lvc="clr-namespace:LiveCharts.Wpf;assembly=LiveCharts.Wpf"
+        xmlns:scottplot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized">
     <Grid>
@@ -192,23 +192,9 @@
             <!-- 右側: グラフ表示 -->
             <GroupBox Grid.Column="1" Header="グラフ表示">
                 <Grid>
-                    <!-- LiveCharts グラフコンテナ -->
-                    <lvc:CartesianChart x:Name="PerformanceChart" 
-                                      Background="White"
-                                      LegendLocation="Bottom"
-                                      AnimationsSpeed="0:0:0.5">
-                        <lvc:CartesianChart.AxisX>
-                            <lvc:Axis Title="時間" 
-                                    LabelFormatter="{Binding DateTimeFormatter}"
-                                    Unit="{x:Static lvc:TimeUnitType.ByHour}">
-                            </lvc:Axis>
-                        </lvc:CartesianChart.AxisX>
-                        <lvc:CartesianChart.AxisY>
-                            <lvc:Axis Title="値" 
-                                    LabelFormatter="{Binding ValueFormatter}">
-                            </lvc:Axis>
-                        </lvc:CartesianChart.AxisY>
-                    </lvc:CartesianChart>
+                    <!-- ScottPlot グラフコンテナ -->
+                    <scottplot:WpfPlot x:Name="PerformanceChart" 
+                                      Background="White" />
                     
                     <!-- データなしの場合のメッセージ -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
