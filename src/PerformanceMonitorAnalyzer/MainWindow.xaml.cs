@@ -112,18 +112,34 @@ public partial class MainWindow : Window
             var progress = new Progress<string>(status => 
             {
                 ProgressStatusText.Text = status;
+                LogError($"Progress: {status}"); // デバッグ用ログ追加
             });
             
             var counters = await ParseBlgFileAsync(fileName, progress);
             
-            // 階層構造を作成
+            LogError($"ParseBlgFileAsync completed with {counters.Count} counters"); // デバッグ用ログ
+            
+            if (counters.Count == 0)
+            {
+                throw new Exception("BLGファイルからカウンターを取得できませんでした。ファイルが破損しているか、対応していない形式の可能性があります。");
+            }
+            
+            // 階層構造を作成（UIスレッドで実行）
             ProgressStatusText.Text = "カウンター階層を構築中...";
-            await Task.Run(() => BuildCounterTree(counters));
+            BuildCounterTree(counters);
 
             NoDataMessage.Visibility = Visibility.Collapsed;
             
-            MessageBox.Show($"BLGファイルが読み込まれました。\n{counters.Count}個のカウンターが見つかりました。", 
+            LogError($"Counter tree built successfully with {_counterTreeNodes.Count} root nodes"); // デバッグ用ログ
+            
+            MessageBox.Show($"BLGファイルが読み込まれました。\n{counters.Count}個のカウンターが見つかりました。\n階層構造: {_counterTreeNodes.Count}個のオブジェクト", 
                            "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            LogError($"LoadBlgFileAsync failed: {ex}");
+            MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -152,6 +168,7 @@ public partial class MainWindow : Window
         try
         {
             progress?.Report("PowerShellを使用してBLGファイルを解析中...");
+            LogError($"Starting PowerShell parsing for file: {fileName}");
             
             // PowerShellを使用してBLGファイルからパフォーマンスカウンターを取得
             var processInfo = new ProcessStartInfo
@@ -164,6 +181,8 @@ public partial class MainWindow : Window
                 CreateNoWindow = true
             };
 
+            LogError($"PowerShell command: {processInfo.Arguments}");
+
             using var process = Process.Start(processInfo);
             if (process != null)
             {
@@ -171,11 +190,17 @@ public partial class MainWindow : Window
                 var errors = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
 
+                LogError($"PowerShell exit code: {process.ExitCode}");
+                LogError($"PowerShell output length: {output?.Length ?? 0}");
+                LogError($"PowerShell errors: {errors}");
+
                 if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                 {
                     progress?.Report("カウンター一覧を処理中...");
                     
                     var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    LogError($"PowerShell output lines count: {lines.Length}");
+                    
                     foreach (var line in lines)
                     {
                         var trimmedLine = line.Trim();
@@ -185,6 +210,8 @@ public partial class MainWindow : Window
                         }
                     }
                     
+                    LogError($"Extracted {counters.Count} counters from PowerShell output");
+                    
                     if (counters.Count > 0)
                     {
                         progress?.Report("カウンターデータを読み込み中...");
@@ -192,21 +219,38 @@ public partial class MainWindow : Window
                         await LoadActualCounterDataAsync(fileName, counters, progress);
                         return counters;
                     }
+                    else
+                    {
+                        LogError("No valid counters found in PowerShell output");
+                    }
+                }
+                else
+                {
+                    LogError($"PowerShell command failed. Exit code: {process.ExitCode}, Output empty: {string.IsNullOrWhiteSpace(output)}");
                 }
                 
                 if (!string.IsNullOrWhiteSpace(errors))
                 {
                     LogError($"PowerShell error: {errors}");
+                    throw new Exception($"PowerShellエラー: {errors}");
                 }
+            }
+            else
+            {
+                LogError("Failed to start PowerShell process");
+                throw new Exception("PowerShellプロセスの開始に失敗しました");
             }
         }
         catch (Exception ex)
         {
             LogError($"PowerShell execution failed: {ex.Message}");
+            throw new Exception($"PowerShell実行エラー: {ex.Message}", ex);
         }
 
+        // PowerShellが失敗した場合の処理
+        LogError("PowerShell parsing failed, trying alternative method");
         progress?.Report("代替手法でBLGファイルを解析中...");
-        // PowerShellが失敗した場合はTypeLibを試行
+        
         try
         {
             return await ParseBlgFileWithTypeLibAsync(fileName, progress);
@@ -214,7 +258,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"TypeLib parsing failed: {ex.Message}");
-            throw new Exception($"すべてのBLG解析方法が失敗しました。最後のエラー: {ex.Message}");
+            throw new Exception($"すべてのBLG解析方法が失敗しました。PowerShellとTypeLibの両方でエラーが発生しました。", ex);
         }
     }
 
@@ -231,6 +275,7 @@ public partial class MainWindow : Window
         try
         {
             progress?.Report("パフォーマンスデータを取得中...");
+            LogError($"Loading counter data for {counters.Count} counters");
             
             // PowerShellを使用してカウンターデータを取得
             var processInfo = new ProcessStartInfo
@@ -243,19 +288,41 @@ public partial class MainWindow : Window
                 CreateNoWindow = true
             };
 
+            LogError($"Counter data PowerShell command: {processInfo.Arguments}");
+
             using var process = Process.Start(processInfo);
             if (process != null)
             {
                 var output = await process.StandardOutput.ReadToEndAsync();
+                var errors = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
+
+                LogError($"Counter data PowerShell exit code: {process.ExitCode}");
+                LogError($"Counter data output length: {output?.Length ?? 0}");
+                
+                if (!string.IsNullOrWhiteSpace(errors))
+                {
+                    LogError($"Counter data PowerShell errors: {errors}");
+                }
 
                 if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                 {
                     progress?.Report("パフォーマンスデータを解析中...");
                     // JSONデータを解析してカウンターデータを構築
                     await Task.Run(() => ParseCounterDataFromJson(output));
+                    LogError($"Counter data loaded successfully. Total counters with data: {_counterData.Count}");
                     return;
                 }
+                else
+                {
+                    LogError("Failed to get counter data from PowerShell");
+                    throw new Exception($"カウンターデータの取得に失敗しました。PowerShell終了コード: {process.ExitCode}");
+                }
+            }
+            else
+            {
+                LogError("Failed to start PowerShell process for counter data");
+                throw new Exception("カウンターデータ取得用PowerShellプロセスの開始に失敗しました");
             }
         }
         catch (Exception ex)
@@ -269,9 +336,14 @@ public partial class MainWindow : Window
     {
         try
         {
+            LogError($"Parsing JSON output, length: {jsonOutput.Length}");
+            LogError($"JSON sample (first 500 chars): {jsonOutput.Substring(0, Math.Min(500, jsonOutput.Length))}");
+            
             // Newtonsoft.Jsonを使用してJSON解析
             var jsonData = JToken.Parse(jsonOutput);
             var dataArray = jsonData is JArray array ? array : new JArray { jsonData };
+            
+            LogError($"JSON parsed, found {dataArray.Count} items");
             
             foreach (var item in dataArray)
             {
@@ -299,10 +371,17 @@ public partial class MainWindow : Window
             }
             
             LogError($"Successfully loaded {_counterData.Count} counters from JSON data");
+            
+            // カウンターごとのデータ点数をログ出力
+            foreach (var counter in _counterData.Keys.Take(5)) // 最初の5個だけ表示
+            {
+                LogError($"Counter '{counter}' has {_counterData[counter].Count} data points");
+            }
         }
         catch (Exception ex)
         {
             LogError($"JSON parsing failed: {ex.Message}");
+            LogError($"JSON content that failed: {jsonOutput}");
             throw;
         }
     }
@@ -310,6 +389,8 @@ public partial class MainWindow : Window
 
     private void BuildCounterTree(List<string> counters)
     {
+        LogError($"Building counter tree with {counters.Count} counters");
+        
         // カウンターを解析してオブジェクト別にグループ化
         var objectGroups = new Dictionary<string, Dictionary<string, List<string>>>();
         
@@ -346,7 +427,11 @@ public partial class MainWindow : Window
             objectGroups[objectName][instanceName].Add(counter);
         }
         
-        // TreeViewノードを作成
+        LogError($"Created {objectGroups.Count} object groups");
+        
+        // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
+        _counterTreeNodes.Clear();
+        
         foreach (var objectGroup in objectGroups.OrderBy(x => x.Key))
         {
             var objectNode = new CounterTreeNode
@@ -381,6 +466,14 @@ public partial class MainWindow : Window
             }
             
             _counterTreeNodes.Add(objectNode);
+        }
+        
+        LogError($"Counter tree built with {_counterTreeNodes.Count} root nodes");
+        
+        // 各オブジェクトグループの詳細をログ出力
+        foreach (var objNode in _counterTreeNodes.Take(3)) // 最初の3個のオブジェクトのみ
+        {
+            LogError($"Object '{objNode.DisplayName}' has {objNode.Children.Count} instances");
         }
     }
 
