@@ -1199,7 +1199,7 @@ public partial class MainWindow : Window
                 ToastMessage.Text = message;
 
                 // 背景色を通知種類に応じて変更
-                var border = ToastNotificationPanel.Child as Border;
+                var border = ToastNotificationPanel.Children.Count > 0 ? ToastNotificationPanel.Children[0] as Border : null;
                 if (border != null)
                 {
                     border.Background = new SolidColorBrush(type switch
