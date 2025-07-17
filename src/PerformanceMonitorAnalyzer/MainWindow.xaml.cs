@@ -567,29 +567,6 @@ public partial class MainWindow : Window
                           "データ読み込みエラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
-                    LogError($"Data range: {first.Timestamp:yyyy-MM-dd HH:mm:ss} to {last.Timestamp:yyyy-MM-dd HH:mm:ss}");
-                    LogError($"Sample values: First={first.Value:F2}, Last={last.Value:F2}");
-                }
-            }
-            else
-            {
-                LogError($"No data available for counter: {counter}");
-                MessageBox.Show($"カウンター '{GetCounterDisplayName(counter)}' のデータが見つかりませんでした。\n" +
-                              "このカウンターはBLGファイルに記録されていない可能性があります。", 
-                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        }
-        catch (Exception ex)
-        {
-            LogError($"Failed to load data on-demand for counter {counter}: {ex.Message}");
-            LogError($"Exception details: {ex}");
-            MessageBox.Show($"カウンターデータの読み込みに失敗しました。\n" +
-                          $"カウンター: {GetCounterDisplayName(counter)}\n" +
-                          $"エラー: {ex.Message}\n\n" +
-                          "詳細はerror.logを確認してください。", 
-                          "データ読み込みエラー", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
 
     private async Task AddCounterToChart(string counter)
     {
