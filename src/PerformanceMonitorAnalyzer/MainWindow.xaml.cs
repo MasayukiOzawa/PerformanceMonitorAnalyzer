@@ -147,35 +147,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
+    public async Task LoadBlgFileFromCommandLineAsync(string fileName)
     {
         try
         {
-            var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "sample", "DataCollector01.blg");
-            
-            if (!File.Exists(sampleFilePath))
-            {
-                // 実行ディレクトリからの相対パスを試行
-                sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sample", "DataCollector01.blg");
-            }
-            
-            if (!File.Exists(sampleFilePath))
-            {
-                MessageBox.Show("サンプルBLGファイル（DataCollector01.blg）が見つかりません。\n" +
-                              "sample フォルダにファイルが存在することを確認してください。", 
-                              "ファイルが見つかりません", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            await LoadBlgFileAsync(sampleFilePath);
+            await LoadBlgFileAsync(fileName);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"サンプルファイルの読み込みに失敗しました: {ex.Message}", 
+            MessageBox.Show($"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to load sample BLG file: {ex}");
+            LogError($"Failed to load BLG file from command line: {ex}");
         }
     }
+
+
 
     private async Task LoadBlgFileAsync(string fileName)
     {
@@ -510,6 +496,23 @@ public partial class MainWindow : Window
         {
             RemoveCounterFromChart(counter);
             RemoveCounterTab(counter);
+        }
+    }
+
+    private void CounterTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is CounterTreeNode selectedNode && selectedNode.Type == NodeType.Counter)
+        {
+            // カウンターが選択された場合、データテーブルタブを表示
+            string counter = selectedNode.FullPath;
+            if (!string.IsNullOrEmpty(counter) && _counterData.ContainsKey(counter))
+            {
+                // チェックボックスをチェック状態にする
+                selectedNode.IsChecked = true;
+                
+                // データテーブルに追加
+                AddCounterTab(counter);
+            }
         }
     }
 

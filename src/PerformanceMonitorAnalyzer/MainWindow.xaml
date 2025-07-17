@@ -17,7 +17,7 @@
         <Menu Grid.Row="0">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="BLGファイルを開く(_O)..." Click="OpenBlgFile_Click"/>
-                <MenuItem Header="サンプルBLGファイルを読み込み(_S)" Click="LoadSampleBlgFile_Click"/>
+
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click"/>
             </MenuItem>
@@ -70,7 +70,7 @@
                              FontWeight="SemiBold"/>
                     
                     <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                        <TreeView x:Name="CounterTreeView" Margin="5">
+                        <TreeView x:Name="CounterTreeView" Margin="5" SelectedItemChanged="CounterTreeView_SelectedItemChanged">
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                                     <StackPanel Orientation="Horizontal">
