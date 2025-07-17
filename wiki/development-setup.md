@@ -176,6 +176,37 @@ dotnet build
 - VS Code デバッグコンソール: デバッグ実行時に使用
 - .NET ログ: `dotnet --info` で環境情報確認
 
+## UI 拡張とカスタマイズ
+
+### レイアウト構造
+Performance Monitor Analyzer は WPF の Grid レイアウトを使用し、以下の領域に分かれています：
+
+1. **メニューバー**（Row 0）: ファイル操作とヘルプ
+2. **プログレスバー**（Row 1）: ファイル読み込み進行状況
+3. **メイン表示エリア**（Row 2）: カウンター選択とグラフ表示
+4. **GridSplitter**（Row 3）: リサイズ用の分割線
+5. **データテーブル**（Row 4）: タブ形式のデータ表示
+
+### 動的リサイズ機能
+- Row 3 に配置された GridSplitter により、データテーブル領域の高さを動的に調整可能
+- 最小100ピクセル、最大600ピクセルの制約あり
+- マウスオーバー時の視覚的フィードバック機能
+
+```xml
+<GridSplitter Grid.Row="3" 
+              Height="5" 
+              HorizontalAlignment="Stretch" 
+              VerticalAlignment="Stretch"
+              Background="#E0E0E0"
+              Cursor="SizeNS"
+              ToolTip="ドラッグしてデータテーブル領域の高さを調整"/>
+```
+
+### UI カスタマイズのガイドライン
+- WPF の MVVM パターンに従った実装
+- データバインディングによる動的な表示更新
+- ユーザビリティを重視したインタラクティブな要素
+
 ## パフォーマンス測定
 
 ### ベンチマーク
