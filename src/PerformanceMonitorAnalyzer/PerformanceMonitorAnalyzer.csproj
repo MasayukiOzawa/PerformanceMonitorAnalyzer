@@ -6,6 +6,7 @@
     <TargetFramework Condition="'$(BuildWindowsWpf)' == 'true'">net8.0-windows</TargetFramework>
     <TargetFramework Condition="'$(BuildWindowsWpf)' != 'true'">net8.0</TargetFramework>
     <UseWPF Condition="'$(BuildWindowsWpf)' == 'true'">true</UseWPF>
+    <EnableDefaultPageItems Condition="'$(BuildWindowsWpf)' == 'true'">false</EnableDefaultPageItems>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishSingleFile>true</PublishSingleFile>
