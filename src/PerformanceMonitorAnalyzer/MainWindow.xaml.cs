@@ -120,6 +120,12 @@ public partial class MainWindow : Window
     
     // ScottPlot用のプロパティ
     private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
+    
+    // カウンターごとのスケール設定を管理
+    private readonly Dictionary<string, double> _counterScales = new();
+    
+    // サポートされるスケール値
+    private readonly double[] SupportedScales = { 1.0, 0.1, 0.01, 0.001 };
 
     public MainWindow()
     {
@@ -134,10 +140,12 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Clear();
         PerformanceChart.Plot.XLabel("時間");
         PerformanceChart.Plot.YLabel("値");
-        PerformanceChart.Plot.Title("パフォーマンスカウンター");
         
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+        
+        // スケールコントロールの初期化
+        ScaleValueComboBox.SelectedIndex = 0; // 1.0をデフォルトに設定
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -653,8 +661,11 @@ public partial class MainWindow : Window
             return;
         }
         
+        // カウンターのスケール設定を取得（デフォルトは1.0）
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+        
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
         
         // 新しいシリーズを作成
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
@@ -676,6 +687,9 @@ public partial class MainWindow : Window
         
         // グラフが表示されたらメッセージを非表示
         UpdateChartVisibility();
+        
+        // スケールコントロールの表示を更新
+        UpdateScaleControlVisibility();
     }
 
     private void RemoveCounterFromChart(string counter)
@@ -691,11 +705,17 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
         }
         
+        // スケール設定も削除
+        _counterScales.Remove(counter);
+        
         // データテーブルタブを削除
         RemoveCounterTab(counter);
         
         // グラフの表示状態を更新
         UpdateChartVisibility();
+        
+        // スケールコントロールの表示を更新
+        UpdateScaleControlVisibility();
     }
     
     private void UpdateChartVisibility()
@@ -1890,4 +1910,100 @@ public partial class MainWindow : Window
             // ログ出力に失敗した場合は何もしない
         }
     }
+
+    #region スケール変更機能
+
+    /// <summary>
+    /// カウンター選択時のイベントハンドラー
+    /// </summary>
+    private void CounterScaleComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (CounterScaleComboBox.SelectedItem is string selectedCounter)
+        {
+            // 選択されたカウンターの現在のスケールを表示
+            var currentScale = _counterScales.GetValueOrDefault(selectedCounter, 1.0);
+            
+            // ScaleValueComboBoxで該当するアイテムを選択
+            foreach (ComboBoxItem item in ScaleValueComboBox.Items)
+            {
+                if (item.Tag != null && double.Parse(item.Tag.ToString()) == currentScale)
+                {
+                    ScaleValueComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// スケール値選択時のイベントハンドラー
+    /// </summary>
+    private void ScaleValueComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // 自動適用はしない（適用ボタンクリック時に適用）
+    }
+
+    /// <summary>
+    /// スケール適用ボタンクリック時のイベントハンドラー
+    /// </summary>
+    private void ApplyScale_Click(object sender, RoutedEventArgs e)
+    {
+        if (CounterScaleComboBox.SelectedItem is string selectedCounter &&
+            ScaleValueComboBox.SelectedItem is ComboBoxItem selectedScaleItem &&
+            selectedScaleItem.Tag != null)
+        {
+            var newScale = double.Parse(selectedScaleItem.Tag.ToString());
+            
+            // スケール設定を保存
+            _counterScales[selectedCounter] = newScale;
+            
+            // グラフを更新
+            RefreshCounterInChart(selectedCounter);
+            
+            // ログ出力
+            LogDebugInfo($"Counter '{selectedCounter}' scale changed to {newScale}");
+        }
+    }
+
+    /// <summary>
+    /// 特定のカウンターのグラフ表示を更新
+    /// </summary>
+    private void RefreshCounterInChart(string counter)
+    {
+        if (_chartSeries.ContainsKey(counter))
+        {
+            // 既存のシリーズを削除
+            RemoveCounterFromChart(counter);
+            
+            // 新しいスケールで再追加
+            AddCounterToChart(counter);
+        }
+    }
+
+    /// <summary>
+    /// スケールコントロールパネルの表示/非表示を更新
+    /// </summary>
+    private void UpdateScaleControlVisibility()
+    {
+        bool hasChartData = _chartSeries.Any();
+        ScaleControlPanel.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
+        
+        if (hasChartData)
+        {
+            // カウンターComboBoxを更新
+            CounterScaleComboBox.Items.Clear();
+            foreach (var counter in _chartSeries.Keys)
+            {
+                CounterScaleComboBox.Items.Add(counter);
+            }
+            
+            // 最初のアイテムを選択
+            if (CounterScaleComboBox.Items.Count > 0)
+            {
+                CounterScaleComboBox.SelectedIndex = 0;
+            }
+        }
+    }
+
+    #endregion
 }
