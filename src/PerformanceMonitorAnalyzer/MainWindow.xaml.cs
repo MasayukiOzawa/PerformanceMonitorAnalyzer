@@ -1918,9 +1918,9 @@ public partial class MainWindow : Window
         var border = new Border
         {
             BorderBrush = System.Windows.Media.Brushes.LightGray,
-            BorderThickness = new Thickness(1),
-            Margin = new Thickness(0, 2),
-            Padding = new Thickness(5),
+            BorderThickness = new Thickness(1, 1, 1, 1),
+            Margin = new Thickness(0, 2, 0, 0),
+            Padding = new Thickness(5, 5, 5, 5),
             Background = System.Windows.Media.Brushes.White
         };
 
@@ -1945,7 +1945,7 @@ public partial class MainWindow : Window
         var scaleComboBox = new ComboBox
         {
             Width = 160,
-            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
             Tag = counter
         };
 
