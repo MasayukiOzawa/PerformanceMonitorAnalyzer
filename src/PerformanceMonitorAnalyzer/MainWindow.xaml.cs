@@ -111,7 +111,6 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
-    private BlgFileAnalyzer? _blgAnalyzer;
     private BlgFileAnalyzerBasic? _basicBlgAnalyzer;
 
     public MainWindow()
@@ -122,7 +121,6 @@ public partial class MainWindow : Window
         
         // ウィンドウが閉じられる時のクリーンアップ処理
         Closed += (sender, e) => {
-            _blgAnalyzer?.Dispose();
             _basicBlgAnalyzer?.Dispose();
         };
     }
@@ -261,8 +259,8 @@ public partial class MainWindow : Window
             LogError($"Starting safe PDH API parsing for file: {fileName}");
             
             // 前のアナライザーがあれば廃棄
-            _blgAnalyzer?.Dispose();
-            _blgAnalyzer = null; // 旧アナライザーを無効化
+            _basicBlgAnalyzer?.Dispose();
+            _basicBlgAnalyzer = null; // 旧アナライザーを無効化
             
             // 新しい基本アナライザーを使用（クラッシュを防ぐ）
             var basicAnalyzer = new BlgFileAnalyzerBasic();
@@ -606,7 +604,7 @@ public partial class MainWindow : Window
             LogError($"Available counters in _counterData: {_counterData.Count} total");
             
             // カウンターデータが存在しない場合、BLGファイルから動的に読み込み
-            if (_blgAnalyzer != null)
+            if (_basicBlgAnalyzer != null)
             {
                 System.Diagnostics.Debug.WriteLine($"Loading data dynamically for counter: {counter}");
                 LogError($"Loading data dynamically for counter: {counter}");

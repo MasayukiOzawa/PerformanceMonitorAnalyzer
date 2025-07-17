@@ -176,6 +176,33 @@ public static class PdhApi
     public static extern uint PdhCloseQuery(IntPtr hQuery);
 
     /// <summary>
+    /// ANSI版のカウンターをクエリに追加
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi)]
+    public static extern uint PdhAddCounterA(
+        IntPtr hQuery,
+        string szFullCounterPath,
+        IntPtr dwUserData,
+        out IntPtr phCounter);
+
+    /// <summary>
+    /// ANSI版のクエリを開く
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi)]
+    public static extern uint PdhOpenQueryA(
+        IntPtr szDataSource,
+        IntPtr dwUserData,
+        out IntPtr phQuery);
+
+    /// <summary>
+    /// BLGファイルをデータソースとしてバインド
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi)]
+    public static extern uint PdhBindInputDataSourceA(
+        out IntPtr phDataSource,
+        string LogFileNameList);
+
+    /// <summary>
     /// カウンターをクエリに追加
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
