@@ -112,7 +112,7 @@ public partial class MainWindow : Window
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
     private BlgFileAnalyzer? _blgAnalyzer;
-    private BlgFileAnalyzerSimple? _safeBlgAnalyzer;
+    private BlgFileAnalyzerBasic? _basicBlgAnalyzer;
 
     public MainWindow()
     {
@@ -123,7 +123,7 @@ public partial class MainWindow : Window
         // ウィンドウが閉じられる時のクリーンアップ処理
         Closed += (sender, e) => {
             _blgAnalyzer?.Dispose();
-            _safeBlgAnalyzer?.Dispose();
+            _basicBlgAnalyzer?.Dispose();
         };
     }
 
@@ -264,23 +264,23 @@ public partial class MainWindow : Window
             _blgAnalyzer?.Dispose();
             _blgAnalyzer = null; // 旧アナライザーを無効化
             
-            // 新しい安全なアナライザーを使用
-            var safeAnalyzer = new BlgFileAnalyzerSimple();
+            // 新しい基本アナライザーを使用（クラッシュを防ぐ）
+            var basicAnalyzer = new BlgFileAnalyzerBasic();
             
             // BLGファイルを開く
-            var opened = await safeAnalyzer.OpenBlgFileAsync(fileName, progress);
+            var opened = await basicAnalyzer.OpenBlgFileAsync(fileName, progress);
             if (!opened)
             {
                 throw new Exception("BLGファイルを開くことができませんでした。");
             }
             
             // アナライザーを保存（カウンター読み込み時に使用）
-            _safeBlgAnalyzer = safeAnalyzer;
+            _basicBlgAnalyzer = basicAnalyzer;
             
-            // BLGファイルから実際に利用可能なカウンターパスを取得
-            counters = await safeAnalyzer.GetAvailableCounterPathsAsync(progress);
+            // 基本的なカウンターパスを取得
+            counters = await basicAnalyzer.GetAvailableCounterPathsAsync(progress);
             
-            LogError($"Safe PDH API parsing completed with {counters.Count} counters");
+            LogError($"Basic PDH API parsing completed with {counters.Count} counters");
             
             if (counters.Count > 0)
             {
@@ -295,9 +295,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            LogError($"Safe PDH API execution failed: {ex.Message}");
-            _safeBlgAnalyzer?.Dispose();
-            _safeBlgAnalyzer = null;
+            LogError($"Basic PDH API execution failed: {ex.Message}");
+            _basicBlgAnalyzer?.Dispose();
+            _basicBlgAnalyzer = null;
             throw new Exception($"PDH API解析エラー: {ex.Message}", ex);
         }
     }
@@ -502,9 +502,9 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task LoadCounterDataOnDemandAsync(string counter)
     {
-        if (_safeBlgAnalyzer == null)
+        if (_basicBlgAnalyzer == null)
         {
-            LogError("Safe BLG analyzer not available for on-demand loading");
+            LogError("Basic BLG analyzer not available for on-demand loading");
             MessageBox.Show("BLGファイルアナライザーが利用できません。\nファイルを再度読み込んでください。", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -520,7 +520,7 @@ public partial class MainWindow : Window
                 LogError($"LoadCounterData Progress: {status}");
             });
             
-            var dataPoints = await _safeBlgAnalyzer.LoadCounterDataAsync(counter, progress);
+            var dataPoints = await _basicBlgAnalyzer.LoadCounterDataAsync(counter, progress);
             
             if (dataPoints != null && dataPoints.Count > 0)
             {
