@@ -484,19 +484,33 @@ public partial class MainWindow : Window
 
     private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
     {
-        if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+        try
         {
-            AddCounterToChart(counter);
-            AddCounterTab(counter);
+            if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+            {
+                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked for: {counter}");
+                AddCounterToChart(counter);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Checked: {ex.Message}");
         }
     }
 
     private void CounterCheckBox_Unchecked(object sender, RoutedEventArgs e)
     {
-        if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+        try
         {
-            RemoveCounterFromChart(counter);
-            RemoveCounterTab(counter);
+            if (sender is CheckBox checkBox && checkBox.Tag is string counter && !string.IsNullOrEmpty(counter))
+            {
+                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for: {counter}");
+                RemoveCounterFromChart(counter);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Unchecked: {ex.Message}");
         }
     }
 
@@ -649,16 +663,24 @@ public partial class MainWindow : Window
     {
         if (!_counterData.ContainsKey(counter)) return;
 
+        System.Diagnostics.Debug.WriteLine($"AddCounterToChart called for: {counter}");
+        
         // ScottPlot機能は現在無効化されています
         // チャート表示機能は後で実装される予定です
         
-        // データテーブルの更新のみ実行
+        // データテーブルタブを作成（チェックボックス経由）
+        AddCounterTab(counter);
     }
 
     private void RemoveCounterFromChart(string counter)
     {
+        System.Diagnostics.Debug.WriteLine($"RemoveCounterFromChart called for: {counter}");
+        
         // ScottPlot機能は現在無効化されています
         // チャート表示機能は後で実装される予定です
+        
+        // データテーブルタブを削除
+        RemoveCounterTab(counter);
     }
 
     private void AddCounterTab(string counter)
