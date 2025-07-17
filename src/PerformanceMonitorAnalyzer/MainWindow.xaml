@@ -17,6 +17,7 @@
         <Menu Grid.Row="0">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="BLGファイルを開く(_O)..." Click="OpenBlgFile_Click"/>
+
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click"/>
             </MenuItem>
@@ -113,10 +114,17 @@
                                  FontSize="16"
                                  Foreground="Gray"
                                  Margin="10"/>
+                        <TextBlock HorizontalAlignment="Center" FontSize="12" Foreground="DarkGray" Margin="5">
+                            <Run Text="💡 "/>
+                            <Run Text="チェックボックス" FontWeight="Bold"/>
+                            <Run Text=" または "/>
+                            <Run Text="カウンター名" FontWeight="Bold"/>
+                            <Run Text="をクリックして詳細データを表示"/>
+                        </TextBlock>
                         <TextBlock Text="※グラフ機能は現在開発中です（データテーブルで確認可能）"
                                  HorizontalAlignment="Center"
-                                 FontSize="12"
-                                 Foreground="DarkGray"
+                                 FontSize="11"
+                                 Foreground="LightGray"
                                  Margin="5"/>
                     </StackPanel>
                 </Grid>
@@ -124,10 +132,36 @@
         </Grid>
 
         <!-- 下部: データテーブル（タブ形式） -->
-        <GroupBox Grid.Row="3" Header="データテーブル" Margin="10,0,10,10">
-            <TabControl x:Name="DataTabControl">
-                <!-- タブは動的に追加される -->
-            </TabControl>
+        <GroupBox Grid.Row="3" Header="📊 データテーブル" Margin="10,0,10,10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <!-- データテーブルの説明とコントロール -->
+                <Border Grid.Row="0" Margin="5" Background="#F8F8F8" Padding="5">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0">
+                            <Run Text="📈 カウンター選択方法: "/>
+                            <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="DarkBlue"/>
+                            <Run Text=" または "/>
+                            <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="DarkGreen"/>
+                        </TextBlock>
+                        <Button Content="すべてのタブを閉じる" 
+                              Click="CloseAllTabs_Click" 
+                              Padding="8,2,8,2"
+                              Margin="0,0,10,0"/>
+                        <Button Content="全データをCSV出力" 
+                              Click="ExportAllDataToCsv_Click" 
+                              Padding="8,2,8,2"/>
+                    </StackPanel>
+                </Border>
+                
+                <TabControl x:Name="DataTabControl" Grid.Row="1">
+                    <!-- タブは動的に追加される -->
+                </TabControl>
+            </Grid>
         </GroupBox>
     </Grid>
 </Window>
