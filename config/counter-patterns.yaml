@@ -16,20 +16,6 @@ patterns:
         scale: 1.0
         enabled: true
 
-  ネットワーク監視:
-    name: ネットワーク監視
-    description: ネットワークトラフィックの監視項目
-    counters:
-      - name: \Network Interface(*)\Bytes Total/sec
-        scale: 1.0
-        enabled: true
-      - name: \Network Interface(*)\Packets Total/sec
-        scale: 1.0
-        enabled: true
-      - name: \Network Interface(*)\Current Bandwidth
-        scale: 1.0
-        enabled: true
-
   詳細システム監視:
     name: 詳細システム監視
     description: 詳細なシステム分析のための監視項目
@@ -44,9 +30,6 @@ patterns:
         scale: 1.0
         enabled: true
       - name: \Process(_Total)\Private Bytes
-        scale: 1.0
-        enabled: true
-      - name: \Paging File(_Total)\% Usage
         scale: 1.0
         enabled: true
 
@@ -67,51 +50,5 @@ patterns:
         scale: 1.0
         enabled: true
       - name: \SQLServer:Locks(_Total)\Lock Waits/sec
-        scale: 1.0
-        enabled: true
-
-  Webサーバー監視:
-    name: Webサーバー監視
-    description: IIS Web Serverの監視項目
-    counters:
-      - name: \Web Service(_Total)\Current Connections
-        scale: 1.0
-        enabled: true
-      - name: \Web Service(_Total)\Get Requests/sec
-        scale: 1.0
-        enabled: true
-      - name: \Web Service(_Total)\Post Requests/sec
-        scale: 1.0
-        enabled: true
-      - name: \Web Service(_Total)\Bytes Total/sec
-        scale: 1.0
-        enabled: true
-      - name: \ASP.NET Applications(__Total__)\Requests/Sec
-        scale: 1.0
-        enabled: true
-
-  高負荷診断:
-    name: 高負荷診断
-    description: システム高負荷時の詳細診断項目
-    counters:
-      - name: \Processor(*)\% Processor Time
-        scale: 1.0
-        enabled: true
-      - name: \Process(*)\% Processor Time
-        scale: 1.0
-        enabled: true
-      - name: \Memory\Pages/sec
-        scale: 1.0
-        enabled: true
-      - name: \Memory\Page Faults/sec
-        scale: 1.0
-        enabled: true
-      - name: \PhysicalDisk(*)\Avg. Disk Queue Length
-        scale: 1.0
-        enabled: true
-      - name: \PhysicalDisk(*)\% Disk Time
-        scale: 1.0
-        enabled: true
-      - name: \System\Processor Queue Length
         scale: 1.0
         enabled: true
