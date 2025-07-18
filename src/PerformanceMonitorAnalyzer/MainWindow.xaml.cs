@@ -95,6 +95,7 @@ public class CounterTreeNode : INotifyPropertyChanged
     {
         foreach (var child in Children)
         {
+            // 子ノードの内部フィールドを直接更新（親ノード更新をスキップ）
             child._isChecked = isChecked;
             child.OnPropertyChanged(nameof(IsChecked));
             child.SetChildrenCheckedState(isChecked, false);
@@ -116,12 +117,12 @@ public class CounterTreeNode : INotifyPropertyChanged
         bool? newState;
         
         // 全ての子ノードが選択されている場合
-        if (checkedChildren == totalChildren)
+        if (checkedChildren == totalChildren && indeterminateChildren == 0)
         {
             newState = true;  // 全選択
         }
         // 全ての子ノードが未選択の場合
-        else if (uncheckedChildren == totalChildren)
+        else if (uncheckedChildren == totalChildren && indeterminateChildren == 0)
         {
             newState = false; // 全解除
         }
@@ -131,9 +132,10 @@ public class CounterTreeNode : INotifyPropertyChanged
             newState = null;  // 部分選択（中間選択状態）
         }
         
-        // 親ノードの状態が変更された場合のみ更新
+        // 親ノードの状態が変更された場合のみ更新（無限再帰を防ぐ）
         if (_parent._isChecked != newState)
         {
+            var originalIsChecked = _parent._isChecked;
             _parent._isChecked = newState;
             _parent.OnPropertyChanged(nameof(IsChecked));
             
@@ -176,36 +178,7 @@ public class CounterTreeNode : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
     
-    /// <summary>
-    /// 内部フィールドへの直接アクセス用プロパティ（MainWindowからのアクセス用）
-    /// </summary>
-    internal bool? InternalIsChecked
-    {
-        get => _isChecked;
-        set 
-        { 
-            _isChecked = value; 
-            OnPropertyChanged(nameof(IsChecked));
-        }
-    }
 
-    /// <summary>
-    /// 外部からの状態更新用メソッド（イベント発生を抑制可能）
-    /// </summary>
-    public void SetCheckedStateDirectly(bool? value, bool triggerEvent = true, bool updateParent = false)
-    {
-        _isChecked = value;
-        if (triggerEvent)
-        {
-            OnPropertyChanged(nameof(IsChecked));
-        }
-        
-        // 必要に応じて親ノードの状態も更新
-        if (updateParent && _parent != null)
-        {
-            _parent.UpdateParentCheckedState();
-        }
-    }
 }
 
 public enum NodeType
@@ -2510,9 +2483,6 @@ public partial class MainWindow : Window
                 }
             }
 
-            // 解除後に親ノードの状態を確実に更新
-            UpdateAllParentNodeStates();
-
             var appliedCounters = new List<string>();
             var notFoundCounters = new List<string>();
 
@@ -2530,8 +2500,19 @@ public partial class MainWindow : Window
                 }
             }
 
-            // パターン適用後に親ノードの状態を確実に更新
-            UpdateAllParentNodeStates();
+            // パターン適用後、全ての親ノードの状態を強制的に再計算
+            // 個々のリーフノードから上位の親ノードまで階層的に状態を更新
+            foreach (var objNode in _counterTreeNodes)
+            {
+                foreach (var instNode in objNode.Children)
+                {
+                    foreach (var counterNode in instNode.Children)
+                    {
+                        // リーフノード（カウンター）から親ノード状態を更新
+                        counterNode.UpdateParentState();
+                    }
+                }
+            }
 
             // 結果の表示
             var message = $"パターン「{pattern.Name}」を適用しました。\n\n";
@@ -2560,85 +2541,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// 全ての親ノードの状態を更新
-    /// </summary>
-    private void UpdateAllParentNodeStates()
-    {
-        // UIスレッドで確実に実行
-        Dispatcher.Invoke(() =>
-        {
-            // ボトムアップで階層的に状態を更新
-            // まず各インスタンスノードから上位に向かって状態を伝播
-            foreach (var objNode in _counterTreeNodes)
-            {
-                foreach (var instNode in objNode.Children)
-                {
-                    // インスタンスノードの状態を子カウンターに基づいて計算
-                    var checkedCounters = instNode.Children.Count(c => c.IsChecked == true);
-                    var uncheckedCounters = instNode.Children.Count(c => c.IsChecked == false);
-                    var indeterminateCounters = instNode.Children.Count(c => c.IsChecked == null);
-                    var totalCounters = instNode.Children.Count;
-                    
-                    bool? newInstState;
-                    if (totalCounters == 0)
-                    {
-                        newInstState = false; // 子ノードがない場合は未選択
-                    }
-                    else if (checkedCounters == totalCounters)
-                    {
-                        newInstState = true;  // 全て選択済み
-                    }
-                    else if (uncheckedCounters == totalCounters)
-                    {
-                        newInstState = false; // 全て未選択
-                    }
-                    else
-                    {
-                        newInstState = null;  // 部分選択（一部選択または中間状態を含む）
-                    }
-                    
-                    // 正しいIsCheckedプロパティを使用して状態を更新
-                    if (instNode.IsChecked != newInstState)
-                    {
-                        // イベントハンドラーの無限ループを避けるため、直接フィールドを更新
-                        instNode.SetCheckedStateDirectly(newInstState, true, false);
-                    }
-                }
-                
-                // オブジェクトノードの状態を子インスタンスに基づいて計算
-                var checkedInstances = objNode.Children.Count(c => c.IsChecked == true);
-                var uncheckedInstances = objNode.Children.Count(c => c.IsChecked == false);
-                var indeterminateInstances = objNode.Children.Count(c => c.IsChecked == null);
-                var totalInstances = objNode.Children.Count;
-                
-                bool? newObjState;
-                if (totalInstances == 0)
-                {
-                    newObjState = false; // 子ノードがない場合は未選択
-                }
-                else if (checkedInstances == totalInstances)
-                {
-                    newObjState = true;  // 全て選択済み
-                }
-                else if (uncheckedInstances == totalInstances)
-                {
-                    newObjState = false; // 全て未選択
-                }
-                else
-                {
-                    newObjState = null;  // 部分選択（一部選択または中間状態を含む）
-                }
-                
-                // 正しいIsCheckedプロパティを使用して状態を更新
-                if (objNode.IsChecked != newObjState)
-                {
-                    // イベントハンドラーの無限ループを避けるため、直接フィールドを更新
-                    objNode.SetCheckedStateDirectly(newObjState, true, false);
-                }
-            }
-        });
-    }
+
 
     /// <summary>
     /// パターンに基づいてカウンターを検索・選択
