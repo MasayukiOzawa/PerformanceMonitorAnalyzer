@@ -177,14 +177,33 @@ public class CounterTreeNode : INotifyPropertyChanged
     }
     
     /// <summary>
+    /// 内部フィールドへの直接アクセス用プロパティ（MainWindowからのアクセス用）
+    /// </summary>
+    internal bool? InternalIsChecked
+    {
+        get => _isChecked;
+        set 
+        { 
+            _isChecked = value; 
+            OnPropertyChanged(nameof(IsChecked));
+        }
+    }
+
+    /// <summary>
     /// 外部からの状態更新用メソッド（イベント発生を抑制可能）
     /// </summary>
-    public void SetCheckedStateDirectly(bool? value, bool triggerEvent = true)
+    public void SetCheckedStateDirectly(bool? value, bool triggerEvent = true, bool updateParent = false)
     {
         _isChecked = value;
         if (triggerEvent)
         {
             OnPropertyChanged(nameof(IsChecked));
+        }
+        
+        // 必要に応じて親ノードの状態も更新
+        if (updateParent && _parent != null)
+        {
+            _parent.UpdateParentCheckedState();
         }
     }
 }
@@ -2553,63 +2572,67 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateAllParentNodeStates()
     {
-        // まずインスタンスレベルの親ノード状態を更新
-        foreach (var objNode in _counterTreeNodes)
+        // UIスレッドで確実に実行
+        Dispatcher.Invoke(() =>
         {
-            foreach (var instNode in objNode.Children)
+            // ボトムアップで階層的に状態を更新
+            // まず各インスタンスノードから上位に向かって状態を伝播
+            foreach (var objNode in _counterTreeNodes)
             {
-                // インスタンスノードの状態を子カウンターに基づいて更新
-                var checkedCounters = instNode.Children.Count(c => c.IsChecked == true);
-                var uncheckedCounters = instNode.Children.Count(c => c.IsChecked == false);
-                var totalCounters = instNode.Children.Count;
-                
-                bool? newInstState;
-                if (checkedCounters == totalCounters)
+                foreach (var instNode in objNode.Children)
                 {
-                    newInstState = true;  // 全選択
+                    // インスタンスノードの状態を子カウンターに基づいて計算
+                    var checkedCounters = instNode.Children.Count(c => c.IsChecked == true);
+                    var uncheckedCounters = instNode.Children.Count(c => c.IsChecked == false);
+                    var totalCounters = instNode.Children.Count;
+                    
+                    bool? newInstState;
+                    if (checkedCounters == totalCounters && totalCounters > 0)
+                    {
+                        newInstState = true;  // 全選択
+                    }
+                    else if (uncheckedCounters == totalCounters && totalCounters > 0)
+                    {
+                        newInstState = false; // 全解除
+                    }
+                    else
+                    {
+                        newInstState = null;  // 部分選択
+                    }
+                    
+                    // 状態が変更された場合のみ更新
+                    if (instNode.InternalIsChecked != newInstState)
+                    {
+                        instNode.InternalIsChecked = newInstState;
+                    }
                 }
-                else if (uncheckedCounters == totalCounters)
+                
+                // オブジェクトノードの状態を子インスタンスに基づいて計算
+                var checkedInstances = objNode.Children.Count(c => c.IsChecked == true);
+                var uncheckedInstances = objNode.Children.Count(c => c.IsChecked == false);
+                var totalInstances = objNode.Children.Count;
+                
+                bool? newObjState;
+                if (checkedInstances == totalInstances && totalInstances > 0)
                 {
-                    newInstState = false; // 全解除
+                    newObjState = true;  // 全選択
+                }
+                else if (uncheckedInstances == totalInstances && totalInstances > 0)
+                {
+                    newObjState = false; // 全解除
                 }
                 else
                 {
-                    newInstState = null;  // 部分選択
+                    newObjState = null;  // 部分選択（中間選択状態）
                 }
                 
-                // インスタンスノードの状態を直接更新
-                if (instNode.IsChecked != newInstState)
+                // 状態が変更された場合のみ更新
+                if (objNode.InternalIsChecked != newObjState)
                 {
-                    instNode.SetCheckedStateDirectly(newInstState);
+                    objNode.InternalIsChecked = newObjState;
                 }
             }
-            
-            // 次にオブジェクトレベルの親ノード状態を更新
-            var checkedInstances = objNode.Children.Count(c => c.IsChecked == true);
-            var uncheckedInstances = objNode.Children.Count(c => c.IsChecked == false);
-            var indeterminateInstances = objNode.Children.Count(c => c.IsChecked == null);
-            var totalInstances = objNode.Children.Count;
-            
-            bool? newObjState;
-            if (checkedInstances == totalInstances)
-            {
-                newObjState = true;  // 全選択
-            }
-            else if (uncheckedInstances == totalInstances)
-            {
-                newObjState = false; // 全解除
-            }
-            else
-            {
-                newObjState = null;  // 部分選択（中間選択状態）
-            }
-            
-            // オブジェクトノードの状態を直接更新
-            if (objNode.IsChecked != newObjState)
-            {
-                objNode.SetCheckedStateDirectly(newObjState);
-            }
-        }
+        });
     }
 
     /// <summary>
