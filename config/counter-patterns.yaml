@@ -1,0 +1,38 @@
+patterns:
+  - name: 基本システム監視
+    description: CPU、メモリ、ディスクの基本的な監視項目
+    counters:
+      - name: \Processor(_Total)\% Processor Time
+        enabled: true
+      - name: \Memory\Available MBytes
+        enabled: true
+      - name: \PhysicalDisk(_Total)\Disk Reads/sec
+        enabled: true
+      - name: \PhysicalDisk(_Total)\Disk Writes/sec
+        enabled: true
+
+  - name: 詳細システム監視
+    description: 詳細なシステム分析のための監視項目
+    counters:
+      - name: \System\Context Switches/sec
+        enabled: true
+      - name: \System\System Calls/sec
+        enabled: true
+      - name: \Process(_Total)\Working Set
+        enabled: true
+      - name: \Process(_Total)\Private Bytes
+        enabled: true
+
+  - name: SQLサーバー監視
+    description: SQL Serverパフォーマンスの監視項目
+    counters:
+      - name: \SQLServer:General Statistics\User Connections
+        enabled: true
+      - name: \SQLServer:Buffer Manager\Buffer cache hit ratio
+        enabled: true
+      - name: \SQLServer:SQL Statistics\Batch Requests/sec
+        enabled: true
+      - name: \SQLServer:SQL Statistics\SQL Compilations/sec
+        enabled: true
+      - name: \SQLServer:Locks(_Total)\Lock Waits/sec
+        enabled: true

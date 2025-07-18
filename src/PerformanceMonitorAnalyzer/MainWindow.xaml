@@ -23,6 +23,14 @@
                 <Separator/>
                 <MenuItem Header="終了(_X)" Click="Exit_Click"/>
             </MenuItem>
+            <MenuItem Header="パターン(_P)">
+                <MenuItem x:Name="PatternMenu" Header="カウンターパターンを適用(_A)">
+                    <!-- パターンは動的に追加される -->
+                </MenuItem>
+                <Separator/>
+                <MenuItem Header="パターン設定ファイルを開く(_O)..." Click="OpenPatternConfig_Click"/>
+                <MenuItem Header="パターン設定を再読み込み(_R)" Click="ReloadPatternConfig_Click"/>
+            </MenuItem>
             <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="バージョン情報(_A)"/>
             </MenuItem>
@@ -55,6 +63,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -77,12 +86,29 @@
                              TextWrapping="Wrap"
                              Visibility="Collapsed"/>
                     
-                    <TextBlock Grid.Row="1" 
+                    <!-- パターン選択 -->
+                    <StackPanel Grid.Row="1" Margin="5,5,5,10">
+                        <TextBlock Text="🎯 カウンターパターン:" 
+                                 Margin="0,0,0,3" 
+                                 FontWeight="SemiBold"/>
+                        <ComboBox x:Name="PatternComboBox" 
+                                DisplayMemberPath="Name"
+                                SelectionChanged="PatternComboBox_SelectionChanged"
+                                ToolTip="事前定義されたカウンターパターンを選択"/>
+                        <Button x:Name="ApplyPatternButton" 
+                              Content="パターンを適用" 
+                              Margin="0,3,0,0" 
+                              Click="ApplyPattern_Click"
+                              IsEnabled="False"
+                              ToolTip="選択されたパターンでカウンターを自動選択します"/>
+                    </StackPanel>
+                    
+                    <TextBlock Grid.Row="2" 
                              Text="📈 表示したいカウンターをチェック:" 
                              Margin="5,0,5,5" 
                              FontWeight="SemiBold"/>
                     
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
                         <TreeView x:Name="CounterTreeView" Margin="5">
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
@@ -112,7 +138,7 @@
                     </ScrollViewer>
 
                     <!-- 時間範囲選択 -->
-                    <Expander Grid.Row="3" Header="📅 時間範囲選択" IsExpanded="False" Margin="5,5,5,0"
+                    <Expander Grid.Row="4" Header="📅 時間範囲選択" IsExpanded="False" Margin="5,5,5,0"
                              x:Name="TimeRangeExpander" Visibility="Collapsed">
                         <StackPanel Margin="10">
                             <TextBlock Text="時間範囲:" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -177,7 +203,7 @@
                         </StackPanel>
                     </Expander>
                     
-                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                    <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="🚀 選択されたカウンターを読み込み" 
                                AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"
