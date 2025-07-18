@@ -95,49 +95,6 @@ publish/
 - **`PublishTrimmed=true`**: 未使用アセンブリの除去によるファイルサイズ削減
 - **`IncludeNativeLibrariesForSelfExtract=true`**: ネイティブライブラリの自動展開
 
-## CI/CDパイプライン
-
-### GitHub Actionsでの自動ビルド
-
-リポジトリへのプッシュ時に、GitHub Actionsが自動的にシングルバイナリをビルドします：
-
-**対象ブランチ**: `copilot`, `release`
-**ビルド環境**: Windows Latest
-**出力アーティファクト**:
-- `PerformanceMonitorAnalyzer-win-x64`
-- `PerformanceMonitorAnalyzer-win-x86`
-- `PerformanceMonitorAnalyzer-win-arm64`
-
-### ワークフローファイル
-
-- **ビルドワークフロー**: `.github/workflows/build-and-publish.yml`
-- **リリースワークフロー**: `.github/workflows/release-to-main.yml`
-
-### アーティファクトのダウンロード
-
-1. GitHubリポジトリのActionsタブにアクセス
-2. 該当するワークフロー実行を選択
-3. Artifactsセクションからダウンロード
-
-## リリース管理
-
-### release → main ブランチマージ
-
-手動実行によるリリースワークフローが利用可能です：
-
-1. GitHub ActionsのWorkflowsタブ
-2. "Release to Main"を選択
-3. "Run workflow"をクリック
-4. 確認オプションで"true"を選択
-
-### 自動タグ生成
-
-リリース時に以下の形式でタグが自動生成されます：
-```
-v{YYYY.MM.DD}-{SHORT_COMMIT_HASH}
-例: v2024.01.15-a1b2c3d
-```
-
 ## デプロイメント
 
 ### スタンドアロン配布
@@ -176,7 +133,7 @@ config/
 #### Linux/macOS環境でのビルドエラー
 **エラー**: `Microsoft.NET.Sdk.WindowsDesktop.targets was not found`
 
-**解決策**: WPFアプリケーションはWindows専用のため、Windows環境またはGitHub Actionsのwindows-latestランナーを使用してください。
+**解決策**: WPFアプリケーションはWindows専用のため、Windows環境での開発・ビルドが必要です。
 
 #### 依存関係の解決エラー
 **エラー**: パッケージの復元に失敗

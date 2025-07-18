@@ -202,13 +202,6 @@ dotnet publish --configuration Release --runtime win-arm64 --self-contained true
 dotnet run "C:\path\to\your\file.blg"
 ```
 
-### GitHub Actionsでのビルド
-
-プッシュ時に自動的にシングルバイナリがビルドされ、GitHubアーティファクトとして保存されます：
-- `PerformanceMonitorAnalyzer-win-x64`
-- `PerformanceMonitorAnalyzer-win-x86` 
-- `PerformanceMonitorAnalyzer-win-arm64`
-
 ## 使用方法
 
 ### WPF GUI アプリケーション
