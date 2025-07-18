@@ -70,77 +70,91 @@ public class CounterTreeNode : INotifyPropertyChanged
         {
             if (_isChecked != value)
             {
-                _isChecked = value;
-                OnPropertyChanged(nameof(IsChecked));
-                
-                // 子ノードへの伝播（null以外の値の場合のみ）
-                if (value.HasValue)
-                {
-                    SetChildrenCheckedState(value.Value, false);
-                }
-                
-                // 親ノードの状態更新（再帰的更新を避けるため）
-                if (_parent != null)
-                {
-                    _parent.UpdateParentCheckedState();
-                }
+                SetIsCheckedInternal(value, true, true);
             }
         }
     }
     
     /// <summary>
-    /// 子ノードのチェック状態を設定（内部処理用）
+    /// IsChecked状態を内部的に設定（イベント通知と親子更新制御）
     /// </summary>
-    private void SetChildrenCheckedState(bool isChecked, bool updateParent = true)
+    private void SetIsCheckedInternal(bool? value, bool updateChildren, bool updateParent)
     {
-        foreach (var child in Children)
+        if (_isChecked == value) return;
+        
+        _isChecked = value;
+        OnPropertyChanged(nameof(IsChecked));
+        
+        // 子ノードへの伝播（親ノードからの変更でnull以外の値の場合のみ）
+        if (updateChildren && value.HasValue)
         {
-            // 子ノードの内部フィールドを直接更新（親ノード更新をスキップ）
-            child._isChecked = isChecked;
-            child.OnPropertyChanged(nameof(IsChecked));
-            child.SetChildrenCheckedState(isChecked, false);
+            foreach (var child in Children)
+            {
+                child.SetIsCheckedInternal(value.Value, true, false);
+            }
+        }
+        
+        // 親ノードの状態更新
+        if (updateParent && _parent != null)
+        {
+            _parent.UpdateParentStateFromChild();
         }
     }
     
     /// <summary>
-    /// 親ノードのチェック状態を更新
+    /// 子ノードの状態変更に基づいて親ノードの状態を更新
     /// </summary>
-    private void UpdateParentCheckedState()
+    public void UpdateParentStateFromChild()
     {
-        if (_parent == null) return;
+        if (Children.Count == 0) return; // リーフノードの場合は何もしない
         
-        var checkedChildren = _parent.Children.Count(c => c.IsChecked == true);
-        var uncheckedChildren = _parent.Children.Count(c => c.IsChecked == false);
-        var indeterminateChildren = _parent.Children.Count(c => c.IsChecked == null);
-        var totalChildren = _parent.Children.Count;
+        var checkedCount = 0;
+        var uncheckedCount = 0;
+        var indeterminateCount = 0;
+        
+        foreach (var child in Children)
+        {
+            switch (child.IsChecked)
+            {
+                case true:
+                    checkedCount++;
+                    break;
+                case false:
+                    uncheckedCount++;
+                    break;
+                case null:
+                    indeterminateCount++;
+                    break;
+            }
+        }
         
         bool? newState;
         
-        // 全ての子ノードが選択されている場合
-        if (checkedChildren == totalChildren && indeterminateChildren == 0)
+        // 中間状態の子ノードが存在する場合は即座に部分選択
+        if (indeterminateCount > 0)
         {
-            newState = true;  // 全選択
+            newState = null;
+        }
+        // 全ての子ノードが選択されている場合
+        else if (checkedCount == Children.Count)
+        {
+            newState = true;
         }
         // 全ての子ノードが未選択の場合
-        else if (uncheckedChildren == totalChildren && indeterminateChildren == 0)
+        else if (uncheckedCount == Children.Count)
         {
-            newState = false; // 全解除
+            newState = false;
         }
-        // 部分選択状態（一部選択、または中間状態の子ノードが存在）
+        // その他（一部選択）の場合
         else
         {
-            newState = null;  // 部分選択（中間選択状態）
+            newState = null;
         }
         
-        // 親ノードの状態が変更された場合のみ更新（無限再帰を防ぐ）
-        if (_parent._isChecked != newState)
+        // 状態が変更された場合のみ更新
+        if (_isChecked != newState)
         {
-            var originalIsChecked = _parent._isChecked;
-            _parent._isChecked = newState;
-            _parent.OnPropertyChanged(nameof(IsChecked));
-            
-            // さらに上位の親ノードの状態も再帰的に更新
-            _parent.UpdateParentCheckedState();
+            SetIsCheckedInternal(newState, false, true);
         }
     }
     
@@ -149,7 +163,7 @@ public class CounterTreeNode : INotifyPropertyChanged
     /// </summary>
     public void UpdateParentState()
     {
-        UpdateParentCheckedState();
+        UpdateParentStateFromChild();
     }
     
     /// <summary>
@@ -2500,18 +2514,17 @@ public partial class MainWindow : Window
                 }
             }
 
-            // パターン適用後、全ての親ノードの状態を強制的に再計算
-            // 個々のリーフノードから上位の親ノードまで階層的に状態を更新
+            // パターン適用後、親ノードの状態を階層的に更新
+            // まず最下位（カウンター）から最上位（オブジェクト）へ順番に更新
             foreach (var objNode in _counterTreeNodes)
             {
                 foreach (var instNode in objNode.Children)
                 {
-                    foreach (var counterNode in instNode.Children)
-                    {
-                        // リーフノード（カウンター）から親ノード状態を更新
-                        counterNode.UpdateParentState();
-                    }
+                    // インスタンス レベルの状態更新
+                    instNode.UpdateParentStateFromChild();
                 }
+                // オブジェクト レベルの状態更新
+                objNode.UpdateParentStateFromChild();
             }
 
             // 結果の表示
