@@ -2465,10 +2465,18 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // 現在の選択をすべて解除
-            foreach (var node in _counterTreeNodes)
+            // 現在の選択をすべて解除（リーフノードのみ操作して、親ノードは自動更新させる）
+            foreach (var objNode in _counterTreeNodes)
             {
-                node.IsChecked = false;
+                foreach (var instNode in objNode.Children)
+                {
+                    foreach (var counterNode in instNode.Children)
+                    {
+                        // カウンターノード（リーフノード）のみを解除
+                        // 親ノードの状態は自動的に更新される
+                        counterNode.IsChecked = false;
+                    }
+                }
             }
 
             var appliedCounters = new List<string>();
@@ -2506,6 +2514,16 @@ public partial class MainWindow : Window
             // パターン適用後に全ての親ノードの状態を更新
             UpdateAllParentNodeStates();
             
+            // デバッグ: 親ノードの状態をログ出力
+            foreach (var objNode in _counterTreeNodes)
+            {
+                await LogErrorAsync($"オブジェクト '{objNode.DisplayName}' の状態: {objNode.IsChecked}");
+                foreach (var instNode in objNode.Children)
+                {
+                    await LogErrorAsync($"  インスタンス '{instNode.DisplayName}' の状態: {instNode.IsChecked}");
+                }
+            }
+            
             MessageBox.Show(message, "パターン適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
             
             await LogErrorAsync($"パターン「{pattern.Name}」が適用されました。適用: {appliedCounters.Count}個, 未検出: {notFoundCounters.Count}個");
@@ -2523,17 +2541,63 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateAllParentNodeStates()
     {
-        // 最下位のカウンターノードから親の状態を更新
-        // これにより、階層全体の状態が正しく計算される
+        // まずインスタンスレベルの親ノード状態を更新
         foreach (var objNode in _counterTreeNodes)
         {
             foreach (var instNode in objNode.Children)
             {
-                foreach (var counterNode in instNode.Children)
+                // インスタンスノードの状態を子カウンターに基づいて更新
+                var checkedCounters = instNode.Children.Count(c => c.IsChecked == true);
+                var uncheckedCounters = instNode.Children.Count(c => c.IsChecked == false);
+                var totalCounters = instNode.Children.Count;
+                
+                bool? newInstState;
+                if (checkedCounters == totalCounters)
                 {
-                    // カウンターノードから親に向かって状態を更新
-                    counterNode.UpdateParentState();
+                    newInstState = true;  // 全選択
                 }
+                else if (uncheckedCounters == totalCounters)
+                {
+                    newInstState = false; // 全解除
+                }
+                else
+                {
+                    newInstState = null;  // 部分選択
+                }
+                
+                // インスタンスノードの状態を直接更新
+                if (instNode._isChecked != newInstState)
+                {
+                    instNode._isChecked = newInstState;
+                    instNode.OnPropertyChanged(nameof(IsChecked));
+                }
+            }
+            
+            // 次にオブジェクトレベルの親ノード状態を更新
+            var checkedInstances = objNode.Children.Count(c => c.IsChecked == true);
+            var uncheckedInstances = objNode.Children.Count(c => c.IsChecked == false);
+            var indeterminateInstances = objNode.Children.Count(c => c.IsChecked == null);
+            var totalInstances = objNode.Children.Count;
+            
+            bool? newObjState;
+            if (checkedInstances == totalInstances)
+            {
+                newObjState = true;  // 全選択
+            }
+            else if (uncheckedInstances == totalInstances)
+            {
+                newObjState = false; // 全解除
+            }
+            else
+            {
+                newObjState = null;  // 部分選択（中間選択状態）
+            }
+            
+            // オブジェクトノードの状態を直接更新
+            if (objNode._isChecked != newObjState)
+            {
+                objNode._isChecked = newObjState;
+                objNode.OnPropertyChanged(nameof(IsChecked));
             }
         }
     }
