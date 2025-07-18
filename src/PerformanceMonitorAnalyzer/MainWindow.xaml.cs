@@ -143,6 +143,14 @@ public class CounterTreeNode : INotifyPropertyChanged
     }
     
     /// <summary>
+    /// 公開用の親ノード状態更新メソッド
+    /// </summary>
+    public void UpdateParentState()
+    {
+        UpdateParentCheckedState();
+    }
+    
+    /// <summary>
     /// 選択されているリーフ（カウンター）ノードを取得
     /// </summary>
     public IEnumerable<CounterTreeNode> GetSelectedCounters()
@@ -2495,6 +2503,9 @@ public partial class MainWindow : Window
                 }
             }
 
+            // パターン適用後に全ての親ノードの状態を更新
+            UpdateAllParentNodeStates();
+            
             MessageBox.Show(message, "パターン適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
             
             await LogErrorAsync($"パターン「{pattern.Name}」が適用されました。適用: {appliedCounters.Count}個, 未検出: {notFoundCounters.Count}個");
@@ -2504,6 +2515,26 @@ public partial class MainWindow : Window
             await LogErrorAsync($"パターン適用エラー: {ex.Message}");
             MessageBox.Show($"パターンの適用中にエラーが発生しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// 全ての親ノードの状態を更新
+    /// </summary>
+    private void UpdateAllParentNodeStates()
+    {
+        // 最下位のカウンターノードから親の状態を更新
+        // これにより、階層全体の状態が正しく計算される
+        foreach (var objNode in _counterTreeNodes)
+        {
+            foreach (var instNode in objNode.Children)
+            {
+                foreach (var counterNode in instNode.Children)
+                {
+                    // カウンターノードから親に向かって状態を更新
+                    counterNode.UpdateParentState();
+                }
+            }
         }
     }
 
