@@ -10,7 +10,7 @@ namespace PerformanceMonitorAnalyzer;
 public class CounterPatternConfig
 {
     [YamlMember(Alias = "patterns")]
-    public Dictionary<string, CounterPattern> Patterns { get; set; } = new();
+    public List<CounterPattern> Patterns { get; set; } = new();
 }
 
 /// <summary>
@@ -36,11 +36,11 @@ public class CounterDefinition
     [YamlMember(Alias = "name")]
     public string Name { get; set; } = string.Empty;
     
-    [YamlMember(Alias = "scale")]
-    public double Scale { get; set; } = 1.0;
-    
     [YamlMember(Alias = "enabled")]
     public bool Enabled { get; set; } = true;
+    
+    // Scaleプロパティは削除しました（既存のスケール管理システムを使用）
+    public double Scale { get; set; } = 1.0;
 }
 
 /// <summary>
@@ -96,42 +96,44 @@ public class CounterPatternManager
     {
         var defaultConfig = new CounterPatternConfig
         {
-            Patterns = new Dictionary<string, CounterPattern>
+            Patterns = new List<CounterPattern>
             {
-                ["基本システム監視"] = new CounterPattern
+                new CounterPattern
                 {
                     Name = "基本システム監視",
                     Description = "CPU、メモリ、ディスクの基本的な監視項目",
                     Counters = new List<CounterDefinition>
                     {
-                        new() { Name = @"\Processor(_Total)\% Processor Time", Scale = 1.0 },
-                        new() { Name = @"\Memory\Available MBytes", Scale = 1.0 },
-                        new() { Name = @"\PhysicalDisk(_Total)\Disk Reads/sec", Scale = 1.0 },
-                        new() { Name = @"\PhysicalDisk(_Total)\Disk Writes/sec", Scale = 1.0 }
+                        new() { Name = @"\Processor(_Total)\% Processor Time" },
+                        new() { Name = @"\Memory\Available MBytes" },
+                        new() { Name = @"\PhysicalDisk(_Total)\Disk Reads/sec" },
+                        new() { Name = @"\PhysicalDisk(_Total)\Disk Writes/sec" }
                     }
                 },
-                ["ネットワーク監視"] = new CounterPattern
-                {
-                    Name = "ネットワーク監視",
-                    Description = "ネットワークトラフィックの監視項目",
-                    Counters = new List<CounterDefinition>
-                    {
-                        new() { Name = @"\Network Interface(*)\Bytes Total/sec", Scale = 1.0 },
-                        new() { Name = @"\Network Interface(*)\Packets Total/sec", Scale = 1.0 },
-                        new() { Name = @"\Network Interface(*)\Current Bandwidth", Scale = 1.0 }
-                    }
-                },
-                ["詳細システム監視"] = new CounterPattern
+                new CounterPattern
                 {
                     Name = "詳細システム監視",
                     Description = "詳細なシステム分析のための監視項目",
                     Counters = new List<CounterDefinition>
                     {
-                        new() { Name = @"\System\Context Switches/sec", Scale = 1.0 },
-                        new() { Name = @"\System\System Calls/sec", Scale = 1.0 },
-                        new() { Name = @"\Process(_Total)\Working Set", Scale = 1.0 },
-                        new() { Name = @"\Process(_Total)\Private Bytes", Scale = 1.0 },
-                        new() { Name = @"\Paging File(_Total)\% Usage", Scale = 1.0 }
+                        new() { Name = @"\System\Context Switches/sec" },
+                        new() { Name = @"\System\System Calls/sec" },
+                        new() { Name = @"\Process(_Total)\Working Set" },
+                        new() { Name = @"\Process(_Total)\Private Bytes" },
+                        new() { Name = @"\Paging File(_Total)\% Usage" }
+                    }
+                },
+                new CounterPattern
+                {
+                    Name = "SQLサーバー監視",
+                    Description = "SQL Serverパフォーマンスの監視項目",
+                    Counters = new List<CounterDefinition>
+                    {
+                        new() { Name = @"\SQLServer:General Statistics\User Connections" },
+                        new() { Name = @"\SQLServer:Buffer Manager\Buffer cache hit ratio" },
+                        new() { Name = @"\SQLServer:SQL Statistics\Batch Requests/sec" },
+                        new() { Name = @"\SQLServer:SQL Statistics\SQL Compilations/sec" },
+                        new() { Name = @"\SQLServer:Locks(_Total)\Lock Waits/sec" }
                     }
                 }
             }
@@ -159,7 +161,7 @@ public class CounterPatternManager
     /// </summary>
     public IEnumerable<CounterPattern> GetAvailablePatterns()
     {
-        return _config?.Patterns.Values ?? Enumerable.Empty<CounterPattern>();
+        return _config?.Patterns ?? Enumerable.Empty<CounterPattern>();
     }
     
     /// <summary>
@@ -167,7 +169,7 @@ public class CounterPatternManager
     /// </summary>
     public CounterPattern? GetPattern(string patternName)
     {
-        return _config?.Patterns.TryGetValue(patternName, out var pattern) == true ? pattern : null;
+        return _config?.Patterns.FirstOrDefault(p => p.Name == patternName);
     }
     
     /// <summary>

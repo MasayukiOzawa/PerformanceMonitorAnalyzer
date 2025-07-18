@@ -1,54 +1,38 @@
 patterns:
-  基本システム監視:
-    name: 基本システム監視
+  - name: 基本システム監視
     description: CPU、メモリ、ディスクの基本的な監視項目
     counters:
       - name: \Processor(_Total)\% Processor Time
-        scale: 1.0
         enabled: true
       - name: \Memory\Available MBytes
-        scale: 1.0
         enabled: true
       - name: \PhysicalDisk(_Total)\Disk Reads/sec
-        scale: 1.0
         enabled: true
       - name: \PhysicalDisk(_Total)\Disk Writes/sec
-        scale: 1.0
         enabled: true
 
-  詳細システム監視:
-    name: 詳細システム監視
+  - name: 詳細システム監視
     description: 詳細なシステム分析のための監視項目
     counters:
       - name: \System\Context Switches/sec
-        scale: 1.0
         enabled: true
       - name: \System\System Calls/sec
-        scale: 1.0
         enabled: true
       - name: \Process(_Total)\Working Set
-        scale: 1.0
         enabled: true
       - name: \Process(_Total)\Private Bytes
-        scale: 1.0
         enabled: true
 
-  SQLサーバー監視:
-    name: SQLサーバー監視
+  - name: SQLサーバー監視
     description: SQL Serverパフォーマンスの監視項目
     counters:
       - name: \SQLServer:General Statistics\User Connections
-        scale: 1.0
         enabled: true
       - name: \SQLServer:Buffer Manager\Buffer cache hit ratio
-        scale: 1.0
         enabled: true
       - name: \SQLServer:SQL Statistics\Batch Requests/sec
-        scale: 1.0
         enabled: true
       - name: \SQLServer:SQL Statistics\SQL Compilations/sec
-        scale: 1.0
         enabled: true
       - name: \SQLServer:Locks(_Total)\Lock Waits/sec
-        scale: 1.0
         enabled: true

@@ -116,20 +116,19 @@ config/counter-patterns.yaml
 パターン → パターン設定ファイルを開く
 ```
 
-### YAML形式の例
+### YAML形式の例（新しい配列形式）
 ```yaml
 patterns:
-  マイカスタムパターン:
-    name: マイカスタムパターン
+  - name: マイカスタムパターン
     description: 独自の監視項目
     counters:
       - name: \カウンター\パス1
-        scale: 1.0
         enabled: true
       - name: \カウンター\パス2
-        scale: 0.1
         enabled: true
 ```
+
+> **注意**: scaleプロパティはYAMLから削除されました（2024-12更新）。スケール値は既存のスケール管理システムで設定してください。
 
 ### 設定の再読み込み
 ```
