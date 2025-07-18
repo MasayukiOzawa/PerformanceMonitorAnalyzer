@@ -73,7 +73,7 @@ public class CounterTreeNode : INotifyPropertyChanged
                 _isChecked = value;
                 OnPropertyChanged(nameof(IsChecked));
                 
-                // 子ノードへの伝播
+                // 子ノードへの伝播（null以外の値の場合のみ）
                 if (value.HasValue)
                 {
                     SetChildrenCheckedState(value.Value, false);
@@ -110,26 +110,34 @@ public class CounterTreeNode : INotifyPropertyChanged
         
         var checkedChildren = _parent.Children.Count(c => c.IsChecked == true);
         var uncheckedChildren = _parent.Children.Count(c => c.IsChecked == false);
+        var indeterminateChildren = _parent.Children.Count(c => c.IsChecked == null);
         var totalChildren = _parent.Children.Count;
         
         bool? newState;
+        
+        // 全ての子ノードが選択されている場合
         if (checkedChildren == totalChildren)
         {
             newState = true;  // 全選択
         }
+        // 全ての子ノードが未選択の場合
         else if (uncheckedChildren == totalChildren)
         {
             newState = false; // 全解除
         }
+        // 部分選択状態（一部選択、または中間状態の子ノードが存在）
         else
         {
-            newState = null;  // 部分選択
+            newState = null;  // 部分選択（中間選択状態）
         }
         
+        // 親ノードの状態が変更された場合のみ更新
         if (_parent._isChecked != newState)
         {
             _parent._isChecked = newState;
             _parent.OnPropertyChanged(nameof(IsChecked));
+            
+            // さらに上位の親ノードの状態も再帰的に更新
             _parent.UpdateParentCheckedState();
         }
     }
@@ -686,11 +694,21 @@ public partial class MainWindow : Window
             {
                 System.Diagnostics.Debug.WriteLine($"CheckBox found for node: {node.DisplayName} (Type: {node.Type})");
                 
-                // ノードのIsCheckedを直接更新（親子関係の伝播も行われる）
+                // チェックボックスの状態変更を一時的に無効化して無限ループを防ぐ
+                checkBox.Checked -= CounterCheckBox_Checked;
+                checkBox.Unchecked -= CounterCheckBox_Unchecked;
+                checkBox.Indeterminate -= CounterCheckBox_Indeterminate;
+                
+                // ノードのIsCheckedを更新（階層管理の自動処理が実行される）
                 if (node.IsChecked != true)
                 {
                     node.IsChecked = true;
                 }
+                
+                // イベントハンドラーを再度登録
+                checkBox.Checked += CounterCheckBox_Checked;
+                checkBox.Unchecked += CounterCheckBox_Unchecked;
+                checkBox.Indeterminate += CounterCheckBox_Indeterminate;
                 
                 // リーフノード（カウンター）の場合は、データ読み込みの準備
                 if (node.IsLeaf)
@@ -720,11 +738,21 @@ public partial class MainWindow : Window
             {
                 System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for node: {node.DisplayName} (Type: {node.Type})");
                 
-                // ノードのIsCheckedを直接更新（親子関係の伝播も行われる）
+                // チェックボックスの状態変更を一時的に無効化して無限ループを防ぐ
+                checkBox.Checked -= CounterCheckBox_Checked;
+                checkBox.Unchecked -= CounterCheckBox_Unchecked;
+                checkBox.Indeterminate -= CounterCheckBox_Indeterminate;
+                
+                // ノードのIsCheckedを更新（階層管理の自動処理が実行される）
                 if (node.IsChecked != false)
                 {
                     node.IsChecked = false;
                 }
+                
+                // イベントハンドラーを再度登録
+                checkBox.Checked += CounterCheckBox_Checked;
+                checkBox.Unchecked += CounterCheckBox_Unchecked;
+                checkBox.Indeterminate += CounterCheckBox_Indeterminate;
                 
                 // リーフノード（カウンター）の場合は、チャートからも削除
                 if (node.IsLeaf)
@@ -750,8 +778,11 @@ public partial class MainWindow : Window
             {
                 System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Indeterminate for node: {node.DisplayName} (Type: {node.Type})");
                 
-                // 部分選択状態の処理（必要に応じて実装）
-                // 現在は特別な処理は不要
+                // 中間選択状態の処理
+                // 親ノードが中間選択状態の場合は、特別な処理は必要なし
+                // 子ノードの状態に基づいて自動的に中間選択状態が設定される
+                
+                System.Diagnostics.Debug.WriteLine($"Node {node.DisplayName} is in indeterminate state (partially selected)");
             }
         }
         catch (Exception ex)
