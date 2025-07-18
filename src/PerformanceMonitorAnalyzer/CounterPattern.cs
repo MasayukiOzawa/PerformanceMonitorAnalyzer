@@ -54,6 +54,7 @@ public class CounterPatternManager
     {
         _configFilePath = configFilePath ?? Path.Combine(
             Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
+            "config",
             "counter-patterns.yaml"
         );
     }
@@ -140,6 +141,14 @@ public class CounterPatternManager
             .Build();
         
         var yaml = serializer.Serialize(defaultConfig);
+        
+        // ディレクトリが存在しない場合は作成
+        var directory = Path.GetDirectoryName(_configFilePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+        
         await File.WriteAllTextAsync(_configFilePath, yaml);
         _config = defaultConfig;
     }

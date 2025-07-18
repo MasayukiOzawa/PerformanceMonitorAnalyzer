@@ -108,7 +108,7 @@
 
 ### 設定ファイルの場所
 ```
-sample/counter-patterns.yaml
+config/counter-patterns.yaml
 ```
 
 ### 設定ファイルの編集

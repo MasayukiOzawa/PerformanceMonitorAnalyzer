@@ -17,4 +17,8 @@
     <PackageReference Include="YamlDotNet" Version="15.1.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\config\**" CopyToOutputDirectory="PreserveNewest" LinkBase="config" />
+  </ItemGroup>
+
 </Project>
