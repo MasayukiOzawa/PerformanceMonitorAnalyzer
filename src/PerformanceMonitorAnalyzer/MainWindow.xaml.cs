@@ -225,12 +225,18 @@ public partial class MainWindow : Window
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
+    
+    // パターン管理機能
+    private CounterPatternManager? _patternManager;
 
     public MainWindow()
     {
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // パターン管理機能の初期化
+        _ = InitializePatternManagerAsync();
     }
 
     private void InitializeChart()
@@ -2298,6 +2304,382 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"Counter not found in chart series: {counter}");
         }
+    }
+
+    #endregion
+
+    #region パターン管理機能
+
+    /// <summary>
+    /// パターン管理機能の初期化
+    /// </summary>
+    private async Task InitializePatternManagerAsync()
+    {
+        try
+        {
+            _patternManager = new CounterPatternManager();
+            var loaded = await _patternManager.LoadConfigAsync();
+            
+            if (loaded)
+            {
+                await RefreshPatternMenuAsync();
+                await LogErrorAsync("パターン設定が正常に読み込まれました。");
+            }
+            else
+            {
+                await LogErrorAsync("パターン設定の読み込みに失敗しました。");
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"パターン管理機能の初期化エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// パターンメニューの更新
+    /// </summary>
+    private async Task RefreshPatternMenuAsync()
+    {
+        try
+        {
+            if (_patternManager == null) return;
+
+            // コンボボックスの更新
+            var patterns = _patternManager.GetAvailablePatterns().ToList();
+            PatternComboBox.ItemsSource = patterns;
+            
+            // メニューアイテムの更新
+            PatternMenu.Items.Clear();
+            
+            if (patterns.Any())
+            {
+                foreach (var pattern in patterns)
+                {
+                    var menuItem = new MenuItem
+                    {
+                        Header = pattern.Name,
+                        ToolTip = pattern.Description,
+                        Tag = pattern
+                    };
+                    menuItem.Click += PatternMenuItem_Click;
+                    PatternMenu.Items.Add(menuItem);
+                }
+            }
+            else
+            {
+                var noPatternItem = new MenuItem
+                {
+                    Header = "利用可能なパターンがありません",
+                    IsEnabled = false
+                };
+                PatternMenu.Items.Add(noPatternItem);
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"パターンメニューの更新エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// パターンコンボボックスの選択変更イベント
+    /// </summary>
+    private void PatternComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        ApplyPatternButton.IsEnabled = PatternComboBox.SelectedItem != null;
+    }
+
+    /// <summary>
+    /// パターン適用ボタンのクリックイベント
+    /// </summary>
+    private async void ApplyPattern_Click(object sender, RoutedEventArgs e)
+    {
+        if (PatternComboBox.SelectedItem is CounterPattern pattern)
+        {
+            await ApplyCounterPatternAsync(pattern);
+        }
+    }
+
+    /// <summary>
+    /// パターンメニューアイテムのクリックイベント
+    /// </summary>
+    private async void PatternMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.Tag is CounterPattern pattern)
+        {
+            await ApplyCounterPatternAsync(pattern);
+        }
+    }
+
+    /// <summary>
+    /// カウンターパターンの適用
+    /// </summary>
+    private async Task ApplyCounterPatternAsync(CounterPattern pattern)
+    {
+        try
+        {
+            if (_counterTreeNodes.Count == 0)
+            {
+                MessageBox.Show("BLGファイルが読み込まれていません。まずBLGファイルを開いてください。", 
+                              "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 現在の選択をすべて解除
+            foreach (var node in _counterTreeNodes)
+            {
+                node.IsChecked = false;
+            }
+
+            var appliedCounters = new List<string>();
+            var notFoundCounters = new List<string>();
+
+            // パターンに含まれる各カウンターを検索・選択
+            foreach (var counterDef in pattern.Counters.Where(c => c.Enabled))
+            {
+                var found = await SelectCounterByPatternAsync(counterDef.Name, counterDef.Scale);
+                if (found)
+                {
+                    appliedCounters.Add(counterDef.Name);
+                }
+                else
+                {
+                    notFoundCounters.Add(counterDef.Name);
+                }
+            }
+
+            // 結果の表示
+            var message = $"パターン「{pattern.Name}」を適用しました。\n\n";
+            message += $"✅ 適用されたカウンター: {appliedCounters.Count}個\n";
+            
+            if (notFoundCounters.Any())
+            {
+                message += $"⚠️ 見つからなかったカウンター: {notFoundCounters.Count}個\n\n";
+                message += "見つからなかったカウンター:\n";
+                message += string.Join("\n", notFoundCounters.Take(5));
+                if (notFoundCounters.Count > 5)
+                {
+                    message += $"\n...他 {notFoundCounters.Count - 5}個";
+                }
+            }
+
+            MessageBox.Show(message, "パターン適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            
+            await LogErrorAsync($"パターン「{pattern.Name}」が適用されました。適用: {appliedCounters.Count}個, 未検出: {notFoundCounters.Count}個");
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"パターン適用エラー: {ex.Message}");
+            MessageBox.Show($"パターンの適用中にエラーが発生しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// パターンに基づいてカウンターを検索・選択
+    /// </summary>
+    private async Task<bool> SelectCounterByPatternAsync(string counterPattern, double scale)
+    {
+        try
+        {
+            // 完全一致を試行
+            var exactMatch = await FindCounterNodeAsync(counterPattern);
+            if (exactMatch != null)
+            {
+                exactMatch.IsChecked = true;
+                _counterScales[counterPattern] = scale;
+                return true;
+            }
+
+            // パターンマッチング（ワイルドカード対応）
+            var patternMatches = await FindCountersByPatternAsync(counterPattern);
+            if (patternMatches.Any())
+            {
+                foreach (var match in patternMatches)
+                {
+                    match.IsChecked = true;
+                    _counterScales[match.FullPath] = scale;
+                }
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"カウンター検索エラー（パターン: {counterPattern}）: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 完全一致でカウンターノードを検索
+    /// </summary>
+    private async Task<CounterTreeNode?> FindCounterNodeAsync(string fullPath)
+    {
+        return await Task.Run(() =>
+        {
+            foreach (var objNode in _counterTreeNodes)
+            {
+                foreach (var instNode in objNode.Children)
+                {
+                    foreach (var counterNode in instNode.Children)
+                    {
+                        if (counterNode.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return counterNode;
+                        }
+                    }
+                }
+            }
+            return null;
+        });
+    }
+
+    /// <summary>
+    /// パターンマッチングでカウンターノードを検索（ワイルドカード対応）
+    /// </summary>
+    private async Task<List<CounterTreeNode>> FindCountersByPatternAsync(string pattern)
+    {
+        return await Task.Run(() =>
+        {
+            var matches = new List<CounterTreeNode>();
+            
+            // ワイルドカード文字を正規表現に変換
+            var regexPattern = pattern
+                .Replace("*", ".*")
+                .Replace("?", ".")
+                .Replace(@"\", @"\\")
+                .Replace("(", @"\(")
+                .Replace(")", @"\)")
+                .Replace("[", @"\[")
+                .Replace("]", @"\]");
+            
+            try
+            {
+                var regex = new System.Text.RegularExpressions.Regex(regexPattern, 
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                
+                foreach (var objNode in _counterTreeNodes)
+                {
+                    foreach (var instNode in objNode.Children)
+                    {
+                        foreach (var counterNode in instNode.Children)
+                        {
+                            if (regex.IsMatch(counterNode.FullPath))
+                            {
+                                matches.Add(counterNode);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // 正規表現エラーの場合は部分文字列マッチで代替
+                foreach (var objNode in _counterTreeNodes)
+                {
+                    foreach (var instNode in objNode.Children)
+                    {
+                        foreach (var counterNode in instNode.Children)
+                        {
+                            if (counterNode.FullPath.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                            {
+                                matches.Add(counterNode);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return matches;
+        });
+    }
+
+    /// <summary>
+    /// パターン設定ファイルを開く
+    /// </summary>
+    private async void OpenPatternConfig_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_patternManager != null)
+            {
+                var configPath = _patternManager.ConfigFilePath;
+                
+                if (File.Exists(configPath))
+                {
+                    var result = MessageBox.Show(
+                        $"パターン設定ファイルを開きますか？\n\n場所: {configPath}\n\n" +
+                        "ファイルを編集した後は「パターン設定を再読み込み」メニューから設定を更新してください。",
+                        "設定ファイルを開く", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = configPath,
+                            UseShellExecute = true
+                        });
+                    }
+                }
+                else
+                {
+                    MessageBox.Show($"設定ファイルが見つかりません: {configPath}", 
+                                  "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"設定ファイルオープンエラー: {ex.Message}");
+            MessageBox.Show($"設定ファイルを開けませんでした: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// パターン設定の再読み込み
+    /// </summary>
+    private async void ReloadPatternConfig_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_patternManager == null)
+            {
+                _patternManager = new CounterPatternManager();
+            }
+            
+            var loaded = await _patternManager.LoadConfigAsync();
+            
+            if (loaded)
+            {
+                await RefreshPatternMenuAsync();
+                MessageBox.Show("パターン設定を再読み込みしました。", 
+                              "再読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                await LogErrorAsync("パターン設定が再読み込みされました。");
+            }
+            else
+            {
+                MessageBox.Show("パターン設定の再読み込みに失敗しました。エラーログを確認してください。", 
+                              "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            await LogErrorAsync($"パターン設定再読み込みエラー: {ex.Message}");
+            MessageBox.Show($"パターン設定の再読み込み中にエラーが発生しました: {ex.Message}", 
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// 非同期エラーログ出力
+    /// </summary>
+    private async Task LogErrorAsync(string message)
+    {
+        await Task.Run(() => LogError(message));
     }
 
     #endregion
