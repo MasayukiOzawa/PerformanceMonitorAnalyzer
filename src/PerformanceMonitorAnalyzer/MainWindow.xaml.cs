@@ -175,6 +175,18 @@ public class CounterTreeNode : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+    
+    /// <summary>
+    /// 外部からの状態更新用メソッド（イベント発生を抑制可能）
+    /// </summary>
+    public void SetCheckedStateDirectly(bool? value, bool triggerEvent = true)
+    {
+        _isChecked = value;
+        if (triggerEvent)
+        {
+            OnPropertyChanged(nameof(IsChecked));
+        }
+    }
 }
 
 public enum NodeType
@@ -2566,10 +2578,9 @@ public partial class MainWindow : Window
                 }
                 
                 // インスタンスノードの状態を直接更新
-                if (instNode._isChecked != newInstState)
+                if (instNode.IsChecked != newInstState)
                 {
-                    instNode._isChecked = newInstState;
-                    instNode.OnPropertyChanged(nameof(IsChecked));
+                    instNode.SetCheckedStateDirectly(newInstState);
                 }
             }
             
@@ -2594,10 +2605,9 @@ public partial class MainWindow : Window
             }
             
             // オブジェクトノードの状態を直接更新
-            if (objNode._isChecked != newObjState)
+            if (objNode.IsChecked != newObjState)
             {
-                objNode._isChecked = newObjState;
-                objNode.OnPropertyChanged(nameof(IsChecked));
+                objNode.SetCheckedStateDirectly(newObjState);
             }
         }
     }
