@@ -2057,14 +2057,21 @@ public partial class MainWindow : Window
             // 時間制約有効かどうかを判定（スライダーが初期値でない場合は時間制約を適用）
             bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
             
-            // UI表示を更新（relog.exeからPDH APIに変更）
+            // relog.exeコマンドライン文字列を生成
+            string relogCommand = GenerateRelogCommand(_currentBlgFile!, counters, useTimeConstraints ? startTime : (DateTime?)null, useTimeConstraints ? endTime : (DateTime?)null);
+            
+            // UI表示を更新（PDH API実行状況とrelog.exeコマンドを表示）
             await Dispatcher.InvokeAsync(() =>
             {
                 RelogStatusExpander.Visibility = Visibility.Visible;
                 RelogStatusExpander.Header = "🔧 PDH API実行状況";
-                RelogCommandDisplay.Text = useTimeConstraints 
-                    ? $"PDH API: {counters.Count}個のカウンターを時間範囲 {startTime:yyyy-MM-dd HH:mm:ss} - {endTime:yyyy-MM-dd HH:mm:ss} で読み込み"
-                    : $"PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
+                
+                // PDH API実行情報とrelog.exeコマンドの両方を表示
+                var pdhApiInfo = useTimeConstraints 
+                    ? $"📊 PDH API: {counters.Count}個のカウンターを時間範囲で読み込み\n⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}"
+                    : $"📊 PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
+                
+                RelogCommandDisplay.Text = $"{pdhApiInfo}\n\n📝 同等のrelog.exeコマンド:\n{relogCommand}";
                 RelogResultDisplay.Text = "実行中...";
             });
             
@@ -2962,6 +2969,67 @@ public partial class MainWindow : Window
     private async Task LogErrorAsync(string message)
     {
         await Task.Run(() => LogError(message));
+    }
+
+    #endregion
+
+    #region ヘルパーメソッド
+
+    /// <summary>
+    /// relog.exeコマンドライン文字列を生成
+    /// </summary>
+    private string GenerateRelogCommand(string blgFilePath, List<string> counters, DateTime? startTime, DateTime? endTime)
+    {
+        try
+        {
+            var commandBuilder = new StringBuilder();
+            commandBuilder.AppendLine("relog.exe \\");
+            
+            // 入力ファイル（引用符で囲む）
+            commandBuilder.AppendLine($"  \"{blgFilePath}\" \\");
+            
+            // 出力ファイル
+            var outputFileName = Path.GetFileNameWithoutExtension(blgFilePath) + "_output.csv";
+            commandBuilder.AppendLine($"  -o \"{outputFileName}\" \\");
+            
+            // フォーマット指定
+            commandBuilder.AppendLine("  -f CSV \\");
+            
+            // 時間範囲指定
+            if (startTime.HasValue && endTime.HasValue)
+            {
+                commandBuilder.AppendLine($"  -b \"{startTime.Value:yyyy/MM/dd HH:mm:ss}\" \\");
+                commandBuilder.AppendLine($"  -e \"{endTime.Value:yyyy/MM/dd HH:mm:ss}\" \\");
+            }
+            
+            // カウンター指定（最初の5個まで表示、それ以上の場合は省略）
+            if (counters.Count > 0)
+            {
+                commandBuilder.AppendLine("  -c \\");
+                var displayCounters = counters.Take(5).ToList();
+                
+                for (int i = 0; i < displayCounters.Count; i++)
+                {
+                    var counter = displayCounters[i];
+                    var isLast = i == displayCounters.Count - 1 && counters.Count <= 5;
+                    var suffix = isLast ? "" : " \\";
+                    commandBuilder.AppendLine($"    \"{counter}\"{suffix}");
+                }
+                
+                if (counters.Count > 5)
+                {
+                    commandBuilder.AppendLine($"    ... (他 {counters.Count - 5} 個のカウンター)");
+                }
+            }
+            
+            // 最後の改行を削除
+            return commandBuilder.ToString().TrimEnd();
+        }
+        catch (Exception ex)
+        {
+            LogError($"relog.exeコマンド生成エラー: {ex.Message}");
+            return $"relog.exe コマンド生成エラー: {ex.Message}";
+        }
     }
 
     #endregion
