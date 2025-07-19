@@ -3157,26 +3157,26 @@ public partial class MainWindow : Window
         try
         {
             var commandBuilder = new StringBuilder();
-            commandBuilder.AppendLine("relog.exe \\");
+            commandBuilder.AppendLine("relog.exe `");
             
             // 入力ファイル（引用符で囲む）
-            commandBuilder.AppendLine($"  \"{blgFilePath}\" \\");
+            commandBuilder.AppendLine($"  \"{blgFilePath}\" `");
             
             // 出力ファイル
             var outputFileName = Path.GetFileNameWithoutExtension(blgFilePath) + "_output.blg";
-            commandBuilder.AppendLine($"  -o \"{outputFileName}\" \\");
+            commandBuilder.AppendLine($"  -o \"{outputFileName}\" `");
             
-            // 時間範囲指定
-            if (startTime.HasValue && endTime.HasValue)
-            {
-                commandBuilder.AppendLine($"  -b \"{startTime.Value:yyyy/MM/dd HH:mm:ss}\" \\");
-                commandBuilder.AppendLine($"  -e \"{endTime.Value:yyyy/MM/dd HH:mm:ss}\" \\");
-            }
+            // バイナリフォーマット出力を明示的に指定
+            commandBuilder.AppendLine("  -f BIN `");
             
-
+            // 時間範囲指定（時間制約が指定されていない場合でもファイル内の開始/終了時間を使用）
+            DateTime effectiveStartTime = startTime ?? _fileStartTime;
+            DateTime effectiveEndTime = endTime ?? _fileEndTime;
             
-            // 最後の改行を削除
-            return commandBuilder.ToString().TrimEnd();
+            commandBuilder.AppendLine($"  -b \"{effectiveStartTime:yyyy/MM/dd HH:mm:ss}\" `");
+            commandBuilder.Append($"  -e \"{effectiveEndTime:yyyy/MM/dd HH:mm:ss}\"");
+            
+            return commandBuilder.ToString();
         }
         catch (Exception ex)
         {
