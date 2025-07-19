@@ -384,15 +384,15 @@ public partial class MainWindow : Window
         {
             Text = "📋 操作ログ - アプリケーションの操作履歴",
             FontWeight = FontWeights.Bold,
-            Margin = new Thickness(10, 5),
+            Margin = new Thickness(10, 5, 10, 5),
             VerticalAlignment = System.Windows.VerticalAlignment.Center
         });
         
         var clearButton = new Button
         {
             Content = "ログクリア",
-            Margin = new Thickness(10, 2),
-            Padding = new Thickness(8, 2)
+            Margin = new Thickness(10, 2, 10, 2),
+            Padding = new Thickness(8, 2, 8, 2)
         };
         clearButton.Click += (s, e) => ClearOperationLogs();
         headerPanel.Children.Add(clearButton);
@@ -476,7 +476,7 @@ public partial class MainWindow : Window
         {
             Text = "❌ エラーログ - error.logファイルの内容",
             FontWeight = FontWeights.Bold,
-            Margin = new Thickness(10, 5),
+            Margin = new Thickness(10, 5, 10, 5),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
             Foreground = System.Windows.Media.Brushes.White
         });
@@ -484,8 +484,8 @@ public partial class MainWindow : Window
         var refreshButton = new Button
         {
             Content = "ログ再読み込み",
-            Margin = new Thickness(10, 2),
-            Padding = new Thickness(8, 2)
+            Margin = new Thickness(10, 2, 10, 2),
+            Padding = new Thickness(8, 2, 8, 2)
         };
         refreshButton.Click += (s, e) => LoadErrorLogFromFile();
         headerPanel.Children.Add(refreshButton);
@@ -493,8 +493,8 @@ public partial class MainWindow : Window
         var clearButton = new Button
         {
             Content = "ログクリア",
-            Margin = new Thickness(5, 2),
-            Padding = new Thickness(8, 2)
+            Margin = new Thickness(5, 2, 5, 2),
+            Padding = new Thickness(8, 2, 8, 2)
         };
         clearButton.Click += (s, e) => ClearErrorLogs();
         headerPanel.Children.Add(clearButton);
