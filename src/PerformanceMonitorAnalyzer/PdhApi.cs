@@ -340,16 +340,31 @@ public static class PdhApi
         bool bRefresh);
 
     /// <summary>
-    /// オブジェクトアイテム（カウンターとインスタンス）を列挙
+    /// オブジェクトアイテム（カウンターとインスタンス）を列挙（IntPtr版）
     /// </summary>
     [DllImport(PdhDll, CharSet = CharSet.Unicode)]
-    public static extern uint PdhEnumObjectItemsHSB(
+    public static extern uint PdhEnumObjectItemsH(
         IntPtr hDataSource,
         string? szMachineName,
         string szObjectName,
         IntPtr mszCounterList,
         ref uint pcchCounterListLength,
         IntPtr mszInstanceList,
+        ref uint pcchInstanceListLength,
+        uint dwDetailLevel,
+        uint dwFlags);
+
+    /// <summary>
+    /// オブジェクトアイテム（カウンターとインスタンス）を列挙（StringBuilder版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode, EntryPoint = "PdhEnumObjectItemsH")]
+    public static extern uint PdhEnumObjectItemsHSB(
+        IntPtr hDataSource,
+        string? szMachineName,
+        string szObjectName,
+        StringBuilder? mszCounterList,
+        ref uint pcchCounterListLength,
+        StringBuilder? mszInstanceList,
         ref uint pcchInstanceListLength,
         uint dwDetailLevel,
         uint dwFlags);

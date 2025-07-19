@@ -818,9 +818,9 @@ public class BlgFileAnalyzer : IDisposable
                     _dataSource,
                     machineName,
                     objectName,
-                    IntPtr.Zero,
+                    null,
                     ref counterBufferSize,
-                    IntPtr.Zero,
+                    null,
                     ref instanceBufferSize,
                     100, // PERF_DETAIL_NOVICE
                     0);
@@ -848,7 +848,7 @@ public class BlgFileAnalyzer : IDisposable
                         }
 
                         // 実際にデータを取得
-                        result = PdhApi.PdhEnumObjectItemsHSB(
+                        result = PdhApi.PdhEnumObjectItemsH(
                             _dataSource,
                             machineName,
                             objectName,
