@@ -6,9 +6,11 @@ namespace PerformanceMonitorAnalyzer;
 
 /// <summary>
 /// BLGファイル解析を行うクラス（PDH APIを使用）
+/// DevelopersCommunity/PerformanceCounters リポジトリの実装を参考にした改良版
 /// </summary>
 public class BlgFileAnalyzer : IDisposable
 {
+    private string? _filePath = null;
     private IntPtr _dataSource = IntPtr.Zero;
     private IntPtr _query = IntPtr.Zero;
     private bool _disposed = false;
@@ -44,12 +46,14 @@ public class BlgFileAnalyzer : IDisposable
             throw new PlatformNotSupportedException("PDH APIはWindows環境でのみ利用可能です。");
         }
 
-        progress?.Report("BLGファイルを開いています...");
+        progress?.Report("BLGファイルを検証しています...");
 
         return await Task.Run(() =>
         {
             try
             {
+                _filePath = filePath;
+                
                 // 方法1: PdhBindInputDataSourceを使用
                 progress?.Report("PdhBindInputDataSourceでBLGファイルを開いています...");
                 uint result = PdhApi.PdhBindInputDataSource(out _dataSource, filePath);
@@ -101,8 +105,8 @@ public class BlgFileAnalyzer : IDisposable
                     _query = IntPtr.Zero;
                     throw new Exception($"BLGファイルを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
-
-                progress?.Report($"BLGファイルが正常に開かれました（ログタイプ: {logType}）");
+                
+                progress?.Report("BLGファイルが正常に開かれました");
                 return true;
             }
             catch (Exception ex)
@@ -111,6 +115,554 @@ public class BlgFileAnalyzer : IDisposable
                 throw;
             }
         });
+    }
+
+    /// <summary>
+    /// データソースの時間範囲を取得
+    /// </summary>
+    public async Task<(DateTime startTime, DateTime endTime)> GetTimeRangeAsync(IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report("時間範囲を取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                uint bufferSize = (uint)Marshal.SizeOf<PdhApi.PDH_TIME_INFO>();
+                uint result = PdhApi.PdhGetDataSourceTimeRange(_filePath, out uint numEntries, out PdhApi.PDH_TIME_INFO timeInfo, ref bufferSize);
+                
+                PdhApi.CheckPdhStatus(result);
+
+                var startTime = PdhApi.DateTimeFromFileTime(timeInfo.StartTime);
+                var endTime = PdhApi.DateTimeFromFileTime(timeInfo.EndTime);
+
+                progress?.Report($"時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} - {endTime:yyyy-MM-dd HH:mm:ss} (サンプル数: {numEntries})");
+
+                return (startTime, endTime);
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"時間範囲取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// 利用可能なマシン名を取得
+    /// </summary>
+    public async Task<List<string>> GetMachineNamesAsync(IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report("マシン名を取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                uint bufferSize = 0;
+                uint result = PdhApi.PdhEnumMachines(_filePath, null, ref bufferSize);
+                
+                var machines = new List<string>();
+                
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                {
+                    var buffer = new char[bufferSize];
+                    result = PdhApi.PdhEnumMachines(_filePath, buffer, ref bufferSize);
+                    PdhApi.CheckPdhStatus(result);
+                    
+                    machines = PdhApi.MultipleStringsToList(buffer);
+                }
+
+                progress?.Report($"{machines.Count}個のマシンが見つかりました");
+                return machines;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"マシン名取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// ワイルドカードパスを展開してカウンターリストを取得
+    /// </summary>
+    public async Task<List<string>> ExpandWildCardPathAsync(string wildCardPath, IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report($"ワイルドカードパス '{wildCardPath}' を展開中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                uint bufferSize = 0;
+                uint result = PdhApi.PdhExpandWildCardPath(_filePath, wildCardPath, null, ref bufferSize, 0);
+                
+                if (result == PdhApi.PDH_ENTRY_NOT_IN_LOG_FILE || result == PdhApi.PDH_CSTATUS_NO_OBJECT)
+                {
+                    progress?.Report($"ワイルドカードパス '{wildCardPath}' に一致するカウンターが見つかりません");
+                    return new List<string>();
+                }
+                
+                if (result != PdhApi.PDH_MORE_DATA)
+                {
+                    PdhApi.CheckPdhStatus(result);
+                }
+
+                var buffer = new char[bufferSize];
+                result = PdhApi.PdhExpandWildCardPath(_filePath, wildCardPath, buffer, ref bufferSize, 0);
+                PdhApi.CheckPdhStatus(result);
+
+                var expandedPaths = PdhApi.MultipleStringsToList(buffer);
+                progress?.Report($"ワイルドカードパス '{wildCardPath}' から {expandedPaths.Count} 個のカウンターパスを展開しました");
+
+                return expandedPaths;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"ワイルドカード展開エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// 指定されたカウンターのデータを読み込み
+    /// PerformanceCounters リポジトリの PCReaderEnumerator パターンを使用
+    /// </summary>
+    public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        // カウンターパスにマシン名が含まれていない場合は自動で補完
+        var fullCounterPath = EnsureMachineNameInPath(counterPath);
+        progress?.Report($"カウンターデータを読み込み中: {fullCounterPath}");
+
+        return await Task.Run(() =>
+        {
+            IntPtr query = IntPtr.Zero;
+            IntPtr counter = IntPtr.Zero;
+            var counterInfo = new CounterInfo
+            {
+                FullPath = fullCounterPath,
+                ObjectName = ExtractObjectName(fullCounterPath),
+                CounterName = ExtractCounterName(fullCounterPath),
+                InstanceName = ExtractInstanceName(fullCounterPath)
+            };
+
+            try
+            {
+                // BLGファイルを指定してクエリを開く
+                uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
+                PdhApi.CheckPdhStatus(result);
+
+                // カウンターをクエリに追加
+                result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
+                PdhApi.CheckPdhStatus(result);
+
+                progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
+
+                // 最初のデータ収集（これによりデータの読み込みが初期化される）
+                result = PdhApi.PdhCollectQueryData(query);
+                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA)
+                {
+                    PdhApi.CheckPdhStatus(result);
+                }
+
+                var dataPoints = new List<CounterDataPoint>();
+                int sampleCount = 0;
+                const int maxSamples = 100000; // 安全のため最大100,000サンプル
+
+                // BLGファイル内の全データポイントを反復処理
+                while (sampleCount < maxSamples)
+                {
+                    result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
+                    
+                    if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
+                    {
+                        break; // データ終了
+                    }
+                    
+                    PdhApi.CheckPdhStatus(result);
+
+                    // フォーマットされた値を取得
+                    result = PdhApi.PdhGetFormattedCounterValue(
+                        counter,
+                        PdhApi.PDH_FMT_DOUBLE,
+                        IntPtr.Zero,
+                        out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                    double formattedValue;
+                    if (result == PdhApi.PDH_CALC_NEGATIVE_DENOMINATOR ||
+                        result == PdhApi.PDH_CALC_NEGATIVE_VALUE ||
+                        result == PdhApi.PDH_CALC_NEGATIVE_TIMEBASE ||
+                        result == PdhApi.PDH_INVALID_DATA)
+                    {
+                        formattedValue = double.NaN;
+                    }
+                    else
+                    {
+                        PdhApi.CheckPdhStatus(result);
+                        formattedValue = value.doubleValue;
+                    }
+
+                    var dataPoint = new CounterDataPoint
+                    {
+                        Timestamp = PdhApi.DateTimeFromFileTime(timestamp),
+                        Value = formattedValue,
+                        Status = value.CStatus
+                    };
+                    
+                    dataPoints.Add(dataPoint);
+                    sampleCount++;
+
+                    // 進行状況を定期的に報告
+                    if (sampleCount % 1000 == 0)
+                    {
+                        progress?.Report($"カウンター '{counterPath}': {sampleCount} データポイントを読み込み中...");
+                    }
+                }
+
+                counterInfo.DataPoints = dataPoints;
+                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込みました");
+
+                return counterInfo;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"カウンターデータ読み込みエラー: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                // リソースをクリーンアップ
+                if (counter != IntPtr.Zero)
+                {
+                    PdhApi.PdhRemoveCounter(counter);
+                }
+                if (query != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(query);
+                }
+            }
+        });
+    }
+
+    /// <summary>
+    /// 時間制約付きでカウンターデータを読み込み
+    /// </summary>
+    public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, DateTime? startTime, DateTime? endTime, IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        // カウンターパスにマシン名が含まれていない場合は自動で補完
+        var fullCounterPath = EnsureMachineNameInPath(counterPath);
+        progress?.Report($"時間制約付きでカウンターデータを読み込み中: {fullCounterPath}");
+        if (startTime.HasValue || endTime.HasValue)
+        {
+            progress?.Report($"時間範囲: {startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "開始なし"} - {endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "終了なし"}");
+        }
+
+        return await Task.Run(() =>
+        {
+            IntPtr query = IntPtr.Zero;
+            IntPtr counter = IntPtr.Zero;
+            var counterInfo = new CounterInfo
+            {
+                FullPath = fullCounterPath,
+                ObjectName = ExtractObjectName(fullCounterPath),
+                CounterName = ExtractCounterName(fullCounterPath),
+                InstanceName = ExtractInstanceName(fullCounterPath)
+            };
+
+            try
+            {
+                // BLGファイルを指定してクエリを開く
+                uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
+                PdhApi.CheckPdhStatus(result);
+
+                // 時間範囲を設定（必要に応じて）
+                if (startTime.HasValue || endTime.HasValue)
+                {
+                    var timeInfo = new PdhApi.PDH_TIME_INFO
+                    {
+                        StartTime = startTime.HasValue ? PdhApi.FileTimeFromDateTime(startTime.Value) : 0,
+                        EndTime = endTime.HasValue ? PdhApi.FileTimeFromDateTime(endTime.Value) : long.MaxValue,
+                        SampleCount = 0
+                    };
+                    
+                    result = PdhApi.PdhSetQueryTimeRange(query, ref timeInfo);
+                    PdhApi.CheckPdhStatus(result);
+                    progress?.Report("時間範囲を設定しました");
+                }
+
+                // カウンターをクエリに追加
+                result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
+                PdhApi.CheckPdhStatus(result);
+
+                progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
+
+                // 最初のデータ収集
+                result = PdhApi.PdhCollectQueryData(query);
+                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA)
+                {
+                    PdhApi.CheckPdhStatus(result);
+                }
+
+                var dataPoints = new List<CounterDataPoint>();
+                int sampleCount = 0;
+                const int maxSamples = 100000; // 安全のため最大100,000サンプル
+
+                // BLGファイル内の全データポイントを反復処理
+                while (sampleCount < maxSamples)
+                {
+                    result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
+                    
+                    if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
+                    {
+                        break; // データ終了
+                    }
+                    
+                    PdhApi.CheckPdhStatus(result);
+
+                    var currentTime = PdhApi.DateTimeFromFileTime(timestamp);
+                    
+                    // 時間制約のチェック（追加の安全策）
+                    if (startTime.HasValue && currentTime < startTime.Value)
+                    {
+                        continue; // スキップ
+                    }
+                    if (endTime.HasValue && currentTime > endTime.Value)
+                    {
+                        break; // 終了
+                    }
+
+                    // フォーマットされた値を取得
+                    result = PdhApi.PdhGetFormattedCounterValue(
+                        counter,
+                        PdhApi.PDH_FMT_DOUBLE,
+                        IntPtr.Zero,
+                        out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                    double formattedValue;
+                    if (result == PdhApi.PDH_CALC_NEGATIVE_DENOMINATOR ||
+                        result == PdhApi.PDH_CALC_NEGATIVE_VALUE ||
+                        result == PdhApi.PDH_CALC_NEGATIVE_TIMEBASE ||
+                        result == PdhApi.PDH_INVALID_DATA)
+                    {
+                        formattedValue = double.NaN;
+                    }
+                    else
+                    {
+                        PdhApi.CheckPdhStatus(result);
+                        formattedValue = value.doubleValue;
+                    }
+
+                    var dataPoint = new CounterDataPoint
+                    {
+                        Timestamp = currentTime,
+                        Value = formattedValue,
+                        Status = value.CStatus
+                    };
+                    
+                    dataPoints.Add(dataPoint);
+                    sampleCount++;
+
+                    // 進行状況を定期的に報告
+                    if (sampleCount % 1000 == 0)
+                    {
+                        progress?.Report($"カウンター '{counterPath}': {sampleCount} データポイントを読み込み中...");
+                    }
+                }
+
+                counterInfo.DataPoints = dataPoints;
+                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込みました");
+
+                return counterInfo;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"カウンターデータ読み込みエラー: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                // リソースをクリーンアップ
+                if (counter != IntPtr.Zero)
+                {
+                    PdhApi.PdhRemoveCounter(counter);
+                }
+                if (query != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(query);
+                }
+            }
+        });
+    }
+
+    private static string ExtractObjectName(string counterPath)
+    {
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から ObjectName を抽出
+        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 3)
+        {
+            // parts[0] = MachineName, parts[1] = ObjectName(Instance), parts[2] = CounterName
+            var objectPart = parts[1];
+            var parenIndex = objectPart.IndexOf('(');
+            return parenIndex > 0 ? objectPart[..parenIndex] : objectPart;
+        }
+        else if (parts.Length >= 2)
+        {
+            // マシン名なしの場合: \ObjectName(Instance)\CounterName
+            var objectPart = parts[0];
+            var parenIndex = objectPart.IndexOf('(');
+            return parenIndex > 0 ? objectPart[..parenIndex] : objectPart;
+        }
+        return string.Empty;
+    }
+
+    private static string ExtractCounterName(string counterPath)
+    {
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から CounterName を抽出
+        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 1 ? parts[^1] : string.Empty;
+    }
+
+    private static string ExtractInstanceName(string counterPath)
+    {
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から Instance を抽出
+        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        
+        string objectPart;
+        if (parts.Length >= 3)
+        {
+            // parts[0] = MachineName, parts[1] = ObjectName(Instance), parts[2] = CounterName
+            objectPart = parts[1];
+        }
+        else if (parts.Length >= 2)
+        {
+            // マシン名なしの場合: \ObjectName(Instance)\CounterName
+            objectPart = parts[0];
+        }
+        else
+        {
+            return string.Empty;
+        }
+        
+        var startParen = objectPart.IndexOf('(');
+        var endParen = objectPart.IndexOf(')', startParen);
+        if (startParen > 0 && endParen > startParen && endParen - startParen > 1)
+        {
+            return objectPart.Substring(startParen + 1, endParen - startParen - 1);
+        }
+        return string.Empty;
+    }
+    /// <summary>
+    /// BLGファイル内のマシン名を取得（内部実装）
+    /// </summary>
+    private List<string> GetMachineNames()
+    {
+        var machines = new List<string>();
+        
+        try
+        {
+            if (_dataSource != IntPtr.Zero)
+            {
+                uint bufferSize = 0;
+                uint result = PdhApi.PdhEnumMachinesH(_dataSource, IntPtr.Zero, ref bufferSize);
+                
+                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                {
+                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2); // Unicodeのため2倍
+                    
+                    try
+                    {
+                        result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
+                        
+                        if (result == PdhApi.ERROR_SUCCESS)
+                        {
+                            var machineList = Marshal.PtrToStringUni(buffer, (int)bufferSize - 1);
+                            if (machineList != null)
+                            {
+                                machines = ParseMultiStringZ(machineList);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // マシン名取得に失敗しても続行
+            Console.WriteLine($"マシン名取得エラー: {ex.Message}");
+        }
+        
+        return machines;
+    }
+
+    /// <summary>
+    /// BLGファイル内のマシン名を取得（公開メソッド）
+    /// </summary>
+    public List<string> GetMachineNamesFromBlg()
+    {
+        return GetMachineNames();
+    }
+
+    /// <summary>
+    /// null区切りの文字列を解析
+    /// </summary>
+    private static List<string> ParseMultiStringZ(string multiString)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        
+        for (int i = 0; i < multiString.Length; i++)
+        {
+            if (multiString[i] == '\0')
+            {
+                if (current.Length > 0)
+                {
+                    result.Add(current.ToString());
+                    current.Clear();
+                }
+            }
+            else
+            {
+                current.Append(multiString[i]);
+            }
+        }
+        
+        if (current.Length > 0)
+        {
+            result.Add(current.ToString());
+        }
+        
+        return result;
     }
 
     /// <summary>
@@ -166,10 +718,6 @@ public class BlgFileAnalyzer : IDisposable
                 }
 
                 progress?.Report($"{objects.Count}個のオブジェクトが見つかりました");
-                foreach (var obj in objects.Take(10))
-                {
-                    progress?.Report($"見つかったオブジェクト: {obj}");
-                }
                 return objects;
             }
             catch (Exception ex)
@@ -181,58 +729,89 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
-    /// BLGファイル内のマシン名を取得
+    /// PdhEnumObjectsH（BLGファイル専用API）を使用してオブジェクトを列挙
     /// </summary>
-    private List<string> GetMachineNames()
+    private List<string> TryEnumerateObjectsH(string? machineName, IProgress<string>? progress)
     {
-        var machines = new List<string>();
+        var objects = new List<string>();
         
         try
         {
-            if (_dataSource != IntPtr.Zero)
+            uint bufferSize = 0;
+            uint result = PdhApi.PdhEnumObjectsH(_dataSource, machineName, IntPtr.Zero, ref bufferSize, 100, true);
+            
+            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
             {
-                uint bufferSize = 0;
-                uint result = PdhApi.PdhEnumMachinesH(_dataSource, IntPtr.Zero, ref bufferSize);
+                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2);
                 
-                if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+                try
                 {
-                    IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2); // Unicodeのため2倍
+                    result = PdhApi.PdhEnumObjectsH(_dataSource, machineName, buffer, ref bufferSize, 100, true);
                     
-                    try
+                    if (result == PdhApi.ERROR_SUCCESS)
                     {
-                        result = PdhApi.PdhEnumMachinesH(_dataSource, buffer, ref bufferSize);
-                        
-                        if (result == PdhApi.ERROR_SUCCESS)
+                        var objectList = Marshal.PtrToStringUni(buffer, (int)bufferSize - 1);
+                        if (objectList != null)
                         {
-                            var rawData = Marshal.PtrToStringUni(buffer);
-                            if (!string.IsNullOrEmpty(rawData))
-                            {
-                                var machineNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                                machines.AddRange(machineNames);
-                            }
+                            objects = ParseMultiStringZ(objectList);
                         }
                     }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(buffer);
-                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // マシン名の取得に失敗した場合はnullを使用
+            progress?.Report($"PdhEnumObjectsHエラー: {ex.Message}");
         }
         
-        return machines;
+        return objects;
     }
 
     /// <summary>
-    /// BLGファイル内のマシン名を取得（公開メソッド）
+    /// PdhEnumObjectsA（ANSI版）を使用してオブジェクトを列挙
     /// </summary>
-    public List<string> GetMachineNamesFromBlg()
+    private List<string> TryEnumerateObjectsA(string? machineName, IProgress<string>? progress)
     {
-        return GetMachineNames();
+        var objects = new List<string>();
+        
+        try
+        {
+            uint bufferSize = 0;
+            uint result = PdhApi.PdhEnumObjectsA(_dataSource, machineName, IntPtr.Zero, ref bufferSize, 100, true);
+            
+            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
+            {
+                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
+                
+                try
+                {
+                    result = PdhApi.PdhEnumObjectsA(_dataSource, machineName, buffer, ref bufferSize, 100, true);
+                    
+                    if (result == PdhApi.ERROR_SUCCESS)
+                    {
+                        var objectList = Marshal.PtrToStringAnsi(buffer, (int)bufferSize - 1);
+                        if (objectList != null)
+                        {
+                            objects = ParseMultiStringZ(objectList);
+                        }
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"PdhEnumObjectsAエラー: {ex.Message}");
+        }
+        
+        return objects;
     }
 
     /// <summary>
@@ -278,28 +857,22 @@ public class BlgFileAnalyzer : IDisposable
 
                 if (result == PdhApi.PDH_MORE_DATA && (counterBufferSize > 0 || instanceBufferSize > 0))
                 {
-                    // バッファサイズを保存（呼び出し後に変更される可能性があるため）
-                    uint originalCounterBufferSize = counterBufferSize;
-                    uint originalInstanceBufferSize = instanceBufferSize;
-
-                    // char単位でバッファを確保（Unicode文字列のため）
                     IntPtr counterBuffer = IntPtr.Zero;
                     IntPtr instanceBuffer = IntPtr.Zero;
 
                     try
                     {
+                        // バッファを割り当て
                         if (counterBufferSize > 0)
                         {
-                            counterBuffer = Marshal.AllocHGlobal((int)counterBufferSize * 2); // char = 2 bytes
-                            Marshal.Copy(new byte[counterBufferSize * 2], 0, counterBuffer, (int)counterBufferSize * 2);
+                            counterBuffer = Marshal.AllocHGlobal((int)counterBufferSize * 2); // Unicode対応
                         }
-
                         if (instanceBufferSize > 0)
                         {
-                            instanceBuffer = Marshal.AllocHGlobal((int)instanceBufferSize * 2); // char = 2 bytes
-                            Marshal.Copy(new byte[instanceBufferSize * 2], 0, instanceBuffer, (int)instanceBufferSize * 2);
+                            instanceBuffer = Marshal.AllocHGlobal((int)instanceBufferSize * 2); // Unicode対応
                         }
 
+                        // 実際にデータを取得
                         result = PdhApi.PdhEnumObjectItemsH(
                             _dataSource,
                             machineName,
@@ -308,105 +881,28 @@ public class BlgFileAnalyzer : IDisposable
                             ref counterBufferSize,
                             instanceBuffer,
                             ref instanceBufferSize,
-                            100,
+                            100, // PERF_DETAIL_NOVICE
                             0);
-                            
-                        progress?.Report($"API呼び出し後のバッファサイズ - カウンター: {counterBufferSize}/{originalCounterBufferSize}, インスタンス: {instanceBufferSize}/{originalInstanceBufferSize}");
-
-                        progress?.Report($"カウンター・インスタンス列挙結果: {PdhApi.GetErrorMessage(result)}");
 
                         if (result == PdhApi.ERROR_SUCCESS)
                         {
-                            // カウンター名を解析（Unicode文字列から直接変換）
+                            // カウンター名を解析
                             if (counterBuffer != IntPtr.Zero && counterBufferSize > 0)
                             {
-                                var counterList = Marshal.PtrToStringUni(counterBuffer, (int)counterBufferSize - 1); // 最後のnull文字は除外
+                                var counterList = Marshal.PtrToStringUni(counterBuffer, (int)counterBufferSize - 1);
                                 if (counterList != null)
                                 {
-                                    progress?.Report($"生のカウンターバッファ長: {counterList.Length}, 要求サイズ: {counterBufferSize}");
-                                    
-                                    // null文字位置の詳細調査
-                                    int nullCount = 0;
-                                    var counterNames = new List<string>();
-                                    var currentCounter = new StringBuilder();
-                                    
-                                    for (int i = 0; i < counterList.Length; i++)
-                                    {
-                                        if (counterList[i] == '\0')
-                                        {
-                                            nullCount++;
-                                            if (currentCounter.Length > 0)
-                                            {
-                                                counterNames.Add(currentCounter.ToString());
-                                                currentCounter.Clear();
-                                            }
-                                        }
-                                        else
-                                        {
-                                            currentCounter.Append(counterList[i]);
-                                        }
-                                    }
-                                    
-                                    // 最後のカウンター名を追加（null終端がない場合）
-                                    if (currentCounter.Length > 0)
-                                    {
-                                        counterNames.Add(currentCounter.ToString());
-                                    }
-                                    
-                                    progress?.Report($"合計null文字数: {nullCount}, 抽出されたカウンター数: {counterNames.Count}");
-                                    
-                                    // 最初の10個のカウンター名を表示
-                                    for (int i = 0; i < Math.Min(10, counterNames.Count); i++)
-                                    {
-                                        progress?.Report($"カウンター[{i}]: '{counterNames[i]}'");
-                                    }
-                                    
-                                    counters.AddRange(counterNames);
+                                    counters = ParseMultiStringZ(counterList);
                                 }
                             }
 
                             // インスタンス名を解析
                             if (instanceBuffer != IntPtr.Zero && instanceBufferSize > 0)
                             {
-                                var instanceList = Marshal.PtrToStringUni(instanceBuffer, (int)instanceBufferSize - 1); // 最後のnull文字は除外
+                                var instanceList = Marshal.PtrToStringUni(instanceBuffer, (int)instanceBufferSize - 1);
                                 if (instanceList != null)
                                 {
-                                    progress?.Report($"生のインスタンスバッファ長: {instanceList.Length}, 要求サイズ: {instanceBufferSize}");
-                                    
-                                    var instanceNames = new List<string>();
-                                    var currentInstance = new StringBuilder();
-                                    
-                                    for (int i = 0; i < instanceList.Length; i++)
-                                    {
-                                        if (instanceList[i] == '\0')
-                                        {
-                                            if (currentInstance.Length > 0)
-                                            {
-                                                instanceNames.Add(currentInstance.ToString());
-                                                currentInstance.Clear();
-                                            }
-                                        }
-                                        else
-                                        {
-                                            currentInstance.Append(instanceList[i]);
-                                        }
-                                    }
-                                    
-                                    // 最後のインスタンス名を追加（null終端がない場合）
-                                    if (currentInstance.Length > 0)
-                                    {
-                                        instanceNames.Add(currentInstance.ToString());
-                                    }
-                                    
-                                    progress?.Report($"抽出されたインスタンス数: {instanceNames.Count}");
-                                    
-                                    // 最初の10個のインスタンス名を表示
-                                    for (int i = 0; i < Math.Min(10, instanceNames.Count); i++)
-                                    {
-                                        progress?.Report($"インスタンス[{i}]: '{instanceNames[i]}'");
-                                    }
-                                    
-                                    instances.AddRange(instanceNames);
+                                    instances = ParseMultiStringZ(instanceList);
                                 }
                             }
                         }
@@ -455,6 +951,11 @@ public class BlgFileAnalyzer : IDisposable
 
         progress?.Report($"見つかったオブジェクト数: {objects.Count}");
         
+        // BLGファイル内のマシン名を取得
+        var machineNames = GetMachineNames();
+        string? machineName = machineNames.FirstOrDefault();
+        progress?.Report($"マシン名: {machineName ?? "未検出"}");
+        
         foreach (var objectName in objects)
         {
             try
@@ -470,7 +971,8 @@ public class BlgFileAnalyzer : IDisposable
                         // インスタンスありの場合
                         foreach (var instanceName in instances)
                         {
-                            var path = $"\\{objectName}({instanceName})\\{counterName}";
+                            // マシン名を含むフルパスを生成
+                            var path = $"{machineName}\\{objectName}({instanceName})\\{counterName}";
                             allPaths.Add(path);
                             pathsForThisObject++;
                         }
@@ -478,7 +980,8 @@ public class BlgFileAnalyzer : IDisposable
                     else
                     {
                         // インスタンスなしの場合
-                        var path = $"\\{objectName}\\{counterName}";
+                        // マシン名を含むフルパスを生成
+                        var path = $"{machineName}\\{objectName}\\{counterName}";
                         allPaths.Add(path);
                         pathsForThisObject++;
                     }
@@ -502,320 +1005,36 @@ public class BlgFileAnalyzer : IDisposable
             var samplePaths = allPaths.Take(10).ToList();
             progress?.Report($"サンプルパス（最初の10個）: {string.Join(", ", samplePaths)}");
         }
-        
+
         return allPaths;
     }
 
     /// <summary>
-    /// 指定されたカウンターのデータを読み込み
+    /// カウンターパスにマシン名が含まれていない場合は自動で補完
     /// </summary>
-    public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
+    private string EnsureMachineNameInPath(string counterPath)
     {
-        if (_query == IntPtr.Zero)
+        // 既にマシン名が含まれている場合（\\MachineName\ で始まっている場合）
+        if (counterPath.StartsWith("\\\\"))
         {
-            throw new InvalidOperationException("クエリが開かれていません。");
+            return counterPath; // そのまま返す
         }
 
-        progress?.Report($"カウンターデータを読み込み中: {counterPath}");
-
-        return await Task.Run(() =>
+        // マシン名を取得
+        var machineNames = GetMachineNames();
+        string? machineName = machineNames.FirstOrDefault();
+        
+        if (string.IsNullOrEmpty(machineName))
         {
-            IntPtr counter = IntPtr.Zero;
-            var counterInfo = new CounterInfo
-            {
-                FullPath = counterPath,
-                ObjectName = ExtractObjectName(counterPath),
-                CounterName = ExtractCounterName(counterPath),
-                InstanceName = ExtractInstanceName(counterPath)
-            };
-
-            try
-            {
-                // カウンターをクエリに追加
-                uint result = PdhApi.PdhAddCounter(_query, counterPath, IntPtr.Zero, out counter);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)}");
-                }
-
-                // データを収集
-                result = PdhApi.PdhCollectQueryData(_query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"データ収集に失敗: {PdhApi.GetErrorMessage(result)}");
-                }
-
-                // フォーマットされた値を取得
-                result = PdhApi.PdhGetFormattedCounterValue(
-                    counter,
-                    PdhApi.PDH_FMT_DOUBLE,
-                    out uint valueType,
-                    out PdhApi.PDH_FMT_COUNTERVALUE value);
-
-                if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
-                {
-                    var dataPoint = new CounterDataPoint
-                    {
-                        Timestamp = DateTime.Now, // 実際の実装では適切なタイムスタンプを設定
-                        Value = value.doubleValue,
-                        Status = value.CStatus
-                    };
-                    counterInfo.DataPoints.Add(dataPoint);
-                }
-                else
-                {
-                    progress?.Report($"値取得警告: {PdhApi.GetErrorMessage(result)}");
-                }
-
-                return counterInfo;
-            }
-            catch (Exception ex)
-            {
-                progress?.Report($"カウンターデータ読み込みエラー: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                // カウンターを削除
-                if (counter != IntPtr.Zero)
-                {
-                    PdhApi.PdhRemoveCounter(counter);
-                }
-            }
-        });
-    }
-
-    private static string ExtractObjectName(string counterPath)
-    {
-        // \\ObjectName(Instance)\\CounterName 形式から ObjectName を抽出
-        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-        {
-            var objectPart = parts[0];
-            var parenIndex = objectPart.IndexOf('(');
-            return parenIndex > 0 ? objectPart[..parenIndex] : objectPart;
-        }
-        return string.Empty;
-    }
-
-    private static string ExtractCounterName(string counterPath)
-    {
-        // \\ObjectName(Instance)\\CounterName 形式から CounterName を抽出
-        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2 ? parts[^1] : string.Empty;
-    }
-
-    private static string ExtractInstanceName(string counterPath)
-    {
-        // \\ObjectName(Instance)\\CounterName 形式から Instance を抽出
-        var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
-        {
-            var objectPart = parts[0];
-            var startParen = objectPart.IndexOf('(');
-            var endParen = objectPart.IndexOf(')', startParen);
-            if (startParen > 0 && endParen > startParen)
-            {
-                return objectPart.Substring(startParen + 1, endParen - startParen - 1);
-            }
-        }
-        return string.Empty;
-    }
-
-    /// <summary>
-    /// PdhEnumObjectsH（BLGファイル専用API）を使用してオブジェクトを列挙
-    /// </summary>
-    private List<string> TryEnumerateObjectsH(string? machineName, IProgress<string>? progress)
-    {
-        var objects = new List<string>();
-
-        try
-        {
-            uint bufferSize = 0;
-
-            // PdhEnumObjectsH（BLGファイル専用API）を使用してバッファサイズを取得
-            uint result = PdhApi.PdhEnumObjectsH(
-                _dataSource,
-                machineName,
-                IntPtr.Zero,
-                ref bufferSize,
-                PdhApi.PERF_DETAIL_WIZARD,
-                false);
-
-            progress?.Report($"PdhEnumObjectsH バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
-
-            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
-            {
-                // Unicodeバッファを確保（文字数単位でサイズ指定、1文字=2バイト）
-                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize * 2);
-
-                try
-                {
-                    // バッファをゼロで初期化
-                    for (int i = 0; i < bufferSize * 2; i++)
-                    {
-                        Marshal.WriteByte(buffer, i, 0);
-                    }
-
-                    result = PdhApi.PdhEnumObjectsH(
-                        _dataSource,
-                        machineName,
-                        buffer,
-                        ref bufferSize,
-                        PdhApi.PERF_DETAIL_WIZARD,
-                        false);
-
-                    progress?.Report($"PdhEnumObjectsH オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
-
-                    if (result == PdhApi.ERROR_SUCCESS)
-                    {
-                        // 手動でUnicode文字列を解析（複数のnull終端文字列を処理）
-                        var objectNames = new List<string>();
-                        var currentString = new StringBuilder();
-                        
-                        // 文字単位で処理（bufferSizeは文字数）
-                        for (int i = 0; i < bufferSize; i++)
-                        {
-                            // 2バイトずつ読み取ってUnicode文字を取得
-                            char ch = (char)Marshal.ReadInt16(buffer, i * 2);
-                            
-                            if (ch == '\0')
-                            {
-                                // null文字の場合、現在の文字列を完了
-                                if (currentString.Length > 0)
-                                {
-                                    objectNames.Add(currentString.ToString());
-                                    currentString.Clear();
-                                }
-                                // 連続するnull文字は文字列リストの終端を示す
-                                else if (objectNames.Count > 0)
-                                {
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                // 通常の文字を追加
-                                currentString.Append(ch);
-                            }
-                        }
-                        
-                        // 最後の文字列が残っている場合は追加
-                        if (currentString.Length > 0)
-                        {
-                            objectNames.Add(currentString.ToString());
-                        }
-
-                        progress?.Report($"PdhEnumObjectsH 分割後のオブジェクト数: {objectNames.Count}");
-
-                        for (int i = 0; i < Math.Min(objectNames.Count, 10); i++)
-                        {
-                            progress?.Report($"PdhEnumObjectsH オブジェクト[{i}]: '{objectNames[i]}'");
-                        }
-
-                        objects.AddRange(objectNames);
-                    }
-                    else
-                    {
-                        progress?.Report($"PdhEnumObjectsH オブジェクト列挙に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                    }
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(buffer);
-                }
-            }
-            else if (result != PdhApi.ERROR_SUCCESS)
-            {
-                progress?.Report($"PdhEnumObjectsH バッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-            }
-        }
-        catch (Exception ex)
-        {
-            progress?.Report($"PdhEnumObjectsH 例外が発生: {ex.Message}");
+            // マシン名が取得できない場合はそのまま返す
+            return counterPath;
         }
 
-        return objects;
-    }
-
-    /// <summary>
-    /// PdhEnumObjectsA（ANSI版）を使用してオブジェクトを列挙
-    /// </summary>
-    private List<string> TryEnumerateObjectsA(string? machineName, IProgress<string>? progress)
-    {
-        var objects = new List<string>();
-
-        try
-        {
-            uint bufferSize = 0;
-
-            // PdhEnumObjectsA（ANSI版）を使用してバッファサイズを取得
-            uint result = PdhApi.PdhEnumObjectsA(
-                machineName,
-                IntPtr.Zero,
-                ref bufferSize,
-                PdhApi.PERF_DETAIL_WIZARD,
-                false);
-
-            progress?.Report($"PdhEnumObjectsA バッファサイズ取得結果: {PdhApi.GetErrorMessage(result)}, サイズ: {bufferSize}");
-
-            if (result == PdhApi.PDH_MORE_DATA && bufferSize > 0)
-            {
-                // ANSIバッファを確保（1バイト文字）
-                IntPtr buffer = Marshal.AllocHGlobal((int)bufferSize);
-
-                try
-                {
-                    result = PdhApi.PdhEnumObjectsA(
-                        machineName,
-                        buffer,
-                        ref bufferSize,
-                        PdhApi.PERF_DETAIL_WIZARD,
-                        false);
-
-                    progress?.Report($"PdhEnumObjectsA オブジェクト列挙結果: {PdhApi.GetErrorMessage(result)}");
-
-                    if (result == PdhApi.ERROR_SUCCESS)
-                    {
-                        // ANSI文字列として解析
-                        var rawData = Marshal.PtrToStringAnsi(buffer);
-                        progress?.Report($"PdhEnumObjectsA 生のオブジェクトバッファ長: {rawData?.Length ?? 0}, 最初の200文字: {rawData?[..Math.Min(200, rawData?.Length ?? 0)] ?? "null"}");
-
-                        if (!string.IsNullOrEmpty(rawData))
-                        {
-                            // null文字で分割して複数のオブジェクト名を取得
-                            var objectNames = rawData.Split('\0', StringSplitOptions.RemoveEmptyEntries);
-                            progress?.Report($"PdhEnumObjectsA 分割後のオブジェクト数: {objectNames.Length}");
-
-                            for (int i = 0; i < Math.Min(objectNames.Length, 10); i++)
-                            {
-                                progress?.Report($"PdhEnumObjectsA オブジェクト[{i}]: '{objectNames[i]}'");
-                            }
-
-                            objects.AddRange(objectNames);
-                        }
-                    }
-                    else
-                    {
-                        progress?.Report($"PdhEnumObjectsA オブジェクト列挙に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                    }
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(buffer);
-                }
-            }
-            else if (result != PdhApi.ERROR_SUCCESS)
-            {
-                progress?.Report($"PdhEnumObjectsA バッファサイズ取得に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-            }
-        }
-        catch (Exception ex)
-        {
-            progress?.Report($"PdhEnumObjectsA 例外が発生: {ex.Message}");
-        }
-
-        return objects;
+        // \ で始まっている場合は先頭の \ を削除
+        var pathWithoutLeadingSlash = counterPath.StartsWith("\\") ? counterPath.Substring(1) : counterPath;
+        
+        // マシン名を追加したフルパスを生成
+        return $"{machineName}\\{pathWithoutLeadingSlash}";
     }
 
     public void Dispose()
@@ -828,20 +1047,18 @@ public class BlgFileAnalyzer : IDisposable
     {
         if (!_disposed)
         {
-            // クエリを先に閉じる
             if (_query != IntPtr.Zero)
             {
                 PdhApi.PdhCloseQuery(_query);
                 _query = IntPtr.Zero;
             }
-
-            // その後データソースを閉じる
+            
             if (_dataSource != IntPtr.Zero)
             {
                 PdhApi.PdhCloseLog(_dataSource, 0);
                 _dataSource = IntPtr.Zero;
             }
-
+            
             _disposed = true;
         }
     }

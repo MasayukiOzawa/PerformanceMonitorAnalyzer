@@ -173,11 +173,11 @@
                                     <TextBlock x:Name="EndTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Right" Foreground="DarkBlue"/>
                                 </StackPanel>
                                 
-                                <!-- relog.exe実行状況表示 -->
-                                <Expander Grid.Row="2" Header="🔧 relog.exe実行状況" IsExpanded="False" 
+                                <!-- PDH API実行状況表示 -->
+                                <Expander Grid.Row="2" Header="🔧 PDH API実行状況" IsExpanded="False" 
                                          Margin="0,10,0,0" x:Name="RelogStatusExpander" Visibility="Collapsed">
                                     <StackPanel Margin="5">
-                                        <TextBlock Text="実行コマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
+                                        <TextBlock Text="実行内容:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
                                         <TextBox x:Name="RelogCommandDisplay" 
                                                 IsReadOnly="True" 
                                                 Background="LightYellow"
