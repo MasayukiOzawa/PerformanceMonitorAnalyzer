@@ -1323,6 +1323,12 @@ public partial class MainWindow : Window
             // グラフメニューの有効/無効制御
             GraphMenu.IsEnabled = hasData;
             
+            // コンテキストメニューの有効/無効制御
+            if (ContextMenuCopyGraph != null)
+            {
+                ContextMenuCopyGraph.IsEnabled = hasData;
+            }
+            
             if (!hasData)
             {
                 StatisticsDataGrid.ItemsSource = null;
@@ -3425,16 +3431,24 @@ public partial class MainWindow : Window
         {
             if (GraphMenu.IsEnabled) // グラフが表示されている場合のみ実行
             {
-                CopyGraphToClipboard_Click(sender, e);
+                CopyGraphToClipboardInternal();
                 e.Handled = true;
             }
         }
     }
 
     /// <summary>
-    /// グラフをクリップボードにコピーする
+    /// グラフをクリップボードにコピーする（UI イベント）
     /// </summary>
     private void CopyGraphToClipboard_Click(object sender, RoutedEventArgs e)
+    {
+        CopyGraphToClipboardInternal();
+    }
+
+    /// <summary>
+    /// グラフをクリップボードにコピーする内部実装
+    /// </summary>
+    private void CopyGraphToClipboardInternal()
     {
         try
         {
@@ -3448,7 +3462,7 @@ public partial class MainWindow : Window
             }
 
             // ScottPlotからBitmapを取得
-            var bitmap = PerformanceChart.Plot.GetBitmap();
+            using var bitmap = PerformanceChart.Plot.GetBitmap();
             
             // BitmapをBitmapSourceに変換
             var bitmapSource = ConvertBitmapToBitmapSource(bitmap);

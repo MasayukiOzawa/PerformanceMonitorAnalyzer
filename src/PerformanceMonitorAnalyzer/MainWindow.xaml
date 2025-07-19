@@ -224,7 +224,20 @@
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
                                       Grid.Row="0"
-                                      Background="White" />
+                                      Background="White">
+                        <scottplot:WpfPlot.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="グラフをクリップボードにコピー(_C)" 
+                                         Click="CopyGraphToClipboard_Click"
+                                         InputGestureText="Ctrl+C"
+                                         x:Name="ContextMenuCopyGraph">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="📋"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </scottplot:WpfPlot.ContextMenu>
+                    </scottplot:WpfPlot>
                     
                     <!-- データなしの場合のメッセージ -->
                     <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"
