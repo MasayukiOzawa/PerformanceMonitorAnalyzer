@@ -215,6 +215,43 @@ public class PerformanceDataPoint
 }
 
 /// <summary>
+/// ログメッセージエントリ
+/// </summary>
+public class LogEntry : INotifyPropertyChanged
+{
+    public DateTime Timestamp { get; set; }
+    public LogLevel Level { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string FormattedTimestamp => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+    public string LevelDisplay => Level.ToString();
+    public System.Windows.Media.Brush TextColor => Level switch
+    {
+        LogLevel.Error => System.Windows.Media.Brushes.Red,
+        LogLevel.Warning => System.Windows.Media.Brushes.Orange,
+        LogLevel.Info => System.Windows.Media.Brushes.Blue,
+        LogLevel.Success => System.Windows.Media.Brushes.Green,
+        _ => System.Windows.Media.Brushes.Black
+    };
+    
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected virtual void OnPropertyChanged(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+/// <summary>
+/// ログレベル列挙体
+/// </summary>
+public enum LogLevel
+{
+    Info,
+    Success,
+    Warning,
+    Error
+}
+
+/// <summary>
 /// カウンター統計情報
 /// </summary>
 public class CounterStatistics
@@ -262,6 +299,10 @@ public partial class MainWindow : Window
     
     // パターン管理機能
     private CounterPatternManager? _patternManager;
+    
+    // ログ機能
+    private readonly ObservableCollection<LogEntry> _operationLogs = new();
+    private readonly ObservableCollection<LogEntry> _errorLogs = new();
 
     public MainWindow()
     {
@@ -271,6 +312,9 @@ public partial class MainWindow : Window
         
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
+        
+        // ログタブの初期化
+        InitializeLogTabs();
     }
 
     private void InitializeChart()
@@ -285,6 +329,227 @@ public partial class MainWindow : Window
         
         // グラフの更新
         PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// ログタブの初期化
+    /// </summary>
+    private void InitializeLogTabs()
+    {
+        try
+        {
+            // 操作ログタブを作成
+            var operationLogTab = CreateOperationLogTab();
+            DataTabControl.Items.Add(operationLogTab);
+            
+            // エラーログタブを作成
+            var errorLogTab = CreateErrorLogTab();
+            DataTabControl.Items.Add(errorLogTab);
+            
+            // 初期ログメッセージを追加
+            AddOperationLog(LogLevel.Info, "アプリケーションが開始されました。");
+            
+            // error.logファイルからエラーログを読み込み
+            LoadErrorLogFromFile();
+        }
+        catch (Exception ex)
+        {
+            LogError($"ログタブの初期化に失敗しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 操作ログタブを作成
+    /// </summary>
+    private TabItem CreateOperationLogTab()
+    {
+        var tabItem = new TabItem
+        {
+            Header = "📋 操作ログ",
+            Tag = "OperationLog"
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        // ヘッダー部分
+        var headerPanel = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            Margin = new Thickness(5),
+            Background = System.Windows.Media.Brushes.LightBlue
+        };
+        headerPanel.Children.Add(new TextBlock
+        {
+            Text = "📋 操作ログ - アプリケーションの操作履歴",
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(10, 5),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        });
+        
+        var clearButton = new Button
+        {
+            Content = "ログクリア",
+            Margin = new Thickness(10, 2),
+            Padding = new Thickness(8, 2)
+        };
+        clearButton.Click += (s, e) => ClearOperationLogs();
+        headerPanel.Children.Add(clearButton);
+
+        Grid.SetRow(headerPanel, 0);
+        grid.Children.Add(headerPanel);
+
+        // ログ表示用DataGrid
+        var dataGrid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            ItemsSource = _operationLogs,
+            AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            CanUserReorderColumns = false,
+            CanUserResizeRows = false
+        };
+
+        // 列を定義
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "時間",
+            Binding = new System.Windows.Data.Binding("FormattedTimestamp"),
+            Width = 130
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "レベル",
+            Binding = new System.Windows.Data.Binding("LevelDisplay"),
+            Width = 60
+        });
+
+        var messageColumn = new DataGridTextColumn
+        {
+            Header = "メッセージ",
+            Binding = new System.Windows.Data.Binding("Message"),
+            Width = DataGridLength.SizeToCells
+        };
+        
+        // メッセージ列のスタイルを設定（色分け）
+        var messageStyle = new Style(typeof(TextBlock));
+        messageStyle.Setters.Add(new Setter(TextBlock.ForegroundProperty, 
+            new System.Windows.Data.Binding("TextColor")));
+        messageColumn.ElementStyle = messageStyle;
+        
+        dataGrid.Columns.Add(messageColumn);
+
+        Grid.SetRow(dataGrid, 1);
+        grid.Children.Add(dataGrid);
+
+        tabItem.Content = grid;
+        return tabItem;
+    }
+
+    /// <summary>
+    /// エラーログタブを作成
+    /// </summary>
+    private TabItem CreateErrorLogTab()
+    {
+        var tabItem = new TabItem
+        {
+            Header = "❌ エラーログ",
+            Tag = "ErrorLog"
+        };
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        // ヘッダー部分
+        var headerPanel = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            Margin = new Thickness(5),
+            Background = System.Windows.Media.Brushes.LightCoral
+        };
+        headerPanel.Children.Add(new TextBlock
+        {
+            Text = "❌ エラーログ - error.logファイルの内容",
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(10, 5),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            Foreground = System.Windows.Media.Brushes.White
+        });
+        
+        var refreshButton = new Button
+        {
+            Content = "ログ再読み込み",
+            Margin = new Thickness(10, 2),
+            Padding = new Thickness(8, 2)
+        };
+        refreshButton.Click += (s, e) => LoadErrorLogFromFile();
+        headerPanel.Children.Add(refreshButton);
+
+        var clearButton = new Button
+        {
+            Content = "ログクリア",
+            Margin = new Thickness(5, 2),
+            Padding = new Thickness(8, 2)
+        };
+        clearButton.Click += (s, e) => ClearErrorLogs();
+        headerPanel.Children.Add(clearButton);
+
+        Grid.SetRow(headerPanel, 0);
+        grid.Children.Add(headerPanel);
+
+        // ログ表示用DataGrid
+        var dataGrid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            ItemsSource = _errorLogs,
+            AlternatingRowBackground = System.Windows.Media.Brushes.MistyRose,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            CanUserReorderColumns = false,
+            CanUserResizeRows = false
+        };
+
+        // 列を定義
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "時間",
+            Binding = new System.Windows.Data.Binding("FormattedTimestamp"),
+            Width = 130
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "レベル",
+            Binding = new System.Windows.Data.Binding("LevelDisplay"),
+            Width = 60
+        });
+
+        var messageColumn = new DataGridTextColumn
+        {
+            Header = "メッセージ",
+            Binding = new System.Windows.Data.Binding("Message"),
+            Width = DataGridLength.SizeToCells
+        };
+        
+        // メッセージ列のスタイルを設定（色分け）
+        var messageStyle = new Style(typeof(TextBlock));
+        messageStyle.Setters.Add(new Setter(TextBlock.ForegroundProperty, 
+            new System.Windows.Data.Binding("TextColor")));
+        messageColumn.ElementStyle = messageStyle;
+        
+        dataGrid.Columns.Add(messageColumn);
+
+        Grid.SetRow(dataGrid, 1);
+        grid.Children.Add(dataGrid);
+
+        tabItem.Content = grid;
+        return tabItem;
     }
 
     private async void OpenBlgFile_Click(object sender, RoutedEventArgs e)
@@ -343,6 +608,9 @@ public partial class MainWindow : Window
         _counterData.Clear();
         _actualComputerName = null;
 
+        // ログタブを再初期化
+        InitializeLogTabs();
+
         try
         {
             // BLGファイルを非同期で解析
@@ -385,15 +653,15 @@ public partial class MainWindow : Window
             var totalInstances = _counterTreeNodes.Sum(obj => obj.Children.Count);
             
             var timeRangeInfo = _timeRangeDetected 
-                ? $"\n⏰ 時間範囲: {_fileStartTime:yyyy/MM/dd HH:mm:ss} ～ {_fileEndTime:yyyy/MM/dd HH:mm:ss}" 
-                : "\n⚠️ 時間範囲の検出に失敗しました";
+                ? $"⏰ 時間範囲: {_fileStartTime:yyyy/MM/dd HH:mm:ss} ～ {_fileEndTime:yyyy/MM/dd HH:mm:ss}" 
+                : "⚠️ 時間範囲の検出に失敗しました";
             
-            MessageBox.Show($"BLGファイルが読み込まれました。\n\n" +
+            AddOperationLog(LogLevel.Success, $"BLGファイルが読み込まれました。\n" +
                            $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
                            $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個{timeRangeInfo}\n\n" +
-                           $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。", 
-                           "読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                           $"📈 カウンター: {totalCounters}個\n" +
+                           $"{timeRangeInfo}\n" +
+                           $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。");
         }
         catch (Exception ex)
         {
@@ -1276,8 +1544,7 @@ public partial class MainWindow : Window
                 
                 File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
                 
-                MessageBox.Show($"CSVファイルが保存されました。\n{saveFileDialog.FileName}", 
-                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                AddOperationLog(LogLevel.Success, $"CSVファイルが保存されました。\n{saveFileDialog.FileName}");
             }
         }
         catch (Exception ex)
@@ -1419,11 +1686,17 @@ public partial class MainWindow : Window
             // 全てのカウンターのチェックを外す
             SetAllCheckBoxes(false);
             
-            // 全てのタブを削除
-            DataTabControl.Items.Clear();
+            // データタブのみ削除（ログタブは保持）
+            var tabsToRemove = DataTabControl.Items.Cast<TabItem>()
+                .Where(tab => (string)tab.Tag != "OperationLog" && (string)tab.Tag != "ErrorLog")
+                .ToList();
             
-            MessageBox.Show("全てのデータテーブルタブが閉じられました。", 
-                          "タブクリア完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            foreach (var tab in tabsToRemove)
+            {
+                DataTabControl.Items.Remove(tab);
+            }
+            
+            AddOperationLog(LogLevel.Success, "全てのデータテーブルタブが閉じられました。");
         }
         catch (Exception ex)
         {
@@ -1482,11 +1755,10 @@ public partial class MainWindow : Window
                 
                 File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
                 
-                MessageBox.Show($"全データがCSVファイルに保存されました。\n" +
+                AddOperationLog(LogLevel.Success, $"全データがCSVファイルに保存されました。\n" +
                               $"ファイル: {saveFileDialog.FileName}\n" +
                               $"カウンター数: {_counterData.Count}個\n" +
-                              $"データポイント数: {allData.Count}個", 
-                              "エクスポート完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                              $"データポイント数: {allData.Count}個");
             }
         }
         catch (Exception ex)
@@ -1731,10 +2003,9 @@ public partial class MainWindow : Window
             
             await ExecuteRelogForSelectedCounters(selectedCounters, selectedStartTime, selectedEndTime, progress);
             
-            MessageBox.Show($"カウンターデータの読み込みが完了しました。\n\n" +
+            AddOperationLog(LogLevel.Success, $"カウンターデータの読み込みが完了しました。\n" +
                            $"処理されたカウンター数: {selectedCounters.Count}個\n" +
-                           $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}",
-                           "処理完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                           $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}");
         }
         catch (Exception ex)
         {
@@ -2447,12 +2718,12 @@ public partial class MainWindow : Window
             }
 
             // 結果の表示
-            var message = $"パターン「{pattern.Name}」を適用しました。\n\n";
-            message += $"✅ 適用されたカウンター: {appliedCounters.Count}個\n";
+            var message = $"パターン「{pattern.Name}」を適用しました。\n" +
+                         $"✅ 適用されたカウンター: {appliedCounters.Count}個";
             
             if (notFoundCounters.Any())
             {
-                message += $"⚠️ 見つからなかったカウンター: {notFoundCounters.Count}個\n\n";
+                message += $"\n⚠️ 見つからなかったカウンター: {notFoundCounters.Count}個\n\n";
                 message += "見つからなかったカウンター:\n";
                 message += string.Join("\n", notFoundCounters.Take(5));
                 if (notFoundCounters.Count > 5)
@@ -2461,7 +2732,7 @@ public partial class MainWindow : Window
                 }
             }
             
-            MessageBox.Show(message, "パターン適用完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            AddOperationLog(LogLevel.Success, message);
             
             await LogErrorAsync($"パターン「{pattern.Name}」が適用されました。適用: {appliedCounters.Count}個, 未検出: {notFoundCounters.Count}個");
         }
@@ -2655,8 +2926,7 @@ public partial class MainWindow : Window
             if (loaded)
             {
                 await RefreshPatternMenuAsync();
-                MessageBox.Show("パターン設定を再読み込みしました。", 
-                              "再読み込み完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                AddOperationLog(LogLevel.Success, "パターン設定を再読み込みしました。");
                 await LogErrorAsync("パターン設定が再読み込みされました。");
             }
             else
@@ -2679,6 +2949,179 @@ public partial class MainWindow : Window
     private async Task LogErrorAsync(string message)
     {
         await Task.Run(() => LogError(message));
+    }
+
+    #endregion
+
+    #region ログ管理機能
+
+    /// <summary>
+    /// 操作ログを追加
+    /// </summary>
+    private void AddOperationLog(LogLevel level, string message)
+    {
+        try
+        {
+            var logEntry = new LogEntry
+            {
+                Timestamp = DateTime.Now,
+                Level = level,
+                Message = message
+            };
+            
+            // UIスレッドで実行
+            if (Dispatcher.CheckAccess())
+            {
+                _operationLogs.Insert(0, logEntry); // 新しいログを先頭に追加
+                
+                // 最大1000件で古いログを削除
+                while (_operationLogs.Count > 1000)
+                {
+                    _operationLogs.RemoveAt(_operationLogs.Count - 1);
+                }
+            }
+            else
+            {
+                Dispatcher.Invoke(() => AddOperationLog(level, message));
+            }
+            
+            // ファイルにも記録
+            LogInfo($"[{level}] {message}");
+        }
+        catch (Exception ex)
+        {
+            LogError($"操作ログの追加に失敗: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// エラーログをファイルから読み込み
+    /// </summary>
+    private void LoadErrorLogFromFile()
+    {
+        try
+        {
+            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            
+            if (File.Exists(logPath))
+            {
+                _errorLogs.Clear();
+                
+                var lines = File.ReadAllLines(logPath, Encoding.UTF8);
+                
+                foreach (var line in lines.Reverse().Take(1000)) // 最新1000件のみ
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    
+                    var logEntry = ParseLogLine(line);
+                    if (logEntry != null)
+                    {
+                        _errorLogs.Add(logEntry);
+                    }
+                }
+                
+                AddOperationLog(LogLevel.Info, $"エラーログファイルから {_errorLogs.Count} 件のログを読み込みました。");
+            }
+            else
+            {
+                AddOperationLog(LogLevel.Info, "エラーログファイルが見つかりません。");
+            }
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"エラーログの読み込みに失敗: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ログ行を解析してLogEntryを作成
+    /// </summary>
+    private LogEntry? ParseLogLine(string line)
+    {
+        try
+        {
+            // フォーマット: [yyyy-MM-dd HH:mm:ss] メッセージ
+            if (line.StartsWith("[") && line.Contains("] "))
+            {
+                var endBracket = line.IndexOf("] ");
+                if (endBracket > 0)
+                {
+                    var timestampStr = line.Substring(1, endBracket - 1);
+                    var message = line.Substring(endBracket + 2);
+                    
+                    if (DateTime.TryParse(timestampStr, out var timestamp))
+                    {
+                        // メッセージからレベルを推定
+                        var level = LogLevel.Info;
+                        if (message.Contains("ERROR") || message.Contains("エラー") || message.Contains("失敗"))
+                            level = LogLevel.Error;
+                        else if (message.Contains("WARNING") || message.Contains("警告"))
+                            level = LogLevel.Warning;
+                        else if (message.Contains("INFO"))
+                            level = LogLevel.Info;
+                        
+                        return new LogEntry
+                        {
+                            Timestamp = timestamp,
+                            Level = level,
+                            Message = message
+                        };
+                    }
+                }
+            }
+            
+            // タイムスタンプがない場合は現在時刻を使用
+            return new LogEntry
+            {
+                Timestamp = DateTime.Now,
+                Level = LogLevel.Info,
+                Message = line
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 操作ログをクリア
+    /// </summary>
+    private void ClearOperationLogs()
+    {
+        try
+        {
+            _operationLogs.Clear();
+            AddOperationLog(LogLevel.Info, "操作ログがクリアされました。");
+        }
+        catch (Exception ex)
+        {
+            LogError($"操作ログのクリアに失敗: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// エラーログをクリア
+    /// </summary>
+    private void ClearErrorLogs()
+    {
+        try
+        {
+            _errorLogs.Clear();
+            
+            // ファイルもクリア
+            var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            if (File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, string.Empty);
+            }
+            
+            AddOperationLog(LogLevel.Info, "エラーログがクリアされました。");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"エラーログのクリアに失敗: {ex.Message}");
+        }
     }
 
     #endregion
