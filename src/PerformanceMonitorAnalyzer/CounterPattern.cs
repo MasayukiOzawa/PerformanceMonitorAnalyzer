@@ -54,7 +54,7 @@ public class CounterPatternManager
     public CounterPatternManager(string? configFilePath = null)
     {
         _configFilePath = configFilePath ?? Path.Combine(
-            Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
+            AppContext.BaseDirectory,
             "config",
             "counter-patterns.yaml"
         );
@@ -185,7 +185,7 @@ public class CounterPatternManager
         try
         {
             var logPath = Path.Combine(
-                Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
+                AppContext.BaseDirectory,
                 "error.log"
             );
             var logEntry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}";
