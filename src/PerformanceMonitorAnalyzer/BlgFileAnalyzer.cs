@@ -244,7 +244,6 @@ public class BlgFileAnalyzer : IDisposable
     /// <summary>
     /// 指定されたカウンターのデータを読み込み
     /// PerformanceCounters リポジトリの PCReaderEnumerator パターンを使用
-    /// SQLServerカウンター等の特殊ケースに対応
     /// </summary>
     public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
     {
@@ -269,89 +268,23 @@ public class BlgFileAnalyzer : IDisposable
                 InstanceName = ExtractInstanceName(fullCounterPath)
             };
 
-            // SQLServerカウンターかどうかを判定
-            bool isSqlServerCounter = fullCounterPath.Contains("SQLServer", StringComparison.OrdinalIgnoreCase);
-            
             try
             {
-                // 詳細なデバッグ情報を提供
-                progress?.Report($"カウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
-                progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
-                
-                if (isSqlServerCounter)
-                {
-                    progress?.Report("SQLServerカウンターを検出しました。特別な処理を適用します。");
-                }
-
-            try
-            {
-                // 詳細なデバッグ情報を提供
-                progress?.Report($"カウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
-                progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
-
                 // BLGファイルを指定してクエリを開く
                 uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
+                PdhApi.CheckPdhStatus(result);
 
                 // カウンターをクエリに追加
                 result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    // カウンターの追加に失敗した場合の詳細な診断情報
-                    var errorMsg = $"カウンター '{fullCounterPath}' をクエリに追加できませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})";
-                    
-                    // 特定のエラーコードに対する詳細な説明
-                    if (result == PdhApi.PDH_CSTATUS_NO_OBJECT)
-                    {
-                        errorMsg += "\n原因: 指定されたパフォーマンスオブジェクトが見つかりません。";
-                        if (isSqlServerCounter)
-                        {
-                            errorMsg += "\nSQLServerカウンターの場合、SQLServerサービスが実行されていない可能性があります。";
-                        }
-                    }
-                    else if (result == 0x800007D1) // PDH_CSTATUS_NO_INSTANCE
-                    {
-                        errorMsg += "\n原因: 指定されたインスタンスが見つかりません。";
-                        if (!string.IsNullOrEmpty(counterInfo.InstanceName))
-                        {
-                            errorMsg += $"\nインスタンス名 '{counterInfo.InstanceName}' が存在しない可能性があります。";
-                        }
-                    }
-                    else if (result == 0xC0000BBF) // PDH_CSTATUS_NO_COUNTER
-                    {
-                        errorMsg += "\n原因: 指定されたカウンターが見つかりません。";
-                        errorMsg += $"\nカウンター名 '{counterInfo.CounterName}' が存在しない可能性があります。";
-                    }
-                    else if (result == PdhApi.PDH_ENTRY_NOT_IN_LOG_FILE)
-                    {
-                        errorMsg += "\n原因: このカウンターはBLGファイルに記録されていません。";
-                    }
-                    
-                    // SQLServerカウンターの場合は、より寛容なエラーハンドリング
-                    if (isSqlServerCounter)
-                    {
-                        // SQLServerカウンターの場合は、例外を投げずに空のデータを返す
-                        progress?.Report($"警告: {errorMsg}");
-                        progress?.Report("SQLServerカウンターのため、空のデータセットを返します。");
-                        counterInfo.DataPoints = new List<CounterDataPoint>();
-                        return counterInfo;
-                    }
-                    else
-                    {
-                        throw new Exception(errorMsg);
-                    }
-                }
+                PdhApi.CheckPdhStatus(result);
 
                 progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
 
                 // 最初のデータ収集（これによりデータの読み込みが初期化される）
                 result = PdhApi.PdhCollectQueryData(query);
-                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA && result != PdhApi.ERROR_SUCCESS)
+                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA)
                 {
-                    throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                    PdhApi.CheckPdhStatus(result);
                 }
 
                 var dataPoints = new List<CounterDataPoint>();
@@ -463,26 +396,11 @@ public class BlgFileAnalyzer : IDisposable
                 InstanceName = ExtractInstanceName(fullCounterPath)
             };
 
-            // SQLServerカウンターかどうかを判定
-            bool isSqlServerCounter = fullCounterPath.Contains("SQLServer", StringComparison.OrdinalIgnoreCase);
-
             try
             {
-                // 詳細なデバッグ情報を提供
-                progress?.Report($"時間制約付きカウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
-                progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
-                
-                if (isSqlServerCounter)
-                {
-                    progress?.Report("SQLServerカウンターを検出しました。特別な処理を適用します。");
-                }
-
                 // BLGファイルを指定してクエリを開く
                 uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
+                PdhApi.CheckPdhStatus(result);
 
                 // 時間範囲を設定（必要に応じて）
                 if (startTime.HasValue || endTime.HasValue)
@@ -495,70 +413,21 @@ public class BlgFileAnalyzer : IDisposable
                     };
                     
                     result = PdhApi.PdhSetQueryTimeRange(query, ref timeInfo);
-                    if (result != PdhApi.ERROR_SUCCESS)
-                    {
-                        throw new Exception($"時間範囲設定に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                    }
+                    PdhApi.CheckPdhStatus(result);
                     progress?.Report("時間範囲を設定しました");
                 }
 
                 // カウンターをクエリに追加
                 result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    // カウンターの追加に失敗した場合の詳細な診断情報
-                    var errorMsg = $"カウンター '{fullCounterPath}' をクエリに追加できませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})";
-                    
-                    // 特定のエラーコードに対する詳細な説明
-                    if (result == PdhApi.PDH_CSTATUS_NO_OBJECT)
-                    {
-                        errorMsg += "\n原因: 指定されたパフォーマンスオブジェクトが見つかりません。";
-                        if (isSqlServerCounter)
-                        {
-                            errorMsg += "\nSQLServerカウンターの場合、SQLServerサービスが実行されていない可能性があります。";
-                        }
-                    }
-                    else if (result == 0x800007D1) // PDH_CSTATUS_NO_INSTANCE
-                    {
-                        errorMsg += "\n原因: 指定されたインスタンスが見つかりません。";
-                        if (!string.IsNullOrEmpty(counterInfo.InstanceName))
-                        {
-                            errorMsg += $"\nインスタンス名 '{counterInfo.InstanceName}' が存在しない可能性があります。";
-                        }
-                    }
-                    else if (result == 0xC0000BBF) // PDH_CSTATUS_NO_COUNTER
-                    {
-                        errorMsg += "\n原因: 指定されたカウンターが見つかりません。";
-                        errorMsg += $"\nカウンター名 '{counterInfo.CounterName}' が存在しない可能性があります。";
-                    }
-                    else if (result == PdhApi.PDH_ENTRY_NOT_IN_LOG_FILE)
-                    {
-                        errorMsg += "\n原因: このカウンターはBLGファイルに記録されていません。";
-                    }
-                    
-                    // SQLServerカウンターの場合は、より寛容なエラーハンドリング
-                    if (isSqlServerCounter)
-                    {
-                        // SQLServerカウンターの場合は、例外を投げずに空のデータを返す
-                        progress?.Report($"警告: {errorMsg}");
-                        progress?.Report("SQLServerカウンターのため、空のデータセットを返します。");
-                        counterInfo.DataPoints = new List<CounterDataPoint>();
-                        return counterInfo;
-                    }
-                    else
-                    {
-                        throw new Exception(errorMsg);
-                    }
-                }
+                PdhApi.CheckPdhStatus(result);
 
                 progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
 
                 // 最初のデータ収集
                 result = PdhApi.PdhCollectQueryData(query);
-                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA && result != PdhApi.ERROR_SUCCESS)
+                if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA)
                 {
-                    throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
+                    PdhApi.CheckPdhStatus(result);
                 }
 
                 var dataPoints = new List<CounterDataPoint>();
@@ -732,7 +601,7 @@ public class BlgFileAnalyzer : IDisposable
         }
         
         var startParen = objectPart.IndexOf('(');
-        var endParen = objectPart.IndexOf(')', startParen);
+        var endParen = startParen >= 0 ? objectPart.IndexOf(')', startParen) : -1;
         
         // 境界チェックを強化
         if (startParen >= 0 && endParen > startParen && endParen < objectPart.Length)
