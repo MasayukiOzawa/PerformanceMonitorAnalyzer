@@ -349,6 +349,9 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 12;
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 12;
         
+        // 凡例のフォントサイズ設定（デフォルト11 + 2 = 13）
+        PerformanceChart.Plot.Legend.FontSize = 13;
+        
         // グラフの更新
         PerformanceChart.Refresh();
     }
