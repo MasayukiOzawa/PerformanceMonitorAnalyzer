@@ -338,6 +338,9 @@ public partial class MainWindow : Window
     {
         try
         {
+            // 既存のログタブをクリア（重複防止）
+            LogTabControl.Items.Clear();
+            
             // 操作ログタブを作成
             var operationLogTab = CreateOperationLogTab();
             LogTabControl.Items.Add(operationLogTab);

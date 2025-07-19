@@ -302,7 +302,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="5"/>
-                <ColumnDefinition Width="350" MinWidth="250"/>
+                <ColumnDefinition Width="500" MinWidth="250"/>
             </Grid.ColumnDefinitions>
             
             <!-- 左側: データテーブル（タブ形式） -->
