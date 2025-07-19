@@ -818,9 +818,9 @@ public class BlgFileAnalyzer : IDisposable
                     _dataSource,
                     machineName,
                     objectName,
-                    null,
+                    IntPtr.Zero,
                     ref counterBufferSize,
-                    null,
+                    IntPtr.Zero,
                     ref instanceBufferSize,
                     100, // PERF_DETAIL_NOVICE
                     0);
