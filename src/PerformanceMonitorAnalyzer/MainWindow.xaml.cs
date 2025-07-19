@@ -340,11 +340,11 @@ public partial class MainWindow : Window
         {
             // 操作ログタブを作成
             var operationLogTab = CreateOperationLogTab();
-            DataTabControl.Items.Add(operationLogTab);
+            LogTabControl.Items.Add(operationLogTab);
             
             // エラーログタブを作成
             var errorLogTab = CreateErrorLogTab();
-            DataTabControl.Items.Add(errorLogTab);
+            LogTabControl.Items.Add(errorLogTab);
             
             // 初期ログメッセージを追加
             AddOperationLog(LogLevel.Info, "アプリケーションが開始されました。");
@@ -1691,15 +1691,8 @@ public partial class MainWindow : Window
             // 全てのカウンターのチェックを外す
             SetAllCheckBoxes(false);
             
-            // データタブのみ削除（ログタブは保持）
-            var tabsToRemove = DataTabControl.Items.Cast<TabItem>()
-                .Where(tab => tab.Tag?.ToString() != "OperationLog" && tab.Tag?.ToString() != "ErrorLog")
-                .ToList();
-            
-            foreach (var tab in tabsToRemove)
-            {
-                DataTabControl.Items.Remove(tab);
-            }
+            // 全てのデータタブを削除（ログタブは別のTabControlにあるため影響なし）
+            DataTabControl.Items.Clear();
             
             AddOperationLog(LogLevel.Success, "全てのデータテーブルタブが閉じられました。");
         }
