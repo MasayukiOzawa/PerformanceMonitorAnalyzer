@@ -1940,22 +1940,8 @@ public partial class MainWindow : Window
     {
         await Task.Run(() =>
         {
-                    
-                    var altProcessInfo = new ProcessStartInfo
-                    {
-                        FileName = "relog.exe",
-                        Arguments = altArguments,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
-                        StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
-                    };
-                    
-                    using var altProcess = new Process { StartInfo = altProcessInfo };
-                    altProcess.Start();
-                    await altProcess.WaitForExitAsync();
+            var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
+            if (lines.Length < 2) return;
                     
                     // 代替実行結果をUIに追加
                     var altOutput = await altProcess.StandardOutput.ReadToEndAsync();
@@ -2041,58 +2027,6 @@ public partial class MainWindow : Window
                 LogInfo($"CSVデータの読み込みが完了しました。ファイルサイズ: {new FileInfo(tempCsvPath).Length:N0} bytes");
                 progress?.Report("データテーブルへの読み込み完了");
             }
-            else
-            {
-                LogError($"relog.exe failed - Exit code: {process.ExitCode}");
-                LogError($"relog.exe error output: {error}");
-                LogError($"relog.exe standard output: {output}");
-                LogError($"Command line: relog.exe {arguments}");
-                throw new Exception($"relog.exe の実行に失敗しました。Exit code: {process.ExitCode}, Error: {error}");
-            }
-        }
-        finally
-        {
-            // データテーブルロード後に一時CSVファイルを削除
-            if (File.Exists(tempCsvPath))
-            {
-                try 
-                { 
-                    File.Delete(tempCsvPath);
-                    LogInfo($"一時CSVファイルを削除しました: {tempCsvPath}");
-                    
-                    // UIに削除完了を表示
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        RelogResultDisplay.Text += "\n\n[完了] データテーブルロード後、一時CSVファイルを削除しました。";
-                    });
-                } 
-                catch (Exception ex)
-                { 
-                    LogError($"一時CSVファイルの削除に失敗しました: {tempCsvPath}, Error: {ex.Message}");
-                    
-                    // UIに削除失敗を表示
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        RelogResultDisplay.Text += $"\n\n[警告] 一時CSVファイルの削除に失敗しました: {ex.Message}";
-                    });
-                }
-            }
-            else
-            {
-                LogInfo("削除対象の一時CSVファイルが見つかりませんでした");
-            }
-        }
-    }
-
-    /// <summary>
-    /// CSVファイルから選択されたカウンターのデータを読み込み
-    /// </summary>
-    private async Task LoadSelectedCountersFromCsv(string csvPath, List<string> selectedCounters, IProgress<string>? progress)
-    {
-        await Task.Run(() =>
-        {
-            var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
-            if (lines.Length < 2) return;
             
             var headers = ParseCsvLine(lines[0]);
             var counterColumns = new Dictionary<string, int>();
