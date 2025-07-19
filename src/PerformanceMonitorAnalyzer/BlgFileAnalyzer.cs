@@ -523,10 +523,18 @@ public class BlgFileAnalyzer : IDisposable
 
     private static string ExtractObjectName(string counterPath)
     {
-        // \\ObjectName(Instance)\\CounterName 形式から ObjectName を抽出
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から ObjectName を抽出
         var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
+        if (parts.Length >= 3)
         {
+            // parts[0] = MachineName, parts[1] = ObjectName(Instance), parts[2] = CounterName
+            var objectPart = parts[1];
+            var parenIndex = objectPart.IndexOf('(');
+            return parenIndex > 0 ? objectPart[..parenIndex] : objectPart;
+        }
+        else if (parts.Length >= 2)
+        {
+            // マシン名なしの場合: \ObjectName(Instance)\CounterName
             var objectPart = parts[0];
             var parenIndex = objectPart.IndexOf('(');
             return parenIndex > 0 ? objectPart[..parenIndex] : objectPart;
@@ -536,24 +544,37 @@ public class BlgFileAnalyzer : IDisposable
 
     private static string ExtractCounterName(string counterPath)
     {
-        // \\ObjectName(Instance)\\CounterName 形式から CounterName を抽出
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から CounterName を抽出
         var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2 ? parts[^1] : string.Empty;
+        return parts.Length >= 1 ? parts[^1] : string.Empty;
     }
 
     private static string ExtractInstanceName(string counterPath)
     {
-        // \\ObjectName(Instance)\\CounterName 形式から Instance を抽出
+        // \\MachineName\ObjectName(Instance)\CounterName 形式から Instance を抽出
         var parts = counterPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2)
+        
+        string objectPart;
+        if (parts.Length >= 3)
         {
-            var objectPart = parts[0];
-            var startParen = objectPart.IndexOf('(');
-            var endParen = objectPart.IndexOf(')', startParen);
-            if (startParen > 0 && endParen > startParen)
-            {
-                return objectPart.Substring(startParen + 1, endParen - startParen - 1);
-            }
+            // parts[0] = MachineName, parts[1] = ObjectName(Instance), parts[2] = CounterName
+            objectPart = parts[1];
+        }
+        else if (parts.Length >= 2)
+        {
+            // マシン名なしの場合: \ObjectName(Instance)\CounterName
+            objectPart = parts[0];
+        }
+        else
+        {
+            return string.Empty;
+        }
+        
+        var startParen = objectPart.IndexOf('(');
+        var endParen = objectPart.IndexOf(')', startParen);
+        if (startParen > 0 && endParen > startParen && endParen - startParen > 1)
+        {
+            return objectPart.Substring(startParen + 1, endParen - startParen - 1);
         }
         return string.Empty;
     }
