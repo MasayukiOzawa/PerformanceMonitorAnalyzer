@@ -178,35 +178,8 @@
                         </StackPanel>
                     </Expander>
                     
-                    <!-- PDH API実行状況表示 -->
-                    <Expander Grid.Row="6" Header="🔧 PDH API実行状況" IsExpanded="False" 
-                             Margin="5,5,5,0" x:Name="PdhApiStatusExpander" Visibility="Collapsed">
-                        <StackPanel Margin="5">
-                            <TextBlock Text="実行内容:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
-                            <TextBox x:Name="PdhApiStatusDisplay" 
-                                    IsReadOnly="True" 
-                                    Background="LightYellow"
-                                    FontFamily="Consolas"
-                                    FontSize="10"
-                                    TextWrapping="Wrap"
-                                    MinHeight="40"
-                                    Margin="0,0,0,10"
-                                    VerticalScrollBarVisibility="Auto"/>
-                            
-                            <TextBlock Text="実行結果:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
-                            <TextBox x:Name="PdhApiResultDisplay"
-                                    IsReadOnly="True"
-                                    Background="LightGray"
-                                    FontFamily="Consolas"
-                                    FontSize="10"
-                                    TextWrapping="Wrap"
-                                    MinHeight="60"
-                                    VerticalScrollBarVisibility="Auto"/>
-                        </StackPanel>
-                    </Expander>
-                    
                     <!-- relog.exe情報表示 -->
-                    <Expander Grid.Row="7" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
+                    <Expander Grid.Row="6" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
                              Margin="5,5,5,0" x:Name="RelogCommandExpander" Visibility="Collapsed">
                         <StackPanel Margin="5">
                             <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
@@ -221,7 +194,7 @@
                         </StackPanel>
                     </Expander>
                     
-                    <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                    <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="🚀 選択されたカウンターを読み込み" 
                                AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"

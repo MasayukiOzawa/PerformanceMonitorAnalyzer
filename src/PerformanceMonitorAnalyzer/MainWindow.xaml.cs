@@ -2230,21 +2230,19 @@ public partial class MainWindow : Window
             // relog.exeコマンドライン文字列を生成
             string relogCommand = GenerateRelogCommand(_currentBlgFile!, counters, useTimeConstraints ? startTime : (DateTime?)null, useTimeConstraints ? endTime : (DateTime?)null);
             
-            // UI表示を更新（PDH API実行状況とrelog.exe情報を分離）
+            // UI表示を更新（relog.exe情報のみ表示）
             await Dispatcher.InvokeAsync(() =>
             {
-                // PDH API実行状況の表示
-                PdhApiStatusExpander.Visibility = Visibility.Visible;
-                var pdhApiInfo = useTimeConstraints 
-                    ? $"📊 PDH API: {counters.Count}個のカウンターを時間範囲で読み込み\n⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}"
-                    : $"📊 PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
-                PdhApiStatusDisplay.Text = pdhApiInfo;
-                PdhApiResultDisplay.Text = "実行中...";
-                
                 // relog.exe同等コマンドの表示
                 RelogCommandExpander.Visibility = Visibility.Visible;
                 RelogCommandDisplay.Text = relogCommand;
             });
+            
+            // PDH API実行状況を操作ログに出力
+            var pdhApiInfo = useTimeConstraints 
+                ? $"📊 PDH API: {counters.Count}個のカウンターを時間範囲で読み込み（⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}）"
+                : $"📊 PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
+            AddOperationLog(LogLevel.Info, pdhApiInfo);
             
             // デバッグ情報をログに出力
             LogInfo($"PDH APIを使用してカウンターデータを読み込み中");
@@ -2263,7 +2261,7 @@ public partial class MainWindow : Window
 
             await Dispatcher.InvokeAsync(() =>
             {
-                PdhApiResultDisplay.Text = "BLGファイルを正常に開きました\nカウンターデータを読み込み中...";
+                AddOperationLog(LogLevel.Info, "BLGファイルを正常に開きました - カウンターデータを読み込み中...");
             });
 
             int processedCount = 0;
@@ -2341,32 +2339,34 @@ public partial class MainWindow : Window
                 
                 processedCount++;
                 
-                // UIの更新
-                await Dispatcher.InvokeAsync(() =>
+                // 進行状況を操作ログに出力
+                if (processedCount % 10 == 0 || processedCount == counters.Count) // 10個ごと、または最後に出力
                 {
-                    PdhApiResultDisplay.Text = $"処理中: {processedCount}/{counters.Count}\n成功: {successCount}\nエラー: {errors.Count}";
-                });
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        AddOperationLog(LogLevel.Info, $"PDH API処理進行: {processedCount}/{counters.Count} - 成功 {successCount}個、エラー {errors.Count}個");
+                    });
+                }
             }
             
-            // 最終結果をUIに表示
+            // 最終結果を操作ログに出力
             await Dispatcher.InvokeAsync(() =>
             {
-                var resultText = $"PDH API実行結果:\n";
-                resultText += $"処理したカウンター: {processedCount}\n";
-                resultText += $"成功: {successCount}\n";
-                resultText += $"エラー: {errors.Count}\n";
+                var resultText = $"PDH API実行結果: 処理したカウンター {processedCount}個、成功 {successCount}個、エラー {errors.Count}個";
+                AddOperationLog(LogLevel.Info, resultText);
                 
                 if (errors.Count > 0)
                 {
-                    resultText += "\nエラー詳細:\n";
-                    resultText += string.Join("\n", errors.Take(10)); // 最初の10個のエラーのみ表示
-                    if (errors.Count > 10)
+                    // エラーの詳細も操作ログに出力（最初の3個のエラーのみ）
+                    foreach (var error in errors.Take(3))
                     {
-                        resultText += $"\n... その他 {errors.Count - 10} 個のエラー";
+                        AddOperationLog(LogLevel.Warning, $"PDH APIエラー: {error}");
+                    }
+                    if (errors.Count > 3)
+                    {
+                        AddOperationLog(LogLevel.Warning, $"その他 {errors.Count - 3} 個のPDH APIエラーが発生しました");
                     }
                 }
-                
-                PdhApiResultDisplay.Text = resultText;
             });
             
             if (successCount > 0)
@@ -2385,7 +2385,7 @@ public partial class MainWindow : Window
             
             await Dispatcher.InvokeAsync(() =>
             {
-                PdhApiResultDisplay.Text = $"PDH API実行エラー:\n{ex.Message}";
+                AddOperationLog(LogLevel.Error, $"PDH API実行エラー: {ex.Message}");
             });
             
             throw;
