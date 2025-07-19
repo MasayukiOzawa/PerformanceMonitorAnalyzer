@@ -1498,86 +1498,94 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// BLGファイルの時間範囲を検出する
+    /// BLGファイルの時間範囲を検出する（PDH API使用）
     /// </summary>
     private async Task<bool> DetectTimeRangeAsync(string blgFilePath, IProgress<string>? progress = null)
     {
         try
         {
-            progress?.Report("BLGファイルの時間範囲を検出中...");
+            progress?.Report("PDH APIを使用してBLGファイルの時間範囲を検出中...");
             
-            // relog.exe を使用してBLGファイルの情報を取得
-            var tempCsvPath = Path.GetTempFileName();
+            using var analyzer = new BlgFileAnalyzer();
+            var opened = await analyzer.OpenBlgFileAsync(blgFilePath, progress);
+            
+            if (!opened)
+            {
+                LogError("PDH APIでBLGファイルを開けませんでした");
+                return false;
+            }
+
+            // BLGファイルの時間範囲をPDH APIで取得
+            // 注意: 実際の時間範囲取得のためには、一つのカウンターのデータを読み込む必要があります
+            var objects = await analyzer.EnumerateObjectsAsync(progress);
+            if (objects.Count == 0)
+            {
+                LogError("BLGファイルにオブジェクトが見つかりませんでした");
+                return false;
+            }
+
+            // 最初のオブジェクトから一つのカウンターを取得して時間範囲を確認
+            var firstObject = objects.First();
+            var (counters, instances) = await analyzer.EnumerateCountersAndInstancesAsync(firstObject, progress);
+            
+            if (counters.Count == 0)
+            {
+                LogError($"オブジェクト '{firstObject}' にカウンターが見つかりませんでした");
+                return false;
+            }
+
+            // 最初のカウンターのパスを生成
+            string sampleCounterPath;
+            if (instances.Count > 0)
+            {
+                sampleCounterPath = $"\\{firstObject}({instances.First()})\\{counters.First()}";
+            }
+            else
+            {
+                sampleCounterPath = $"\\{firstObject}\\{counters.First()}";
+            }
+
+            progress?.Report($"サンプルカウンター '{sampleCounterPath}' から時間範囲を取得中...");
             
             try
             {
-                var processInfo = new ProcessStartInfo
+                var counterInfo = await analyzer.LoadCounterDataAsync(sampleCounterPath, progress);
+                
+                if (counterInfo.DataPoints.Count > 0)
                 {
-                    FileName = "relog.exe",
-                    Arguments = $"\"{blgFilePath}\" -f CSV -o \"{tempCsvPath}\" -y",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                };
-
-                using var process = new Process { StartInfo = processInfo };
-                process.Start();
-                
-                var output = await process.StandardOutput.ReadToEndAsync();
-                var error = await process.StandardError.ReadToEndAsync();
-                
-                await process.WaitForExitAsync();
-                
-                if (process.ExitCode == 0 && File.Exists(tempCsvPath))
-                {
-                    // CSVファイルから最初と最後のタイムスタンプを取得
-                    var lines = await File.ReadAllLinesAsync(tempCsvPath, Encoding.UTF8);
-                    if (lines.Length >= 2)
-                    {
-                        // ヘッダー行をスキップして最初のデータ行を取得
-                        var firstDataLine = lines.Skip(1).FirstOrDefault(line => !string.IsNullOrWhiteSpace(line));
-                        var lastDataLine = lines.Skip(1).LastOrDefault(line => !string.IsNullOrWhiteSpace(line));
-                        
-                        if (firstDataLine != null && lastDataLine != null)
-                        {
-                            var firstTimestamp = ParseTimestampFromCsvLine(firstDataLine);
-                            var lastTimestamp = ParseTimestampFromCsvLine(lastDataLine);
-                            
-                            if (firstTimestamp.HasValue && lastTimestamp.HasValue)
-                            {
-                                _fileStartTime = firstTimestamp.Value;
-                                _fileEndTime = lastTimestamp.Value;
-                                _timeRangeDetected = true;
-                                
-                                // UIを更新
-                                UpdateTimeRangeUI();
-                                
-                                LogError($"Time range detected: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
-                                return true;
-                            }
-                        }
-                    }
+                    _fileStartTime = counterInfo.DataPoints.First().Timestamp;
+                    _fileEndTime = counterInfo.DataPoints.Last().Timestamp;
+                    _timeRangeDetected = true;
+                    
+                    // UIを更新
+                    UpdateTimeRangeUI();
+                    
+                    LogError($"PDH APIで時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                    return true;
                 }
                 else
                 {
-                    LogError($"relog.exe failed. Exit code: {process.ExitCode}, Error: {error}");
+                    LogError("カウンターデータにタイムスタンプが見つかりませんでした");
                 }
             }
-            finally
+            catch (Exception ex)
             {
-                // 一時ファイルを削除
-                if (File.Exists(tempCsvPath))
-                {
-                    try { File.Delete(tempCsvPath); } catch { }
-                }
+                LogError($"サンプルカウンターの読み込みに失敗: {ex.Message}");
+                
+                // フォールバック: 現在時刻を基準にした仮の時間範囲を設定
+                _fileStartTime = DateTime.Now.AddHours(-24);
+                _fileEndTime = DateTime.Now;
+                _timeRangeDetected = true;
+                
+                UpdateTimeRangeUI();
+                
+                LogError($"フォールバック時間範囲を設定: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                return true;
             }
         }
         catch (Exception ex)
         {
-            LogError($"Time range detection failed: {ex.Message}");
+            LogError($"PDH APIによる時間範囲検出に失敗: {ex.Message}");
         }
         
         return false;
@@ -1761,90 +1769,168 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 選択されたカウンターに対してrelog.exeを実行
+    /// 選択されたカウンターに対してPDH APIを使用してデータを読み込み
     /// </summary>
     private async Task ExecuteRelogForSelectedCounters(List<string> counters, DateTime startTime, DateTime endTime, IProgress<string>? progress)
     {
-        var tempCsvPath = Path.GetTempFileName();
-        
         try
         {
-            progress?.Report("relog.exe でCSVファイルを生成中...");
+            progress?.Report("PDH APIを使用してカウンターデータを読み込み中...");
             
-            // relog.exe で指定された時間範囲とカウンターでCSV生成
             // 時間制約有効かどうかを判定（スライダーが初期値でない場合は時間制約を適用）
             bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
             
-            string arguments;
-            if (useTimeConstraints)
-            {
-                // 複数の時間形式を試す（日本語環境対応のため yyyy/MM/dd を最優先）
-                var formats = new[]
-                {
-                    "yyyy/MM/dd HH:mm:ss",     // 日本語環境推奨形式
-                    "MM/dd/yyyy HH:mm:ss",     // 米国形式
-                    "yyyy-MM-dd HH:mm:ss",     // ISO形式
-                    "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
-                    "M/d/yyyy H:mm:ss"         // 短縮形式
-                };
-                
-                arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
-                           $"-b \"{startTime.ToString(formats[0], System.Globalization.CultureInfo.InvariantCulture)}\" " +
-                           $"-e \"{endTime.ToString(formats[0], System.Globalization.CultureInfo.InvariantCulture)}\" -y";
-            }
-            else
-            {
-                // 時間制約なし
-                arguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
-            }
-            
-            // UIにrelog.exeコマンドを表示
+            // UI表示を更新（relog.exeからPDH APIに変更）
             await Dispatcher.InvokeAsync(() =>
             {
                 RelogStatusExpander.Visibility = Visibility.Visible;
-                RelogCommandDisplay.Text = $"relog.exe {arguments}";
+                RelogStatusExpander.Header = "🔧 PDH API実行状況";
+                RelogCommandDisplay.Text = useTimeConstraints 
+                    ? $"PDH API: {counters.Count}個のカウンターを時間範囲 {startTime:yyyy-MM-dd HH:mm:ss} - {endTime:yyyy-MM-dd HH:mm:ss} で読み込み"
+                    : $"PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
                 RelogResultDisplay.Text = "実行中...";
-                // デフォルトで折りたたまれた状態を維持
             });
             
             // デバッグ情報をログに出力
-            LogInfo($"Executing relog.exe with arguments: {arguments}");
+            LogInfo($"PDH APIを使用してカウンターデータを読み込み中");
             LogInfo($"Use time constraints: {useTimeConstraints}");
             LogInfo($"Start time: {startTime:yyyy-MM-dd HH:mm:ss}, End time: {endTime:yyyy-MM-dd HH:mm:ss}");
             LogInfo($"Selected counters count: {counters.Count}");
             
-            // 特定のカウンターのみを指定する場合（relog.exeの制限により全カウンターを一度取得）
-            var processInfo = new ProcessStartInfo
+            
+            using var analyzer = new BlgFileAnalyzer();
+            var opened = await analyzer.OpenBlgFileAsync(_currentBlgFile!, progress);
+            
+            if (!opened)
             {
-                FileName = "relog.exe",
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
-                StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
-            };
+                throw new Exception("PDH APIでBLGファイルを開けませんでした");
+            }
 
-            using var process = new Process { StartInfo = processInfo };
-            process.Start();
+            await Dispatcher.InvokeAsync(() =>
+            {
+                RelogResultDisplay.Text = "BLGファイルを正常に開きました\nカウンターデータを読み込み中...";
+            });
+
+            int processedCount = 0;
+            int successCount = 0;
+            var errors = new List<string>();
+
+            // 各カウンターのデータを読み込み
+            foreach (var counterPath in counters)
+            {
+                try
+                {
+                    progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
+                    
+                    var counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
+                    
+                    if (counterInfo.DataPoints.Count > 0)
+                    {
+                        var dataPoints = new List<PerformanceDataPoint>();
+                        
+                        foreach (var dataPoint in counterInfo.DataPoints)
+                        {
+                            // 時間制約の適用
+                            if (useTimeConstraints)
+                            {
+                                if (dataPoint.Timestamp < startTime || dataPoint.Timestamp > endTime)
+                                    continue;
+                            }
+                            
+                            var unit = EstimateUnit(counterPath);
+                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                            
+                            dataPoints.Add(new PerformanceDataPoint
+                            {
+                                Counter = counterPath,
+                                Value = dataPoint.Value,
+                                Timestamp = dataPoint.Timestamp,
+                                FormattedValue = formattedValue,
+                                Unit = unit
+                            });
+                        }
+                        
+                        if (dataPoints.Count > 0)
+                        {
+                            _counterData[counterPath] = dataPoints;
+                            successCount++;
+                            
+                            // UIスレッドでデータテーブルを更新
+                            await Dispatcher.InvokeAsync(() =>
+                            {
+                                // グラフとデータテーブルの両方を更新
+                                AddCounterToChart(counterPath);
+                                UpdateDataTable();
+                            });
+                        }
+                        else
+                        {
+                            errors.Add($"{counterPath}: 時間制約により有効なデータポイントが見つかりませんでした");
+                        }
+                    }
+                    else
+                    {
+                        errors.Add($"{counterPath}: データポイントが見つかりませんでした");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{counterPath}: {ex.Message}");
+                    LogError($"カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                }
+                
+                processedCount++;
+                
+                // UIの更新
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    RelogResultDisplay.Text = $"処理中: {processedCount}/{counters.Count}\n成功: {successCount}\nエラー: {errors.Count}";
+                });
+            }
             
-            await process.WaitForExitAsync();
+            // 最終結果をUIに表示
+            await Dispatcher.InvokeAsync(() =>
+            {
+                var resultText = $"PDH API実行結果:\n";
+                resultText += $"処理したカウンター: {processedCount}\n";
+                resultText += $"成功: {successCount}\n";
+                resultText += $"エラー: {errors.Count}\n";
+                
+                if (errors.Count > 0)
+                {
+                    resultText += "\nエラー詳細:\n";
+                    resultText += string.Join("\n", errors.Take(10)); // 最初の10個のエラーのみ表示
+                    if (errors.Count > 10)
+                    {
+                        resultText += $"\n... その他 {errors.Count - 10} 個のエラー";
+                    }
+                }
+                
+                RelogResultDisplay.Text = resultText;
+            });
             
-            // 実行結果をUIに表示
-            var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
+            if (successCount > 0)
+            {
+                LogInfo($"PDH APIによるデータ読み込み完了。成功: {successCount}/{processedCount}");
+                progress?.Report("データテーブルへの読み込み完了");
+            }
+            else
+            {
+                throw new Exception($"すべてのカウンターの読み込みに失敗しました。エラー: {errors.Count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"PDH APIによるデータ読み込みに失敗: {ex.Message}");
             
             await Dispatcher.InvokeAsync(() =>
             {
-                var result = $"Exit Code: {process.ExitCode}\n";
-                if (!string.IsNullOrEmpty(output))
-                    result += $"Output: {output}\n";
-                if (!string.IsNullOrEmpty(error))
-                    result += $"Error: {error}\n";
-                
-                RelogResultDisplay.Text = result;
+                RelogResultDisplay.Text = $"PDH API実行エラー:\n{ex.Message}";
             });
+            
+            throw;
+        }
+    }
             
             // Exit code 11で時間制約使用時は、異なる時間形式を試す
             if (process.ExitCode == 11 && useTimeConstraints)
