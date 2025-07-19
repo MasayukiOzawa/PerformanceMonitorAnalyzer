@@ -1515,71 +1515,70 @@ public partial class MainWindow : Window
                 return false;
             }
 
-            // BLGファイルの時間範囲をPDH APIで取得
-            // 注意: 実際の時間範囲取得のためには、一つのカウンターのデータを読み込む必要があります
-            var objects = await analyzer.EnumerateObjectsAsync(progress);
-            if (objects.Count == 0)
-            {
-                LogError("BLGファイルにオブジェクトが見つかりませんでした");
-                return false;
-            }
-
-            // 最初のオブジェクトから一つのカウンターを取得して時間範囲を確認
-            var firstObject = objects.First();
-            var (counters, instances) = await analyzer.EnumerateCountersAndInstancesAsync(firstObject, progress);
-            
-            if (counters.Count == 0)
-            {
-                LogError($"オブジェクト '{firstObject}' にカウンターが見つかりませんでした");
-                return false;
-            }
-
-            // 最初のカウンターのパスを生成
-            string sampleCounterPath;
-            if (instances.Count > 0)
-            {
-                sampleCounterPath = $"\\{firstObject}({instances.First()})\\{counters.First()}";
-            }
-            else
-            {
-                sampleCounterPath = $"\\{firstObject}\\{counters.First()}";
-            }
-
-            progress?.Report($"サンプルカウンター '{sampleCounterPath}' から時間範囲を取得中...");
-            
+            // PDH APIの直接的な時間範囲取得を使用
             try
             {
-                var counterInfo = await analyzer.LoadCounterDataAsync(sampleCounterPath, progress);
+                var (startTime, endTime) = await analyzer.GetTimeRangeAsync(progress);
                 
-                if (counterInfo.DataPoints.Count > 0)
-                {
-                    _fileStartTime = counterInfo.DataPoints.First().Timestamp;
-                    _fileEndTime = counterInfo.DataPoints.Last().Timestamp;
-                    _timeRangeDetected = true;
-                    
-                    // UIを更新
-                    UpdateTimeRangeUI();
-                    
-                    LogError($"PDH APIで時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
-                    return true;
-                }
-                else
-                {
-                    LogError("カウンターデータにタイムスタンプが見つかりませんでした");
-                }
+                _fileStartTime = startTime;
+                _fileEndTime = endTime;
+                _timeRangeDetected = true;
+                
+                // UIを更新
+                UpdateTimeRangeUI();
+                
+                LogError($"PDH APIで時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                return true;
             }
             catch (Exception ex)
             {
-                LogError($"サンプルカウンターの読み込みに失敗: {ex.Message}");
+                LogError($"PDH APIによる直接時間範囲取得に失敗、フォールバック方法を試行: {ex.Message}");
                 
-                // フォールバック: 現在時刻を基準にした仮の時間範囲を設定
+                // フォールバック: サンプルカウンターから時間範囲を取得
+                try
+                {
+                    // ワイルドカードパスを使用してカウンターを取得
+                    var expandedCounters = await analyzer.ExpandWildCardPathAsync(@"\*(*)\*", progress);
+                    
+                    if (expandedCounters.Count == 0)
+                    {
+                        expandedCounters = await analyzer.ExpandWildCardPathAsync(@"\*\*", progress);
+                    }
+                    
+                    if (expandedCounters.Count > 0)
+                    {
+                        var sampleCounterPath = expandedCounters.First();
+                        progress?.Report($"サンプルカウンター '{sampleCounterPath}' から時間範囲を取得中...");
+                        
+                        var counterInfo = await analyzer.LoadCounterDataAsync(sampleCounterPath, progress);
+                        
+                        if (counterInfo.DataPoints.Count > 0)
+                        {
+                            _fileStartTime = counterInfo.DataPoints.First().Timestamp;
+                            _fileEndTime = counterInfo.DataPoints.Last().Timestamp;
+                            _timeRangeDetected = true;
+                            
+                            // UIを更新
+                            UpdateTimeRangeUI();
+                            
+                            LogError($"フォールバック方法で時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                            return true;
+                        }
+                    }
+                }
+                catch (Exception fallbackEx)
+                {
+                    LogError($"フォールバック方法も失敗: {fallbackEx.Message}");
+                }
+                
+                // 最後のフォールバック: 現在時刻を基準にした仮の時間範囲を設定
                 _fileStartTime = DateTime.Now.AddHours(-24);
                 _fileEndTime = DateTime.Now;
                 _timeRangeDetected = true;
                 
                 UpdateTimeRangeUI();
                 
-                LogError($"フォールバック時間範囲を設定: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                LogError($"最終フォールバック時間範囲を設定: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
                 return true;
             }
         }
@@ -1822,7 +1821,16 @@ public partial class MainWindow : Window
                 {
                     progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
                     
-                    var counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
+                    // 時間制約がある場合は、時間制約付きの読み込みメソッドを使用
+                    BlgFileAnalyzer.CounterInfo counterInfo;
+                    if (useTimeConstraints)
+                    {
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress);
+                    }
+                    else
+                    {
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
+                    }
                     
                     if (counterInfo.DataPoints.Count > 0)
                     {
@@ -1830,12 +1838,9 @@ public partial class MainWindow : Window
                         
                         foreach (var dataPoint in counterInfo.DataPoints)
                         {
-                            // 時間制約の適用
-                            if (useTimeConstraints)
-                            {
-                                if (dataPoint.Timestamp < startTime || dataPoint.Timestamp > endTime)
-                                    continue;
-                            }
+                            // NaN値をスキップ
+                            if (double.IsNaN(dataPoint.Value))
+                                continue;
                             
                             var unit = EstimateUnit(counterPath);
                             var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
@@ -1864,7 +1869,7 @@ public partial class MainWindow : Window
                         }
                         else
                         {
-                            errors.Add($"{counterPath}: 時間制約により有効なデータポイントが見つかりませんでした");
+                            errors.Add($"{counterPath}: 有効なデータポイントが見つかりませんでした");
                         }
                     }
                     else
