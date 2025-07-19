@@ -1860,7 +1860,6 @@ public partial class MainWindow : Window
                             {
                                 // グラフとデータテーブルの両方を更新
                                 AddCounterToChart(counterPath);
-                                UpdateDataTable();
                             });
                         }
                         else
