@@ -3,6 +3,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Documents;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
