@@ -444,7 +444,7 @@ public partial class MainWindow : Window
             // BLGファイルから実際のコンピューター名を取得
             try
             {
-                var machineNames = analyzer.GetMachineNamesFromBlg();
+                var machineNames = await analyzer.GetMachineNamesAsync(progress);
                 _actualComputerName = machineNames.FirstOrDefault();
                 if (!string.IsNullOrEmpty(_actualComputerName))
                 {
@@ -461,8 +461,41 @@ public partial class MainWindow : Window
                 _actualComputerName = null;
             }
             
-            // 全てのカウンターパスを生成
-            counters = await analyzer.GenerateAllCounterPathsAsync(progress);
+            // 全てのカウンターパスを生成（ワイルドカードを使用）
+            var allCounters = new List<string>();
+            try
+            {
+                // 一般的なワイルドカードパターンでカウンターを展開
+                var wildCardPaths = new[] 
+                {
+                    "\\*\\*",  // すべてのオブジェクトのすべてのカウンター
+                    "\\*(*)*\\*"  // すべてのオブジェクトのすべてのインスタンスのすべてのカウンター
+                };
+
+                foreach (var wildCard in wildCardPaths)
+                {
+                    try
+                    {
+                        progress?.Report($"ワイルドカードパターン '{wildCard}' を展開中...");
+                        var expanded = await analyzer.ExpandWildCardPathAsync(wildCard, progress);
+                        foreach (var path in expanded.Where(p => !allCounters.Contains(p)))
+                        {
+                            allCounters.Add(path);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError($"ワイルドカード '{wildCard}' の展開でエラー: {ex.Message}");
+                    }
+                }
+                
+                counters = allCounters;
+            }
+            catch (Exception ex)
+            {
+                LogError($"カウンターパス生成でエラー: {ex.Message}");
+                counters = new List<string>();
+            }
             
             LogError($"PDH API parsing completed with {counters.Count} counters");
             

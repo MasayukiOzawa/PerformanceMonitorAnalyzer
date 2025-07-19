@@ -201,14 +201,12 @@ public static class PdhApi
             PDH_CALC_NEGATIVE_DENOMINATOR => "Negative denominator",
             PDH_CALC_NEGATIVE_TIMEBASE => "Negative timebase",
             PDH_CALC_NEGATIVE_VALUE => "Negative value",
-            PDH_INVALID_DATA => "Invalid data",
-            PDH_NO_MORE_DATA => "No more data",
-            PDH_ENTRY_NOT_IN_LOG_FILE => "Entry not in log file",
-            PDH_CSTATUS_NO_OBJECT => "No object",
-            0x800007D0 => "PDH_CSTATUS_NO_MACHINE",
+            PDH_INVALID_DATA => "Invalid data", // 0x800007D0
+            PDH_NO_MORE_DATA => "No more data", // 0xC0000BCC
+            PDH_ENTRY_NOT_IN_LOG_FILE => "Entry not in log file", // 0xC0000BCD  
+            PDH_CSTATUS_NO_OBJECT => "No object", // 0xC0000BB8
             0x800007D1 => "PDH_CSTATUS_NO_INSTANCE",
             0x800007D3 => "PDH_CSTATUS_ITEM_NOT_VALIDATED",
-            0xC0000BB8 => "PDH_INVALID_ARGUMENT",
             0xC0000BB9 => "PDH_INVALID_HANDLE",
             0xC0000BBA => "PDH_INVALID_DATA",
             0xC0000BBB => "PDH_INVALID_PATH",
@@ -228,8 +226,6 @@ public static class PdhApi
             0xC0000BC9 => "PDH_CANNOT_CONNECT_MACHINE",
             0xC0000BCA => "PDH_INVALID_PATH",
             0xC0000BCB => "PDH_INVALID_INSTANCE",
-            0xC0000BCC => "PDH_INVALID_DATA",
-            0xC0000BCD => "PDH_NO_DIALOG_DATA",
             0xC0000BCE => "PDH_CANNOT_READ_NAME_STRINGS",
             0xC0000BCF => "PDH_LOG_FILE_CREATE_ERROR",
             0xC0000BD0 => "PDH_LOG_FILE_OPEN_ERROR",
