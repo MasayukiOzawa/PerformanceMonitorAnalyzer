@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using Microsoft.Win32;
 using System.Diagnostics;
@@ -14,6 +15,7 @@ using Newtonsoft.Json.Linq;
 using System.Text;
 using ScottPlot;
 using ScottPlot.WPF;
+using System.Drawing;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -322,6 +324,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // キーボードショートカットの設定
+        this.KeyDown += MainWindow_KeyDown;
         
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
@@ -1311,6 +1316,12 @@ public partial class MainWindow : Window
         {
             var hasData = _chartSeries.Any();
             StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            // グラフコントロールパネルの表示制御
+            GraphControlPanel.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            // グラフメニューの有効/無効制御
+            GraphMenu.IsEnabled = hasData;
             
             if (!hasData)
             {
@@ -3397,6 +3408,87 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AddOperationLog(LogLevel.Error, $"エラーログのクリアに失敗: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region グラフ操作メソッド
+
+    /// <summary>
+    /// キーボードショートカットの処理
+    /// </summary>
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Ctrl+C でグラフをクリップボードにコピー
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (GraphMenu.IsEnabled) // グラフが表示されている場合のみ実行
+            {
+                CopyGraphToClipboard_Click(sender, e);
+                e.Handled = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// グラフをクリップボードにコピーする
+    /// </summary>
+    private void CopyGraphToClipboard_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // グラフにデータがあるかチェック
+            if (PerformanceChart.Plot.GetPlottables().Count == 0)
+            {
+                MessageBox.Show("コピーするグラフデータがありません。\nカウンターを選択してグラフを表示してからコピーしてください。", 
+                               "グラフコピー", MessageBoxButton.OK, MessageBoxImage.Information);
+                AddOperationLog(LogLevel.Warning, "グラフコピー: 表示されているグラフがありません");
+                return;
+            }
+
+            // ScottPlotからBitmapを取得
+            var bitmap = PerformanceChart.Plot.GetBitmap();
+            
+            // BitmapをBitmapSourceに変換
+            var bitmapSource = ConvertBitmapToBitmapSource(bitmap);
+            
+            // クリップボードにコピー
+            Clipboard.SetImage(bitmapSource);
+            
+            AddOperationLog(LogLevel.Info, "グラフをクリップボードにコピーしました");
+            
+            // ユーザーに成功を通知（オプション）
+            // MessageBox.Show("グラフをクリップボードにコピーしました。", "グラフコピー", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"グラフのクリップボードコピーに失敗: {ex.Message}");
+            MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}", 
+                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>
+    /// System.Drawing.BitmapをBitmapSourceに変換
+    /// </summary>
+    /// <param name="bitmap">変換元のBitmap</param>
+    /// <returns>変換されたBitmapSource</returns>
+    private BitmapSource ConvertBitmapToBitmapSource(System.Drawing.Bitmap bitmap)
+    {
+        using (var memory = new MemoryStream())
+        {
+            bitmap.Save(memory, System.Drawing.Imaging.ImageFormat.Png);
+            memory.Position = 0;
+            
+            var bitmapImage = new BitmapImage();
+            bitmapImage.BeginInit();
+            bitmapImage.StreamSource = memory;
+            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+            bitmapImage.EndInit();
+            bitmapImage.Freeze();
+            
+            return bitmapImage;
         }
     }
 
