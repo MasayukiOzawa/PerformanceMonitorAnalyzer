@@ -374,10 +374,6 @@ public partial class MainWindow : Window
     {
         try
         {
-            // グリッドの表示を有効にする
-            PerformanceChart.Plot.Grid.MajorLineStyle.Width = 1;
-            PerformanceChart.Plot.Grid.MajorLineColor = ScottPlot.Color.FromHex("#E0E0E0");
-            
             // Y軸の主要グリッド線の間隔を設定
             PerformanceChart.Plot.Axes.Left.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic()
             {
@@ -390,7 +386,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             // エラーログに記録
-            AppendToOperationLog($"グリッド背景設定エラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"グリッド背景設定エラー: {ex.Message}");
         }
     }
 
@@ -444,7 +440,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             // エラーログに記録
-            AppendToOperationLog($"交互背景色更新エラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"交互背景色更新エラー: {ex.Message}");
         }
     }
 
@@ -463,7 +459,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AppendToOperationLog($"背景色削除エラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"背景色削除エラー: {ex.Message}");
         }
     }
 
