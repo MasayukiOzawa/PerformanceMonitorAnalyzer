@@ -1278,9 +1278,154 @@ public partial class MainWindow : Window
         var hasData = _chartSeries.Any();
         NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
         System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
+        
+        // 統計情報表示の更新
+        UpdateStatisticsDisplay();
     }
 
-
+    /// <summary>
+    /// 統計情報表示を更新
+    /// </summary>
+    private void UpdateStatisticsDisplay()
+    {
+        try
+        {
+            var hasData = _chartSeries.Any();
+            StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            if (!hasData)
+            {
+                StatisticsStackPanel.Children.Clear();
+                return;
+            }
+            
+            // 既存の統計情報をクリア
+            StatisticsStackPanel.Children.Clear();
+            
+            // 各カウンターの統計情報を計算・表示
+            foreach (var counterName in _chartSeries.Keys.OrderBy(c => c))
+            {
+                if (_counterData.TryGetValue(counterName, out var dataPoints) && dataPoints.Any())
+                {
+                    // PerformanceDataPointから(DateTime, double)タプルに変換
+                    var tupleDataPoints = dataPoints.Select(dp => (dp.Timestamp, dp.Value)).ToList();
+                    var statsPanel = CreateStatisticsPanel(counterName, tupleDataPoints);
+                    StatisticsStackPanel.Children.Add(statsPanel);
+                }
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"Statistics display updated for {_chartSeries.Count} counters");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error updating statistics display: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 特定カウンターの統計情報パネルを作成
+    /// </summary>
+    private UIElement CreateStatisticsPanel(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
+    {
+        try
+        {
+            // スケールを適用した値のリストを作成
+            var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
+            var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToList();
+            
+            // 統計値を計算
+            var min = scaledValues.Min();
+            var max = scaledValues.Max();
+            var avg = scaledValues.Average();
+            
+            // 単位情報を取得（既存のフォーマット機能を使用）
+            var unit = EstimateUnit(counterName);
+            
+            // パネルを作成
+            var panel = new Border
+            {
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(250, 250, 250)),
+                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 220, 220)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                Margin = new Thickness(0, 0, 0, 6),
+                Padding = new Thickness(8, 6, 8, 6)
+            };
+            
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            
+            // カウンター名
+            var nameText = new TextBlock
+            {
+                Text = GetCounterDisplayName(counterName),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 11,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 50, 100)),
+                Margin = new Thickness(0, 0, 0, 4),
+                TextTrimming = TextTrimming.CharacterEllipsis
+            };
+            Grid.SetColumn(nameText, 0);
+            Grid.SetRow(nameText, 0);
+            Grid.SetColumnSpan(nameText, 2);
+            grid.Children.Add(nameText);
+            
+            // 統計情報
+            var statsText = new TextBlock
+            {
+                FontSize = 10,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
+            };
+            
+            var minFormatted = FormatValueWithUnit(min, unit);
+            var maxFormatted = FormatValueWithUnit(max, unit);
+            var avgFormatted = FormatValueWithUnit(avg, unit);
+            
+            statsText.Inlines.Add(new Run { Text = "平均: ", FontWeight = FontWeights.SemiBold });
+            statsText.Inlines.Add(new Run { Text = avgFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 120, 0)) });
+            statsText.Inlines.Add(new Run { Text = " | " });
+            statsText.Inlines.Add(new Run { Text = "最大: ", FontWeight = FontWeights.SemiBold });
+            statsText.Inlines.Add(new Run { Text = maxFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 0, 0)) });
+            statsText.Inlines.Add(new Run { Text = " | " });
+            statsText.Inlines.Add(new Run { Text = "最小: ", FontWeight = FontWeights.SemiBold });
+            statsText.Inlines.Add(new Run { Text = minFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 180)) });
+            
+            Grid.SetColumn(statsText, 0);
+            Grid.SetRow(statsText, 1);
+            Grid.SetColumnSpan(statsText, 2);
+            grid.Children.Add(statsText);
+            
+            panel.Child = grid;
+            
+            return panel;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error creating statistics panel for {counterName}: {ex.Message}");
+            
+            // エラー時は簡単なテキストブロックを返す
+            return new TextBlock
+            {
+                Text = $"{GetCounterDisplayName(counterName)}: 統計情報の計算エラー",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 0, 0)),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+        }
+    }
+    
+    /// <summary>
+    /// フォーマットされた値から単位部分を抽出
+    /// </summary>
+    private string ExtractUnit(string formattedValue)
+    {
+        // 数値以外の部分を単位として抽出
+        var match = System.Text.RegularExpressions.Regex.Match(formattedValue, @"[^\d\.,\-\s]+");
+        return match.Success ? match.Value : "";
+    }
 
     private void AddCounterTab(string counter)
     {
@@ -2550,6 +2695,9 @@ public partial class MainWindow : Window
                 
                 // 最後に一度だけスケールコントロールを更新
                 UpdateScaleControlVisibility();
+                
+                // 統計情報も更新
+                UpdateStatisticsDisplay();
             }
             
             System.Diagnostics.Debug.WriteLine($"Chart refreshed for counter: {counter}");
