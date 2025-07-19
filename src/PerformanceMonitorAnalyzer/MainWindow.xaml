@@ -150,6 +150,7 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 
                                 <!-- 開始時間スライダー -->
@@ -202,7 +203,7 @@
                                 </Expander>
                                 
                                 <!-- relog.exe情報表示 -->
-                                <Expander Grid.Row="4" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
+                                <Expander Grid.Row="3" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
                                          Margin="0,10,0,0" x:Name="RelogCommandExpander" Visibility="Collapsed">
                                     <StackPanel Margin="5">
                                         <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
