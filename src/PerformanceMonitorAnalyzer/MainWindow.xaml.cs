@@ -568,6 +568,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
+                AddOperationLog(LogLevel.Error, $"ファイルの読み込みに失敗しました: {ex.Message}");
                 MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}", 
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
                 LogError($"Failed to load BLG file: {ex}");
@@ -583,6 +584,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AddOperationLog(LogLevel.Error, $"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}");
             MessageBox.Show($"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"Failed to load BLG file from command line: {ex}");
@@ -667,6 +669,7 @@ public partial class MainWindow : Window
         {
             LogError($"LoadBlgFileAsync failed: {ex}");
             var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
+            AddOperationLog(LogLevel.Error, $"ファイルの読み込みに失敗しました: {ex.Message}");
             MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}\n\n詳細はerror.logファイルを確認してください。\n場所: {logPath}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -1383,6 +1386,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in AddCounterTab: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"タブ作成でエラーが発生しました: {ex.Message}");
             MessageBox.Show($"タブ作成でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -1549,6 +1553,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AddOperationLog(LogLevel.Error, $"CSVファイルの保存に失敗しました: {ex.Message}");
             MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"CSV export failed: {ex}");
@@ -1688,7 +1693,7 @@ public partial class MainWindow : Window
             
             // データタブのみ削除（ログタブは保持）
             var tabsToRemove = DataTabControl.Items.Cast<TabItem>()
-                .Where(tab => (string)tab.Tag != "OperationLog" && (string)tab.Tag != "ErrorLog")
+                .Where(tab => tab.Tag?.ToString() != "OperationLog" && tab.Tag?.ToString() != "ErrorLog")
                 .ToList();
             
             foreach (var tab in tabsToRemove)
@@ -1700,6 +1705,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AddOperationLog(LogLevel.Error, $"タブのクリアに失敗しました: {ex.Message}");
             MessageBox.Show($"タブのクリアに失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"Failed to close all tabs: {ex}");
@@ -1712,6 +1718,7 @@ public partial class MainWindow : Window
         {
             if (!_counterData.Any())
             {
+                AddOperationLog(LogLevel.Warning, "エクスポートするデータがありません。BLGファイルを読み込んでカウンターを選択してください。");
                 MessageBox.Show("エクスポートするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。", 
                               "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -1763,6 +1770,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AddOperationLog(LogLevel.Error, $"CSVファイルの保存に失敗しました: {ex.Message}");
             MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"All data CSV export failed: {ex}");
@@ -1967,6 +1975,7 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrEmpty(_currentBlgFile) || !_timeRangeDetected)
         {
+            AddOperationLog(LogLevel.Warning, "BLGファイルが読み込まれていないか、時間範囲が検出されていません。");
             MessageBox.Show("BLGファイルが読み込まれていないか、時間範囲が検出されていません。", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -1975,6 +1984,7 @@ public partial class MainWindow : Window
         var selectedCounters = GetSelectedCounters();
         if (selectedCounters.Count == 0)
         {
+            AddOperationLog(LogLevel.Warning, "実行するカウンターが選択されていません。チェックボックスを選択してからボタンを押してください。");
             MessageBox.Show("実行するカウンターが選択されていません。\nチェックボックスを選択してからボタンを押してください。", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
@@ -2009,6 +2019,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            AddOperationLog(LogLevel.Error, $"カウンターデータの処理に失敗しました: {ex.Message}");
             MessageBox.Show($"カウンターデータの処理に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"Execute selected counters failed: {ex}");
@@ -2668,6 +2679,7 @@ public partial class MainWindow : Window
         {
             if (_counterTreeNodes.Count == 0)
             {
+                AddOperationLog(LogLevel.Warning, "BLGファイルが読み込まれていません。まずBLGファイルを開いてください。");
                 MessageBox.Show("BLGファイルが読み込まれていません。まずBLGファイルを開いてください。", 
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -2739,6 +2751,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             await LogErrorAsync($"パターン適用エラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"パターンの適用中にエラーが発生しました: {ex.Message}");
             MessageBox.Show($"パターンの適用中にエラーが発生しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2896,6 +2909,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
+                    AddOperationLog(LogLevel.Warning, $"設定ファイルが見つかりません: {configPath}");
                     MessageBox.Show($"設定ファイルが見つかりません: {configPath}", 
                                   "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
@@ -2904,6 +2918,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             await LogErrorAsync($"設定ファイルオープンエラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"設定ファイルを開けませんでした: {ex.Message}");
             MessageBox.Show($"設定ファイルを開けませんでした: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -2931,6 +2946,7 @@ public partial class MainWindow : Window
             }
             else
             {
+                AddOperationLog(LogLevel.Error, "パターン設定の再読み込みに失敗しました。エラーログを確認してください。");
                 MessageBox.Show("パターン設定の再読み込みに失敗しました。エラーログを確認してください。", 
                               "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
@@ -2938,6 +2954,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             await LogErrorAsync($"パターン設定再読み込みエラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"パターン設定の再読み込み中にエラーが発生しました: {ex.Message}");
             MessageBox.Show($"パターン設定の再読み込み中にエラーが発生しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
