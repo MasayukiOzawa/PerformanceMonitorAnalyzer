@@ -3163,11 +3163,8 @@ public partial class MainWindow : Window
             commandBuilder.AppendLine($"  \"{blgFilePath}\" \\");
             
             // 出力ファイル
-            var outputFileName = Path.GetFileNameWithoutExtension(blgFilePath) + "_output.csv";
+            var outputFileName = Path.GetFileNameWithoutExtension(blgFilePath) + "_output.blg";
             commandBuilder.AppendLine($"  -o \"{outputFileName}\" \\");
-            
-            // フォーマット指定
-            commandBuilder.AppendLine("  -f CSV \\");
             
             // 時間範囲指定
             if (startTime.HasValue && endTime.HasValue)
