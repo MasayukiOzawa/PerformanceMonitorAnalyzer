@@ -252,7 +252,9 @@ public class BlgFileAnalyzer : IDisposable
             throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
 
-        progress?.Report($"カウンターデータを読み込み中: {counterPath}");
+        // カウンターパスにマシン名が含まれていない場合は自動で補完
+        var fullCounterPath = EnsureMachineNameInPath(counterPath);
+        progress?.Report($"カウンターデータを読み込み中: {fullCounterPath}");
 
         return await Task.Run(() =>
         {
@@ -260,10 +262,10 @@ public class BlgFileAnalyzer : IDisposable
             IntPtr counter = IntPtr.Zero;
             var counterInfo = new CounterInfo
             {
-                FullPath = counterPath,
-                ObjectName = ExtractObjectName(counterPath),
-                CounterName = ExtractCounterName(counterPath),
-                InstanceName = ExtractInstanceName(counterPath)
+                FullPath = fullCounterPath,
+                ObjectName = ExtractObjectName(fullCounterPath),
+                CounterName = ExtractCounterName(fullCounterPath),
+                InstanceName = ExtractInstanceName(fullCounterPath)
             };
 
             try
@@ -273,10 +275,10 @@ public class BlgFileAnalyzer : IDisposable
                 PdhApi.CheckPdhStatus(result);
 
                 // カウンターをクエリに追加
-                result = PdhApi.PdhAddCounter(query, counterPath, IntPtr.Zero, out counter);
+                result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
                 PdhApi.CheckPdhStatus(result);
 
-                progress?.Report($"カウンター '{counterPath}' をクエリに追加しました");
+                progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
 
                 // 最初のデータ収集（これによりデータの読み込みが初期化される）
                 result = PdhApi.PdhCollectQueryData(query);
@@ -374,7 +376,9 @@ public class BlgFileAnalyzer : IDisposable
             throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
 
-        progress?.Report($"時間制約付きでカウンターデータを読み込み中: {counterPath}");
+        // カウンターパスにマシン名が含まれていない場合は自動で補完
+        var fullCounterPath = EnsureMachineNameInPath(counterPath);
+        progress?.Report($"時間制約付きでカウンターデータを読み込み中: {fullCounterPath}");
         if (startTime.HasValue || endTime.HasValue)
         {
             progress?.Report($"時間範囲: {startTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "開始なし"} - {endTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "終了なし"}");
@@ -386,10 +390,10 @@ public class BlgFileAnalyzer : IDisposable
             IntPtr counter = IntPtr.Zero;
             var counterInfo = new CounterInfo
             {
-                FullPath = counterPath,
-                ObjectName = ExtractObjectName(counterPath),
-                CounterName = ExtractCounterName(counterPath),
-                InstanceName = ExtractInstanceName(counterPath)
+                FullPath = fullCounterPath,
+                ObjectName = ExtractObjectName(fullCounterPath),
+                CounterName = ExtractCounterName(fullCounterPath),
+                InstanceName = ExtractInstanceName(fullCounterPath)
             };
 
             try
@@ -414,10 +418,10 @@ public class BlgFileAnalyzer : IDisposable
                 }
 
                 // カウンターをクエリに追加
-                result = PdhApi.PdhAddCounter(query, counterPath, IntPtr.Zero, out counter);
+                result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
                 PdhApi.CheckPdhStatus(result);
 
-                progress?.Report($"カウンター '{counterPath}' をクエリに追加しました");
+                progress?.Report($"カウンター '{fullCounterPath}' をクエリに追加しました");
 
                 // 最初のデータ収集
                 result = PdhApi.PdhCollectQueryData(query);
@@ -926,6 +930,11 @@ public class BlgFileAnalyzer : IDisposable
 
         progress?.Report($"見つかったオブジェクト数: {objects.Count}");
         
+        // BLGファイル内のマシン名を取得
+        var machineNames = GetMachineNames();
+        string? machineName = machineNames.FirstOrDefault();
+        progress?.Report($"マシン名: {machineName ?? "未検出"}");
+        
         foreach (var objectName in objects)
         {
             try
@@ -941,7 +950,8 @@ public class BlgFileAnalyzer : IDisposable
                         // インスタンスありの場合
                         foreach (var instanceName in instances)
                         {
-                            var path = $"\\{objectName}({instanceName})\\{counterName}";
+                            // マシン名を含むフルパスを生成
+                            var path = $"{machineName}\\{objectName}({instanceName})\\{counterName}";
                             allPaths.Add(path);
                             pathsForThisObject++;
                         }
@@ -949,7 +959,8 @@ public class BlgFileAnalyzer : IDisposable
                     else
                     {
                         // インスタンスなしの場合
-                        var path = $"\\{objectName}\\{counterName}";
+                        // マシン名を含むフルパスを生成
+                        var path = $"{machineName}\\{objectName}\\{counterName}";
                         allPaths.Add(path);
                         pathsForThisObject++;
                     }
@@ -975,6 +986,34 @@ public class BlgFileAnalyzer : IDisposable
         }
 
         return allPaths;
+    }
+
+    /// <summary>
+    /// カウンターパスにマシン名が含まれていない場合は自動で補完
+    /// </summary>
+    private string EnsureMachineNameInPath(string counterPath)
+    {
+        // 既にマシン名が含まれている場合（\\MachineName\ で始まっている場合）
+        if (counterPath.StartsWith("\\\\"))
+        {
+            return counterPath; // そのまま返す
+        }
+
+        // マシン名を取得
+        var machineNames = GetMachineNames();
+        string? machineName = machineNames.FirstOrDefault();
+        
+        if (string.IsNullOrEmpty(machineName))
+        {
+            // マシン名が取得できない場合はそのまま返す
+            return counterPath;
+        }
+
+        // \ で始まっている場合は先頭の \ を削除
+        var pathWithoutLeadingSlash = counterPath.StartsWith("\\") ? counterPath.Substring(1) : counterPath;
+        
+        // マシン名を追加したフルパスを生成
+        return $"{machineName}\\{pathWithoutLeadingSlash}";
     }
 
     public void Dispose()
