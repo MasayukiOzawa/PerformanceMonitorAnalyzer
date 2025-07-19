@@ -1932,33 +1932,14 @@ public partial class MainWindow : Window
         }
     }
             
-            // Exit code 11で時間制約使用時は、異なる時間形式を試す
-            if (process.ExitCode == 11 && useTimeConstraints)
-            {
-                LogInfo("Exit code 11 detected, trying different time formats...");
-                
-                var timeFormats = new[]
+    /// <summary>
+    /// CSVファイルから選択されたカウンターのデータを読み込み
+    /// </summary>
+    private async Task LoadSelectedCountersFromCsv(string csvPath, List<string> selectedCounters, IProgress<string>? progress)
                 {
-                    "yyyy/MM/dd HH:mm:ss",     // 日本語環境推奨形式
-                    "yyyy-MM-dd HH:mm:ss",     // ISO形式
-                    "dd/MM/yyyy HH:mm:ss",     // ヨーロッパ形式
-                    "M/d/yyyy H:mm:ss",        // 短縮形式
-                    "MM/dd/yyyy HH:mm:ss"      // 米国形式
-                };
-                
-                foreach (var format in timeFormats)
-                {
-                    LogInfo($"Trying time format: {format}");
-                    var altArguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" " +
-                                      $"-b \"{startTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" " +
-                                      $"-e \"{endTime.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}\" -y";
-                    
-                    // UIに代替コマンドを表示
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        RelogCommandDisplay.Text += $"\n\n[再試行] relog.exe {altArguments}";
-                        RelogResultDisplay.Text += $"\n\n[再試行 - {format}] 実行中...";
-                    });
+    {
+        await Task.Run(() =>
+        {
                     
                     var altProcessInfo = new ProcessStartInfo
                     {
