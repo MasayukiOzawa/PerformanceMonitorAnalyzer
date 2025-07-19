@@ -297,37 +297,75 @@
             </GridSplitter.Style>
         </GridSplitter>
 
-        <!-- 下部: データテーブル（タブ形式） -->
-        <GroupBox Grid.Row="4" Header="📊 データテーブル" Margin="10,0,10,10">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                
-                <!-- データテーブルの説明とコントロール -->
-                <Border Grid.Row="0" Margin="5" Background="#F8F8F8" Padding="5">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0">
-                            <Run Text="📈 カウンター選択方法: "/>
-                            <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="DarkBlue"/>
-                            <Run Text=" または "/>
-                            <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="DarkGreen"/>
-                        </TextBlock>
-                        <Button Content="すべてのタブを閉じる" 
-                              Click="CloseAllTabs_Click" 
-                              Padding="8,2,8,2"
-                              Margin="0,0,10,0"/>
-                        <Button Content="全データをCSV出力" 
-                              Click="ExportAllDataToCsv_Click" 
-                              Padding="8,2,8,2"/>
-                    </StackPanel>
-                </Border>
-                
-                <TabControl x:Name="DataTabControl" Grid.Row="1">
-                    <!-- タブは動的に追加される -->
+        <!-- 下部: データテーブルとログ表示 -->
+        <Grid Grid.Row="4" Margin="10,0,10,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="700" MinWidth="150"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- 左側: データテーブル（タブ形式） -->
+            <GroupBox Grid.Column="0" Header="📊 データテーブル">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- データテーブルの説明とコントロール -->
+                    <Border Grid.Row="0" Margin="5" Background="#F8F8F8" Padding="5">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0">
+                                <Run Text="📈 カウンター選択方法: "/>
+                                <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="DarkBlue"/>
+                                <Run Text=" または "/>
+                                <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="DarkGreen"/>
+                            </TextBlock>
+                            <Button Content="すべてのタブを閉じる" 
+                                  Click="CloseAllTabs_Click" 
+                                  Padding="8,2,8,2"
+                                  Margin="0,0,10,0"/>
+                            <Button Content="全データをCSV出力" 
+                                  Click="ExportAllDataToCsv_Click" 
+                                  Padding="8,2,8,2"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <TabControl x:Name="DataTabControl" Grid.Row="1">
+                        <!-- データタブは動的に追加される -->
+                    </TabControl>
+                </Grid>
+            </GroupBox>
+            
+            <!-- 垂直グリッドスプリッター -->
+            <GridSplitter Grid.Column="1" 
+                          Width="5" 
+                          HorizontalAlignment="Stretch" 
+                          VerticalAlignment="Stretch"
+                          Background="#E0E0E0"
+                          BorderBrush="#CCCCCC"
+                          BorderThickness="1,0,1,0"
+                          Cursor="SizeWE"
+                          ShowsPreview="False"
+                          ToolTip="ドラッグしてログ表示領域の幅を調整">
+                <GridSplitter.Style>
+                    <Style TargetType="GridSplitter">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#D0D0D0"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </GridSplitter.Style>
+            </GridSplitter>
+            
+            <!-- 右側: ログ表示 -->
+            <GroupBox Grid.Column="2" Header="📋 ログ表示">
+                <TabControl x:Name="LogTabControl">
+                    <!-- ログタブは動的に追加される -->
                 </TabControl>
-            </Grid>
-        </GroupBox>
+            </GroupBox>
+        </Grid>
     </Grid>
 </Window>
