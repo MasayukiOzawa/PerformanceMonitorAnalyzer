@@ -1329,14 +1329,8 @@ public partial class MainWindow : Window
     {
         try
         {
-            // スケールを適用した値のリストを作成
-            var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
-            var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToList();
-            
-            // 統計値を計算
-            var min = scaledValues.Min();
-            var max = scaledValues.Max();
-            var avg = scaledValues.Average();
+            // PDH風の統計計算を実装
+            var statistics = ComputeCounterStatistics(counterName, dataPoints);
             
             // 単位情報を取得（既存のフォーマット機能を使用）
             var unit = EstimateUnit(counterName);
@@ -1380,9 +1374,9 @@ public partial class MainWindow : Window
                 Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
             };
             
-            var minFormatted = FormatValueWithUnit(min, unit);
-            var maxFormatted = FormatValueWithUnit(max, unit);
-            var avgFormatted = FormatValueWithUnit(avg, unit);
+            var minFormatted = FormatValueWithUnit(statistics.Minimum, unit);
+            var maxFormatted = FormatValueWithUnit(statistics.Maximum, unit);
+            var avgFormatted = FormatValueWithUnit(statistics.Average, unit);
             
             statsText.Inlines.Add(new Run { Text = "平均: ", FontWeight = FontWeights.SemiBold });
             statsText.Inlines.Add(new Run { Text = avgFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 120, 0)) });
@@ -1604,6 +1598,57 @@ public partial class MainWindow : Window
 
         border.Child = stackPanel;
         return border;
+    }
+
+    /// <summary>
+    /// PDH風の統計計算（PDH_STATISTICSの形式に合わせた実装）
+    /// </summary>
+    private CounterStatistics ComputeCounterStatistics(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
+    {
+        if (!dataPoints.Any())
+        {
+            return new CounterStatistics
+            {
+                CounterName = counterName,
+                DataPointCount = 0,
+                Average = 0,
+                Maximum = 0,
+                Minimum = 0,
+                StandardDeviation = 0,
+                Unit = EstimateUnit(counterName)
+            };
+        }
+
+        // スケールを適用（PDHカウンターのスケール処理を模倣）
+        var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
+        var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        
+        // PDH_STATISTICSの計算ロジックを模倣
+        // PDHでは内部的に以下の統計を計算します
+        var count = (uint)scaledValues.Length;
+        var sum = scaledValues.Sum();
+        var mean = sum / count;
+        
+        // PDHの統計計算アルゴリズムに従った実装
+        var min = scaledValues.Min();
+        var max = scaledValues.Max();
+        
+        // 標準偏差の計算（PDH風）
+        var variance = scaledValues.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
+        var standardDeviation = Math.Sqrt(variance);
+
+        return new CounterStatistics
+        {
+            CounterName = counterName,
+            DataPointCount = dataPoints.Count,
+            Average = mean,
+            Maximum = max,
+            Minimum = min,
+            StandardDeviation = standardDeviation,
+            FirstTimestamp = dataPoints.Min(dp => dp.Timestamp),
+            LastTimestamp = dataPoints.Max(dp => dp.Timestamp),
+            Unit = EstimateUnit(counterName)
+        };
     }
 
     /// <summary>
