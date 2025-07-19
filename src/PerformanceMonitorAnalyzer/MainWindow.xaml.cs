@@ -18,6 +18,17 @@ using ScottPlot.WPF;
 namespace PerformanceMonitorAnalyzer;
 
 /// <summary>
+/// 統計情報表示用のデータクラス
+/// </summary>
+public class CounterStatisticsItem
+{
+    public string CounterName { get; set; } = string.Empty;
+    public string Average { get; set; } = string.Empty;
+    public string Maximum { get; set; } = string.Empty;
+    public string Minimum { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// TreeViewで使用する階層構造のノードクラス
 /// </summary>
 public class CounterTreeNode : INotifyPropertyChanged
@@ -1297,26 +1308,32 @@ public partial class MainWindow : Window
             
             if (!hasData)
             {
-                StatisticsStackPanel.Children.Clear();
+                StatisticsDataGrid.ItemsSource = null;
                 return;
             }
             
-            // 既存の統計情報をクリア
-            StatisticsStackPanel.Children.Clear();
+            // 統計情報のコレクションを作成
+            var statisticsItems = new List<CounterStatisticsItem>();
             
-            // 各カウンターの統計情報を計算・表示
+            // 各カウンターの統計情報を計算
             foreach (var counterName in _chartSeries.Keys.OrderBy(c => c))
             {
                 if (_counterData.TryGetValue(counterName, out var dataPoints) && dataPoints.Any())
                 {
                     // PerformanceDataPointから(DateTime, double)タプルに変換
                     var tupleDataPoints = dataPoints.Select(dp => (dp.Timestamp, dp.Value)).ToList();
-                    var statsPanel = CreateStatisticsPanel(counterName, tupleDataPoints);
-                    StatisticsStackPanel.Children.Add(statsPanel);
+                    var statisticsItem = CreateStatisticsItem(counterName, tupleDataPoints);
+                    if (statisticsItem != null)
+                    {
+                        statisticsItems.Add(statisticsItem);
+                    }
                 }
             }
             
-            System.Diagnostics.Debug.WriteLine($"Statistics display updated for {_chartSeries.Count} counters");
+            // DataGridに統計情報を設定
+            StatisticsDataGrid.ItemsSource = statisticsItems;
+            
+            System.Diagnostics.Debug.WriteLine($"Statistics display updated for {statisticsItems.Count} counters");
         }
         catch (Exception ex)
         {
@@ -1325,9 +1342,9 @@ public partial class MainWindow : Window
     }
     
     /// <summary>
-    /// 特定カウンターの統計情報パネルを作成
+    /// 特定カウンターの統計情報アイテムを作成
     /// </summary>
-    private UIElement CreateStatisticsPanel(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
+    private CounterStatisticsItem? CreateStatisticsItem(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
     {
         try
         {
@@ -1337,78 +1354,30 @@ public partial class MainWindow : Window
             // 単位情報を取得（既存のフォーマット機能を使用）
             var unit = EstimateUnit(counterName);
             
-            // パネルを作成
-            var panel = new Border
-            {
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(250, 250, 250)),
-                BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 220, 220)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
-                Margin = new Thickness(0, 0, 0, 6),
-                Padding = new Thickness(8, 6, 8, 6)
-            };
-            
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            
-            // カウンター名
-            var nameText = new TextBlock
-            {
-                Text = GetCounterDisplayName(counterName),
-                FontWeight = FontWeights.SemiBold,
-                FontSize = 11,
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 50, 100)),
-                Margin = new Thickness(0, 0, 0, 4),
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            Grid.SetColumn(nameText, 0);
-            Grid.SetRow(nameText, 0);
-            Grid.SetColumnSpan(nameText, 2);
-            grid.Children.Add(nameText);
-            
-            // 統計情報
-            var statsText = new TextBlock
-            {
-                FontSize = 10,
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80))
-            };
-            
+            // フォーマットされた値を作成
             var minFormatted = FormatValueWithUnit(statistics.Minimum, unit);
             var maxFormatted = FormatValueWithUnit(statistics.Maximum, unit);
             var avgFormatted = FormatValueWithUnit(statistics.Average, unit);
             
-            statsText.Inlines.Add(new Run { Text = "平均: ", FontWeight = FontWeights.SemiBold });
-            statsText.Inlines.Add(new Run { Text = avgFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 120, 0)) });
-            statsText.Inlines.Add(new Run { Text = " | " });
-            statsText.Inlines.Add(new Run { Text = "最大: ", FontWeight = FontWeights.SemiBold });
-            statsText.Inlines.Add(new Run { Text = maxFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 0, 0)) });
-            statsText.Inlines.Add(new Run { Text = " | " });
-            statsText.Inlines.Add(new Run { Text = "最小: ", FontWeight = FontWeights.SemiBold });
-            statsText.Inlines.Add(new Run { Text = minFormatted, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 180)) });
-            
-            Grid.SetColumn(statsText, 0);
-            Grid.SetRow(statsText, 1);
-            Grid.SetColumnSpan(statsText, 2);
-            grid.Children.Add(statsText);
-            
-            panel.Child = grid;
-            
-            return panel;
+            return new CounterStatisticsItem
+            {
+                CounterName = GetCounterDisplayName(counterName),
+                Average = avgFormatted,
+                Maximum = maxFormatted,
+                Minimum = minFormatted
+            };
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error creating statistics panel for {counterName}: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Error creating statistics item for {counterName}: {ex.Message}");
             
-            // エラー時は簡単なテキストブロックを返す
-            return new TextBlock
+            // エラー時は簡単なアイテムを返す
+            return new CounterStatisticsItem
             {
-                Text = $"{GetCounterDisplayName(counterName)}: 統計情報の計算エラー",
-                FontSize = 10,
-                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(180, 0, 0)),
-                Margin = new Thickness(0, 0, 0, 4)
+                CounterName = GetCounterDisplayName(counterName),
+                Average = "エラー",
+                Maximum = "エラー",
+                Minimum = "エラー"
             };
         }
     }

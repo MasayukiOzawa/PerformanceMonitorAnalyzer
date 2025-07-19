@@ -266,7 +266,7 @@
                         <Grid Margin="8">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
                             
                             <!-- ヘッダー -->
@@ -277,15 +277,49 @@
                                      Foreground="DarkBlue"
                                      Margin="0,0,0,8"/>
                             
-                            <!-- 統計情報コンテナ -->
+                            <!-- 統計情報テーブル -->
                             <ScrollViewer Grid.Row="1" 
-                                        HorizontalScrollBarVisibility="Auto" 
-                                        VerticalScrollBarVisibility="Disabled"
-                                        MaxHeight="120">
-                                <StackPanel x:Name="StatisticsStackPanel" 
-                                          Orientation="Vertical">
-                                    <!-- 統計情報アイテムが動的に追加される -->
-                                </StackPanel>
+                                        VerticalScrollBarVisibility="Auto" 
+                                        HorizontalScrollBarVisibility="Auto"
+                                        MaxHeight="150">
+                                <DataGrid x:Name="StatisticsDataGrid"
+                                        AutoGenerateColumns="False"
+                                        IsReadOnly="True"
+                                        HeadersVisibility="Column"
+                                        GridLinesVisibility="Horizontal"
+                                        Background="White"
+                                        AlternatingRowBackground="#F9F9F9"
+                                        BorderThickness="1"
+                                        BorderBrush="#DDD"
+                                        FontSize="11">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="カウンター名" Binding="{Binding CounterName}" Width="*" />
+                                        <DataGridTextColumn Header="平均" Binding="{Binding Average}" Width="80">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#008000"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="最大" Binding="{Binding Maximum}" Width="80">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#B40000"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="最小" Binding="{Binding Minimum}" Width="80">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#0000B4"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
                             </ScrollViewer>
                         </Grid>
                     </Border>
