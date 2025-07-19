@@ -23,6 +23,7 @@ public static class PdhApi
     public const uint PDH_INVALID_DATA = 0x800007D0;
     public const uint PDH_ENTRY_NOT_IN_LOG_FILE = 0xC0000BCD;
     public const uint PDH_CSTATUS_NO_OBJECT = 0xC0000BB8;
+    public const uint PDH_FUNCTION_NOT_FOUND = 0xC0000BC4;
     public const uint ERROR_SUCCESS = 0;
 
     // PDH データ形式
@@ -300,4 +301,83 @@ public static class PdhApi
 
         return list;
     }
+
+    // ==============================================
+    // BLGファイル解析用の追加PDH API メソッド
+    // ==============================================
+
+    /// <summary>
+    /// データソースのマシンを列挙
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumMachinesH(
+        IntPtr hDataSource,
+        IntPtr mszMachineList,
+        ref uint pcchBufferSize);
+
+    /// <summary>
+    /// データソースのオブジェクトを列挙（Unicode版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumObjectsH(
+        IntPtr hDataSource,
+        string? szMachineName,
+        IntPtr mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
+    /// データソースのオブジェクトを列挙（ANSI版）
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Ansi)]
+    public static extern uint PdhEnumObjectsA(
+        IntPtr hDataSource,
+        string? szMachineName,
+        IntPtr mszObjectList,
+        ref uint pcchBufferSize,
+        uint dwDetailLevel,
+        bool bRefresh);
+
+    /// <summary>
+    /// オブジェクトアイテム（カウンターとインスタンス）を列挙
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhEnumObjectItemsHSB(
+        IntPtr hDataSource,
+        string? szMachineName,
+        string szObjectName,
+        IntPtr mszCounterList,
+        ref uint pcchCounterListLength,
+        IntPtr mszInstanceList,
+        ref uint pcchInstanceListLength,
+        uint dwDetailLevel,
+        uint dwFlags);
+
+    /// <summary>
+    /// 入力データソースをバインド
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhBindInputDataSource(
+        out IntPtr phDataSource,
+        string szLogFileNameList);
+
+    /// <summary>
+    /// ログファイルを開く
+    /// </summary>
+    [DllImport(PdhDll, CharSet = CharSet.Unicode)]
+    public static extern uint PdhOpenLog(
+        string szLogFileName,
+        uint dwAccessFlags,
+        out uint lpdwLogType,
+        IntPtr hQuery,
+        uint dwMaxSize,
+        string? szUserCaption,
+        out IntPtr phLog);
+
+    /// <summary>
+    /// ログを閉じる
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhCloseLog(IntPtr hLog, uint dwFlags);
 }
