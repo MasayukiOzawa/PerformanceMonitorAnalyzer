@@ -414,9 +414,10 @@ public partial class MainWindow : Window
             var yRange = yMax - yMin;
             var gridSpacing = yRange / 10.0;
             
-            // 交互の背景色を追加
-            var lightGray = ScottPlot.Color.FromHex("#F8F8F8");
+            // 交互の背景色を追加（薄いグレー）
+            var lightGray = ScottPlot.Color.FromHex("#F0F0F0");
             
+            // 背景矩形を作成
             for (int i = 0; i < 10; i += 2)
             {
                 var y1 = yMin + (i * gridSpacing);
@@ -426,15 +427,14 @@ public partial class MainWindow : Window
                 if (y2 > yMax) y2 = yMax;
                 if (y1 >= yMax) break;
                 
+                // 背景矩形を追加（座標: 左、下、右、上）
                 var rect = PerformanceChart.Plot.Add.Rectangle(xMin, y1, xMax, y2);
                 rect.FillStyle.Color = lightGray;
+                rect.FillStyle.Alpha = 0.5; // 透明度を少し濃くして見やすく
                 rect.LineStyle.Width = 0; // 境界線なし
                 
                 // 背景として識別できるようにタグを設定
-                if (!_backgroundRectangles.Contains(rect))
-                {
-                    _backgroundRectangles.Add(rect);
-                }
+                _backgroundRectangles.Add(rect);
             }
         }
         catch (Exception ex)
@@ -1273,11 +1273,12 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
-        // 新しいシリーズを作成
+        // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
@@ -1340,11 +1341,12 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
-        // 新しいシリーズを作成
+        // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
