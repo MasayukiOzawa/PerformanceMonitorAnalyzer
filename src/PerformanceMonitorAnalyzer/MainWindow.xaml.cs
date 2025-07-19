@@ -14,6 +14,7 @@ using Newtonsoft.Json.Linq;
 using System.Text;
 using ScottPlot;
 using ScottPlot.WPF;
+using System.Linq;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -301,6 +302,9 @@ public partial class MainWindow : Window
     // ScottPlot用のプロパティ
     private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
     
+    // 交互背景色の矩形を追跡
+    private readonly List<ScottPlot.Plottables.Rectangle> _backgroundRectangles = new();
+    
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
     
@@ -334,6 +338,10 @@ public partial class MainWindow : Window
     {
         // ScottPlot グラフの初期設定
         PerformanceChart.Plot.Clear();
+        
+        // 背景矩形リストもクリア
+        _backgroundRectangles.Clear();
+        
         PerformanceChart.Plot.XLabel("時間");
         PerformanceChart.Plot.YLabel("値");
         
@@ -352,8 +360,111 @@ public partial class MainWindow : Window
         // 凡例のフォントサイズ設定（デフォルト11 + 2 = 13）
         PerformanceChart.Plot.Legend.FontSize = 16;
         
+        // グリッド背景の交互色付け（ゼブラストライプ）を設定
+        SetupAlternatingGridBackground();
+        
         // グラフの更新
         PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// グリッド背景の交互色付け（ゼブラストライプ）を設定
+    /// </summary>
+    private void SetupAlternatingGridBackground()
+    {
+        try
+        {
+            // グリッドの表示を有効にする
+            PerformanceChart.Plot.Grid.MajorLineStyle.Width = 1;
+            PerformanceChart.Plot.Grid.MajorLineColor = ScottPlot.Color.FromHex("#E0E0E0");
+            
+            // Y軸の主要グリッド線の間隔を設定
+            PerformanceChart.Plot.Axes.Left.TickGenerator = new ScottPlot.TickGenerators.NumericAutomatic()
+            {
+                TargetTickCount = 10 // 約10本の主要グリッド線
+            };
+            
+            // 背景色の交互設定は実際のデータ範囲が決まってから動的に追加する必要があります
+            // UpdateAlternatingBackground メソッドでデータプロット後に呼び出されます
+        }
+        catch (Exception ex)
+        {
+            // エラーログに記録
+            AppendToOperationLog($"グリッド背景設定エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 交互背景色を更新（データプロット後に呼び出し）
+    /// </summary>
+    private void UpdateAlternatingBackground()
+    {
+        try
+        {
+            // データがない場合は何もしない
+            if (!_chartSeries.Any())
+                return;
+
+            // 既存の背景矩形を削除
+            ClearAlternatingBackground();
+
+            // 現在の軸範囲を取得
+            var yMin = PerformanceChart.Plot.Axes.Left.Range.Min;
+            var yMax = PerformanceChart.Plot.Axes.Left.Range.Max;
+            var xMin = PerformanceChart.Plot.Axes.Bottom.Range.Min;
+            var xMax = PerformanceChart.Plot.Axes.Bottom.Range.Max;
+            
+            // Y軸のグリッド間隔を計算（約10分割）
+            var yRange = yMax - yMin;
+            var gridSpacing = yRange / 10.0;
+            
+            // 交互の背景色を追加
+            var lightGray = ScottPlot.Color.FromHex("#F8F8F8");
+            
+            for (int i = 0; i < 10; i += 2)
+            {
+                var y1 = yMin + (i * gridSpacing);
+                var y2 = yMin + ((i + 1) * gridSpacing);
+                
+                // 範囲チェック
+                if (y2 > yMax) y2 = yMax;
+                if (y1 >= yMax) break;
+                
+                var rect = PerformanceChart.Plot.Add.Rectangle(xMin, y1, xMax, y2);
+                rect.FillStyle.Color = lightGray;
+                rect.LineStyle.Width = 0; // 境界線なし
+                
+                // 背景として識別できるようにタグを設定
+                if (!_backgroundRectangles.Contains(rect))
+                {
+                    _backgroundRectangles.Add(rect);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // エラーログに記録
+            AppendToOperationLog($"交互背景色更新エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 既存の交互背景色を削除
+    /// </summary>
+    private void ClearAlternatingBackground()
+    {
+        try
+        {
+            foreach (var rect in _backgroundRectangles)
+            {
+                PerformanceChart.Plot.Remove(rect);
+            }
+            _backgroundRectangles.Clear();
+        }
+        catch (Exception ex)
+        {
+            AppendToOperationLog($"背景色削除エラー: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -1179,6 +1290,10 @@ public partial class MainWindow : Window
         
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
+        
+        // 交互背景色を更新
+        UpdateAlternatingBackground();
+        
         PerformanceChart.Refresh();
         
         // データテーブルタブを作成（チェックボックス経由）
@@ -1242,6 +1357,10 @@ public partial class MainWindow : Window
         
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
+        
+        // 交互背景色を更新
+        UpdateAlternatingBackground();
+        
         PerformanceChart.Refresh();
         
         // データテーブルタブを作成（チェックボックス経由）
@@ -1260,6 +1379,10 @@ public partial class MainWindow : Window
         {
             PerformanceChart.Plot.Remove(scatter);
             _chartSeries.Remove(counter);
+            
+            // 交互背景色を更新
+            UpdateAlternatingBackground();
+            
             PerformanceChart.Refresh();
             System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
         }
