@@ -221,12 +221,18 @@
             <!-- 中央: グラフ表示 -->
             <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
+                                      Grid.Row="0"
                                       Background="White" />
                     
                     <!-- データなしの場合のメッセージ -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                    <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"
                               x:Name="NoDataMessagePanel" 
                               Visibility="Visible">
                         <TextBlock x:Name="NoDataMessage" 
@@ -249,6 +255,102 @@
                                  FontWeight="Bold"
                                  Margin="5"/>
                     </StackPanel>
+                    
+                    <!-- 統計情報表示エリア -->
+                    <Border Grid.Row="1" x:Name="StatisticsBorder" 
+                           Background="#F8F8F8" 
+                           BorderBrush="#E0E0E0" 
+                           BorderThickness="0,1,0,0" 
+                           Margin="5,0,5,5"
+                           Visibility="Collapsed">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- ヘッダー -->
+                            <TextBlock Grid.Row="0" 
+                                     Text="📊 選択カウンターの統計情報" 
+                                     FontWeight="Bold" 
+                                     FontSize="12"
+                                     Foreground="DarkBlue"
+                                     Margin="0,0,0,8"/>
+                            
+                            <!-- 統計情報テーブル -->
+                            <ScrollViewer Grid.Row="1" 
+                                        VerticalScrollBarVisibility="Auto" 
+                                        HorizontalScrollBarVisibility="Auto"
+                                        MaxHeight="150">
+                                <DataGrid x:Name="StatisticsDataGrid"
+                                        AutoGenerateColumns="False"
+                                        IsReadOnly="True"
+                                        HeadersVisibility="Column"
+                                        GridLinesVisibility="Horizontal"
+                                        Background="White"
+                                        AlternatingRowBackground="#F9F9F9"
+                                        BorderThickness="1"
+                                        BorderBrush="#DDD"
+                                        FontSize="11"
+                                        CanUserResizeColumns="True"
+                                        CanUserSortColumns="False"
+                                        SelectionMode="Single"
+                                        Width="Auto"
+                                        HorizontalAlignment="Stretch">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="カウンター名" 
+                                                           Binding="{Binding CounterName}" 
+                                                           Width="300" 
+                                                           MinWidth="200"
+                                                           MaxWidth="500"
+                                                           CanUserResize="True" />
+                                        <DataGridTextColumn Header="平均" 
+                                                           Binding="{Binding Average}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#008000"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="最大" 
+                                                           Binding="{Binding Maximum}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#B40000"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                        <DataGridTextColumn Header="最小" 
+                                                           Binding="{Binding Minimum}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#0000B4"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
                 </Grid>
             </GroupBox>
 

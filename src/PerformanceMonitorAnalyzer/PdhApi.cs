@@ -96,6 +96,26 @@ public static class PdhApi
         public IntPtr DataBuffer;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PDH_STATISTICS
+    {
+        public uint dwFormat;
+        public uint count;
+        public PDH_FMT_COUNTERVALUE min;
+        public PDH_FMT_COUNTERVALUE max;
+        public PDH_FMT_COUNTERVALUE mean;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PDH_RAW_COUNTER
+    {
+        public uint CStatus;
+        public long TimeStamp;
+        public long FirstValue;
+        public long SecondValue;
+        public uint MultiCount;
+    }
+
     /// <summary>
     /// クエリハンドルを開く（データソース指定）
     /// </summary>
@@ -148,6 +168,38 @@ public static class PdhApi
         uint dwFormat,
         IntPtr lpdwType,
         out PDH_FMT_COUNTERVALUE pValue);
+
+    /// <summary>
+    /// カウンターの統計情報を計算
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhComputeCounterStatistics(
+        IntPtr hCounter,
+        uint dwFormat,
+        uint dwFirstEntry,
+        uint dwNumEntries,
+        IntPtr lpRawValueArray,
+        out PDH_STATISTICS data);
+
+    /// <summary>
+    /// 生の未処理カウンター値を取得
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhGetRawCounterValue(
+        IntPtr hCounter,
+        IntPtr lpdwType,
+        out PDH_RAW_COUNTER pValue);
+
+    /// <summary>
+    /// 配列形式でフォーマットされたカウンター値を取得
+    /// </summary>
+    [DllImport(PdhDll)]
+    public static extern uint PdhGetFormattedCounterArray(
+        IntPtr hCounter,
+        uint dwFormat,
+        ref uint lpdwBufferSize,
+        out uint lpdwItemCount,
+        IntPtr ItemBuffer);
 
     /// <summary>
     /// クエリの時間範囲を設定
