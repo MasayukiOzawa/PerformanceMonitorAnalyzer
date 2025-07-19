@@ -50,30 +50,18 @@ public class BlgFileAnalyzer : IDisposable
         {
             try
             {
-                // 方法1: PdhBindInputDataSourceを使用
-                progress?.Report("PdhBindInputDataSourceでBLGファイルを開いています...");
+                // BLGファイル専用のデータソースとして開く
+                progress?.Report("BLGファイルをデータソースとして開いています...");
                 uint result = PdhApi.PdhBindInputDataSource(out _dataSource, filePath);
                 
                 if (result == PdhApi.ERROR_SUCCESS)
                 {
-                    progress?.Report("PdhBindInputDataSourceでBLGファイルが正常に開かれました");
-                    
-                    // クエリをデータソースと関連付けて作成
-                    result = PdhApi.PdhOpenQuery(filePath, IntPtr.Zero, out _query);
-                    if (result != PdhApi.ERROR_SUCCESS)
-                    {
-                        // データソースをクリーンアップしてから例外を投げる
-                        PdhApi.PdhCloseLog(_dataSource, 0);
-                        _dataSource = IntPtr.Zero;
-                        throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                    }
-                    
-                    progress?.Report("PDHクエリが正常に開かれました");
+                    progress?.Report("BLGファイルが正常にデータソースとして開かれました");
                     return true;
                 }
                 
-                // 方法1が失敗した場合、方法2: 従来のPdhOpenLogを試行
-                progress?.Report($"PdhBindInputDataSource失敗 ({PdhApi.GetErrorMessage(result)})、PdhOpenLogを試行中...");
+                // PdhBindInputDataSourceが失敗した場合のフォールバック
+                progress?.Report($"PdhBindInputDataSource失敗 ({PdhApi.GetErrorMessage(result)})、代替方法を試行中...");
                 
                 // まずクエリを開く
                 result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
@@ -82,21 +70,18 @@ public class BlgFileAnalyzer : IDisposable
                     throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
                 
-                progress?.Report("PDHクエリが正常に開かれました");
-                
-                // その後BLGファイルをデータソースとして開く
+                // BLGファイルをログファイルとして開く
                 result = PdhApi.PdhOpenLog(
                     filePath,
                     PdhApi.GENERIC_READ,
                     out uint logType,
-                    _query,  // 作成したクエリハンドルを使用
+                    _query,
                     0,
                     null,
                     out _dataSource);
 
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
-                    // クエリをクリーンアップしてから例外を投げる
                     PdhApi.PdhCloseQuery(_query);
                     _query = IntPtr.Zero;
                     throw new Exception($"BLGファイルを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
@@ -511,15 +496,16 @@ public class BlgFileAnalyzer : IDisposable
     /// </summary>
     public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
     {
-        if (_query == IntPtr.Zero)
+        if (_dataSource == IntPtr.Zero)
         {
-            throw new InvalidOperationException("クエリが開かれていません。");
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
         }
 
         progress?.Report($"カウンターデータを読み込み中: {counterPath}");
 
         return await Task.Run(() =>
         {
+            IntPtr tempQuery = IntPtr.Zero;
             IntPtr counter = IntPtr.Zero;
             var counterInfo = new CounterInfo
             {
@@ -531,41 +517,77 @@ public class BlgFileAnalyzer : IDisposable
 
             try
             {
+                // BLGファイル専用の一時クエリを作成
+                uint result = PdhApi.PdhOpenQuery(_dataSource, IntPtr.Zero, out tempQuery);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"一時クエリの作成に失敗: {PdhApi.GetErrorMessage(result)}");
+                }
+
                 // カウンターをクエリに追加
-                uint result = PdhApi.PdhAddCounter(_query, counterPath, IntPtr.Zero, out counter);
+                result = PdhApi.PdhAddCounter(tempQuery, counterPath, IntPtr.Zero, out counter);
                 if (result != PdhApi.ERROR_SUCCESS)
                 {
                     throw new Exception($"カウンター追加に失敗: {PdhApi.GetErrorMessage(result)}");
                 }
 
-                // データを収集
-                result = PdhApi.PdhCollectQueryData(_query);
-                if (result != PdhApi.ERROR_SUCCESS)
-                {
-                    throw new Exception($"データ収集に失敗: {PdhApi.GetErrorMessage(result)}");
-                }
+                progress?.Report($"カウンター '{counterPath}' を追加しました");
 
-                // フォーマットされた値を取得
-                result = PdhApi.PdhGetFormattedCounterValue(
-                    counter,
-                    PdhApi.PDH_FMT_DOUBLE,
-                    out uint valueType,
-                    out PdhApi.PDH_FMT_COUNTERVALUE value);
+                // BLGファイル内の全サンプルを読み込み
+                var dataPoints = new List<CounterDataPoint>();
+                bool hasMoreData = true;
+                int sampleCount = 0;
 
-                if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
+                while (hasMoreData && sampleCount < 10000) // 安全のため最大10000サンプル
                 {
-                    var dataPoint = new CounterDataPoint
+                    result = PdhApi.PdhCollectQueryData(tempQuery);
+                    
+                    if (result == PdhApi.ERROR_SUCCESS)
                     {
-                        Timestamp = DateTime.Now, // 実際の実装では適切なタイムスタンプを設定
-                        Value = value.doubleValue,
-                        Status = value.CStatus
-                    };
-                    counterInfo.DataPoints.Add(dataPoint);
+                        // フォーマットされた値を取得
+                        result = PdhApi.PdhGetFormattedCounterValue(
+                            counter,
+                            PdhApi.PDH_FMT_DOUBLE,
+                            out uint valueType,
+                            out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                        if (result == PdhApi.ERROR_SUCCESS || result == PdhApi.PDH_CSTATUS_VALID_DATA)
+                        {
+                            // タイムスタンプを取得（現在は仮の値）
+                            var timestamp = DateTime.Now.AddSeconds(-sampleCount);
+                            
+                            var dataPoint = new CounterDataPoint
+                            {
+                                Timestamp = timestamp,
+                                Value = value.doubleValue,
+                                Status = value.CStatus
+                            };
+                            dataPoints.Add(dataPoint);
+                            sampleCount++;
+                        }
+                        else if (result == PdhApi.PDH_NO_MORE_DATA)
+                        {
+                            hasMoreData = false;
+                        }
+                        else
+                        {
+                            progress?.Report($"値取得警告: {PdhApi.GetErrorMessage(result)}");
+                            break;
+                        }
+                    }
+                    else if (result == PdhApi.PDH_NO_MORE_DATA)
+                    {
+                        hasMoreData = false;
+                    }
+                    else
+                    {
+                        progress?.Report($"データ収集エラー: {PdhApi.GetErrorMessage(result)}");
+                        break;
+                    }
                 }
-                else
-                {
-                    progress?.Report($"値取得警告: {PdhApi.GetErrorMessage(result)}");
-                }
+
+                counterInfo.DataPoints = dataPoints;
+                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込みました");
 
                 return counterInfo;
             }
@@ -576,10 +598,14 @@ public class BlgFileAnalyzer : IDisposable
             }
             finally
             {
-                // カウンターを削除
+                // リソースをクリーンアップ
                 if (counter != IntPtr.Zero)
                 {
                     PdhApi.PdhRemoveCounter(counter);
+                }
+                if (tempQuery != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(tempQuery);
                 }
             }
         });
