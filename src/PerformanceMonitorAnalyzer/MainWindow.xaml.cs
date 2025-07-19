@@ -3173,25 +3173,7 @@ public partial class MainWindow : Window
                 commandBuilder.AppendLine($"  -e \"{endTime.Value:yyyy/MM/dd HH:mm:ss}\" \\");
             }
             
-            // カウンター指定（最初の5個まで表示、それ以上の場合は省略）
-            if (counters.Count > 0)
-            {
-                commandBuilder.AppendLine("  -c \\");
-                var displayCounters = counters.Take(5).ToList();
-                
-                for (int i = 0; i < displayCounters.Count; i++)
-                {
-                    var counter = displayCounters[i];
-                    var isLast = i == displayCounters.Count - 1 && counters.Count <= 5;
-                    var suffix = isLast ? "" : " \\";
-                    commandBuilder.AppendLine($"    \"{counter}\"{suffix}");
-                }
-                
-                if (counters.Count > 5)
-                {
-                    commandBuilder.AppendLine($"    ... (他 {counters.Count - 5} 個のカウンター)");
-                }
-            }
+
             
             // 最後の改行を削除
             return commandBuilder.ToString().TrimEnd();
