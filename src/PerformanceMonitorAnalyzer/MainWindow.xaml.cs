@@ -350,7 +350,7 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
         
         // 凡例のフォントサイズ設定（デフォルト11 + 2 = 13）
-        PerformanceChart.Plot.Legend.FontSize = 13;
+        PerformanceChart.Plot.Legend.FontSize = 16;
         
         // グラフの更新
         PerformanceChart.Refresh();
