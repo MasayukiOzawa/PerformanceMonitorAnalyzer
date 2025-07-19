@@ -3,6 +3,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Documents;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -14,6 +16,17 @@ using ScottPlot;
 using ScottPlot.WPF;
 
 namespace PerformanceMonitorAnalyzer;
+
+/// <summary>
+/// 統計情報表示用のデータクラス
+/// </summary>
+public class CounterStatisticsItem
+{
+    public string CounterName { get; set; } = string.Empty;
+    public string Average { get; set; } = string.Empty;
+    public string Maximum { get; set; } = string.Empty;
+    public string Minimum { get; set; } = string.Empty;
+}
 
 /// <summary>
 /// TreeViewで使用する階層構造のノードクラス
@@ -1278,9 +1291,106 @@ public partial class MainWindow : Window
         var hasData = _chartSeries.Any();
         NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
         System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
+        
+        // 統計情報表示の更新
+        UpdateStatisticsDisplay();
     }
 
-
+    /// <summary>
+    /// 統計情報表示を更新
+    /// </summary>
+    private void UpdateStatisticsDisplay()
+    {
+        try
+        {
+            var hasData = _chartSeries.Any();
+            StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            if (!hasData)
+            {
+                StatisticsDataGrid.ItemsSource = null;
+                return;
+            }
+            
+            // 統計情報のコレクションを作成
+            var statisticsItems = new List<CounterStatisticsItem>();
+            
+            // 各カウンターの統計情報を計算
+            foreach (var counterName in _chartSeries.Keys.OrderBy(c => c))
+            {
+                if (_counterData.TryGetValue(counterName, out var dataPoints) && dataPoints.Any())
+                {
+                    // PerformanceDataPointから(DateTime, double)タプルに変換
+                    var tupleDataPoints = dataPoints.Select(dp => (dp.Timestamp, dp.Value)).ToList();
+                    var statisticsItem = CreateStatisticsItem(counterName, tupleDataPoints);
+                    if (statisticsItem != null)
+                    {
+                        statisticsItems.Add(statisticsItem);
+                    }
+                }
+            }
+            
+            // DataGridに統計情報を設定
+            StatisticsDataGrid.ItemsSource = statisticsItems;
+            
+            System.Diagnostics.Debug.WriteLine($"Statistics display updated for {statisticsItems.Count} counters");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error updating statistics display: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 特定カウンターの統計情報アイテムを作成
+    /// </summary>
+    private CounterStatisticsItem? CreateStatisticsItem(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
+    {
+        try
+        {
+            // PDH風の統計計算を実装
+            var statistics = ComputeCounterStatistics(counterName, dataPoints);
+            
+            // 単位情報を取得（既存のフォーマット機能を使用）
+            var unit = EstimateUnit(counterName);
+            
+            // フォーマットされた値を作成
+            var minFormatted = FormatValueWithUnit(statistics.Minimum, unit);
+            var maxFormatted = FormatValueWithUnit(statistics.Maximum, unit);
+            var avgFormatted = FormatValueWithUnit(statistics.Average, unit);
+            
+            return new CounterStatisticsItem
+            {
+                CounterName = GetCounterDisplayName(counterName),
+                Average = avgFormatted,
+                Maximum = maxFormatted,
+                Minimum = minFormatted
+            };
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error creating statistics item for {counterName}: {ex.Message}");
+            
+            // エラー時は簡単なアイテムを返す
+            return new CounterStatisticsItem
+            {
+                CounterName = GetCounterDisplayName(counterName),
+                Average = "エラー",
+                Maximum = "エラー",
+                Minimum = "エラー"
+            };
+        }
+    }
+    
+    /// <summary>
+    /// フォーマットされた値から単位部分を抽出
+    /// </summary>
+    private string ExtractUnit(string formattedValue)
+    {
+        // 数値以外の部分を単位として抽出
+        var match = System.Text.RegularExpressions.Regex.Match(formattedValue, @"[^\d\.,\-\s]+");
+        return match.Success ? match.Value : "";
+    }
 
     private void AddCounterTab(string counter)
     {
@@ -1459,6 +1569,57 @@ public partial class MainWindow : Window
 
         border.Child = stackPanel;
         return border;
+    }
+
+    /// <summary>
+    /// PDH風の統計計算（PDH_STATISTICSの形式に合わせた実装）
+    /// </summary>
+    private CounterStatistics ComputeCounterStatistics(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
+    {
+        if (!dataPoints.Any())
+        {
+            return new CounterStatistics
+            {
+                CounterName = counterName,
+                DataPointCount = 0,
+                Average = 0,
+                Maximum = 0,
+                Minimum = 0,
+                StandardDeviation = 0,
+                Unit = EstimateUnit(counterName)
+            };
+        }
+
+        // スケールを適用（PDHカウンターのスケール処理を模倣）
+        var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
+        var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        
+        // PDH_STATISTICSの計算ロジックを模倣
+        // PDHでは内部的に以下の統計を計算します
+        var count = (uint)scaledValues.Length;
+        var sum = scaledValues.Sum();
+        var mean = sum / count;
+        
+        // PDHの統計計算アルゴリズムに従った実装
+        var min = scaledValues.Min();
+        var max = scaledValues.Max();
+        
+        // 標準偏差の計算（PDH風）
+        var variance = scaledValues.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
+        var standardDeviation = Math.Sqrt(variance);
+
+        return new CounterStatistics
+        {
+            CounterName = counterName,
+            DataPointCount = dataPoints.Count,
+            Average = mean,
+            Maximum = max,
+            Minimum = min,
+            StandardDeviation = standardDeviation,
+            FirstTimestamp = dataPoints.Min(dp => dp.Timestamp),
+            LastTimestamp = dataPoints.Max(dp => dp.Timestamp),
+            Unit = EstimateUnit(counterName)
+        };
     }
 
     /// <summary>
@@ -2550,6 +2711,9 @@ public partial class MainWindow : Window
                 
                 // 最後に一度だけスケールコントロールを更新
                 UpdateScaleControlVisibility();
+                
+                // 統計情報も更新
+                UpdateStatisticsDisplay();
             }
             
             System.Diagnostics.Debug.WriteLine($"Chart refreshed for counter: {counter}");

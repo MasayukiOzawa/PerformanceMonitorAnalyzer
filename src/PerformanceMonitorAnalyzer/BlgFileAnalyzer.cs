@@ -283,12 +283,6 @@ public class BlgFileAnalyzer : IDisposable
                     progress?.Report("SQLServerカウンターを検出しました。特別な処理を適用します。");
                 }
 
-            try
-            {
-                // 詳細なデバッグ情報を提供
-                progress?.Report($"カウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
-                progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
-
                 // BLGファイルを指定してクエリを開く
                 uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
                 if (result != PdhApi.ERROR_SUCCESS)
@@ -558,7 +552,6 @@ public class BlgFileAnalyzer : IDisposable
                 if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA && result != PdhApi.ERROR_SUCCESS)
                 {
                     throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
-                }
                 }
 
                 var dataPoints = new List<CounterDataPoint>();
