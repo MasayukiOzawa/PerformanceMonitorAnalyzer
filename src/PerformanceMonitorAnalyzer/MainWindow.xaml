@@ -291,30 +291,58 @@
                                         AlternatingRowBackground="#F9F9F9"
                                         BorderThickness="1"
                                         BorderBrush="#DDD"
-                                        FontSize="11">
+                                        FontSize="11"
+                                        CanUserResizeColumns="True"
+                                        CanUserSortColumns="False"
+                                        SelectionMode="Single"
+                                        Width="Auto"
+                                        HorizontalAlignment="Stretch">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="カウンター名" Binding="{Binding CounterName}" Width="*" />
-                                        <DataGridTextColumn Header="平均" Binding="{Binding Average}" Width="80">
+                                        <DataGridTextColumn Header="カウンター名" 
+                                                           Binding="{Binding CounterName}" 
+                                                           Width="300" 
+                                                           MinWidth="200"
+                                                           MaxWidth="500"
+                                                           CanUserResize="True" />
+                                        <DataGridTextColumn Header="平均" 
+                                                           Binding="{Binding Average}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#008000"/>
                                                     <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
-                                        <DataGridTextColumn Header="最大" Binding="{Binding Maximum}" Width="80">
+                                        <DataGridTextColumn Header="最大" 
+                                                           Binding="{Binding Maximum}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#B40000"/>
                                                     <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
-                                        <DataGridTextColumn Header="最小" Binding="{Binding Minimum}" Width="80">
+                                        <DataGridTextColumn Header="最小" 
+                                                           Binding="{Binding Minimum}" 
+                                                           Width="120"
+                                                           MinWidth="80"
+                                                           MaxWidth="200"
+                                                           CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#0000B4"/>
                                                     <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="TextAlignment" Value="Right"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
