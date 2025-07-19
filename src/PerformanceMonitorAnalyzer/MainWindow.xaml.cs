@@ -1933,100 +1933,14 @@ public partial class MainWindow : Window
     }
             
     /// <summary>
-    /// CSVファイルから選択されたカウンターのデータを読み込み
+    /// CSVファイルから選択されたカウンターのデータを読み込み（PDH API用は使用しない）
     /// </summary>
     private async Task LoadSelectedCountersFromCsv(string csvPath, List<string> selectedCounters, IProgress<string>? progress)
-                {
     {
-        await Task.Run(() =>
+        await Task.Run(async () =>
         {
             var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
             if (lines.Length < 2) return;
-                    
-                    // 代替実行結果をUIに追加
-                    var altOutput = await altProcess.StandardOutput.ReadToEndAsync();
-                    var altError = await altProcess.StandardError.ReadToEndAsync();
-                    
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        var altResult = $"Exit Code: {altProcess.ExitCode}";
-                        if (!string.IsNullOrEmpty(altOutput))
-                            altResult += $"\nOutput: {altOutput}";
-                        if (!string.IsNullOrEmpty(altError))
-                            altResult += $"\nError: {altError}";
-                        
-                        RelogResultDisplay.Text = RelogResultDisplay.Text.Replace($"[再試行 - {format}] 実行中...", altResult);
-                    });
-                    
-                    if (altProcess.ExitCode == 0 && File.Exists(tempCsvPath))
-                    {
-                        LogInfo($"Success with time format: {format}");
-                        break;
-                    }
-                    else
-                    {
-                        LogInfo($"Failed with time format: {format}, exit code: {altProcess.ExitCode}");
-                    }
-                }
-                
-                // 全ての形式で失敗した場合は時間制約なしで実行
-                if (!File.Exists(tempCsvPath))
-                {
-                    LogInfo("All time formats failed, falling back to no time constraints");
-                    var fallbackArguments = $"\"{_currentBlgFile}\" -f CSV -o \"{tempCsvPath}\" -y";
-                    
-                    // UIにフォールバックコマンドを表示
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        RelogCommandDisplay.Text += $"\n\n[フォールバック] relog.exe {fallbackArguments}";
-                        RelogResultDisplay.Text += $"\n\n[フォールバック] 時間制約なしで実行中...";
-                    });
-                    
-                    var fallbackProcessInfo = new ProcessStartInfo
-                    {
-                        FileName = "relog.exe",
-                        Arguments = fallbackArguments,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
-                        StandardOutputEncoding = Encoding.Unicode, // UTF-16対応
-                        StandardErrorEncoding = Encoding.Unicode   // UTF-16対応
-                    };
-                    
-                    using var fallbackProcess = new Process { StartInfo = fallbackProcessInfo };
-                    fallbackProcess.Start();
-                    await fallbackProcess.WaitForExitAsync();
-                    
-                    // フォールバック実行結果をUIに追加
-                    var fallbackOutput = await fallbackProcess.StandardOutput.ReadToEndAsync();
-                    var fallbackError = await fallbackProcess.StandardError.ReadToEndAsync();
-                    
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        var fallbackResult = $"Exit Code: {fallbackProcess.ExitCode}";
-                        if (!string.IsNullOrEmpty(fallbackOutput))
-                            fallbackResult += $"\nOutput: {fallbackOutput}";
-                        if (!string.IsNullOrEmpty(fallbackError))
-                            fallbackResult += $"\nError: {fallbackError}";
-                        
-                        RelogResultDisplay.Text = RelogResultDisplay.Text.Replace("[フォールバック] 時間制約なしで実行中...", fallbackResult);
-                    });
-                    
-                    if (fallbackProcess.ExitCode != 0)
-                    {
-                        LogError($"Fallback execution also failed - Exit code: {fallbackProcess.ExitCode}, Error: {fallbackError}");
-                    }
-                }
-            }
-            
-            if (File.Exists(tempCsvPath) && new FileInfo(tempCsvPath).Length > 0)
-            {
-                progress?.Report("CSVデータを解析中...");
-                await LoadSelectedCountersFromCsv(tempCsvPath, counters, progress);
-                LogInfo($"CSVデータの読み込みが完了しました。ファイルサイズ: {new FileInfo(tempCsvPath).Length:N0} bytes");
-                progress?.Report("データテーブルへの読み込み完了");
-            }
             
             var headers = ParseCsvLine(lines[0]);
             var counterColumns = new Dictionary<string, int>();
@@ -2087,7 +2001,7 @@ public partial class MainWindow : Window
                     _counterData[counterPath] = dataPoints;
                     
                     // UIスレッドでデータテーブルを更新
-                    Dispatcher.Invoke(() =>
+                    await Dispatcher.InvokeAsync(() =>
                     {
                         // グラフとデータテーブルの両方を更新
                         AddCounterToChart(counterPath);
