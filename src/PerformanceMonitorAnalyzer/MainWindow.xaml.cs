@@ -1879,8 +1879,21 @@ public partial class MainWindow : Window
                 }
                 catch (Exception ex)
                 {
-                    errors.Add($"{counterPath}: {ex.Message}");
-                    LogError($"カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                    // SQLServerカウンターの場合は、警告として扱い、処理を続行
+                    bool isSqlServerCounter = counterPath.Contains("SQLServer", StringComparison.OrdinalIgnoreCase);
+                    
+                    if (isSqlServerCounter)
+                    {
+                        // SQLServerカウンターのエラーは警告として記録
+                        LogError($"警告: SQLServerカウンター '{counterPath}' の読み込みをスキップ: {ex.Message}");
+                        errors.Add($"[警告] {counterPath}: SQLServerカウンターのため読み込みをスキップ - {ex.Message}");
+                    }
+                    else
+                    {
+                        // その他のカウンターのエラーは通常のエラーとして処理
+                        errors.Add($"{counterPath}: {ex.Message}");
+                        LogError($"カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                    }
                 }
                 
                 processedCount++;
