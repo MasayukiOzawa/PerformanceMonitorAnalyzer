@@ -15,6 +15,8 @@ using Newtonsoft.Json.Linq;
 using System.Text;
 using ScottPlot;
 using ScottPlot.WPF;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -2307,13 +2309,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 選択されたカウンターに対してPDH APIを使用してデータを読み込み
+    /// 選択されたカウンターに対してPDH APIを使用してデータを並列読み込み
     /// </summary>
     private async Task ExecuteRelogForSelectedCounters(List<string> counters, DateTime startTime, DateTime endTime, IProgress<string>? progress)
     {
         try
         {
-            progress?.Report("PDH APIを使用してカウンターデータを読み込み中...");
+            progress?.Report("PDH APIを使用してカウンターデータを並列読み込み中...");
             
             // 時間制約有効かどうかを判定（スライダーが初期値でない場合は時間制約を適用）
             bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
@@ -2331,50 +2333,56 @@ public partial class MainWindow : Window
             
             // PDH API実行状況を操作ログに出力
             var pdhApiInfo = useTimeConstraints 
-                ? $"📊 PDH API: {counters.Count}個のカウンターを時間範囲で読み込み（⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}）"
-                : $"📊 PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
+                ? $"📊 PDH API: {counters.Count}個のカウンターを並列読み込み（⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}）"
+                : $"📊 PDH API: {counters.Count}個のカウンターを並列読み込み（時間制約なし）";
             AddOperationLog(LogLevel.Info, pdhApiInfo);
             
             // デバッグ情報をログに出力
-            LogInfo($"PDH APIを使用してカウンターデータを読み込み中");
+            LogInfo($"PDH APIを使用してカウンターデータを並列読み込み中");
             LogInfo($"Use time constraints: {useTimeConstraints}");
             LogInfo($"Start time: {startTime:yyyy-MM-dd HH:mm:ss}, End time: {endTime:yyyy-MM-dd HH:mm:ss}");
             LogInfo($"Selected counters count: {counters.Count}");
             
-            
-            using var analyzer = new BlgFileAnalyzer();
-            var opened = await analyzer.OpenBlgFileAsync(_currentBlgFile!, progress);
-            
-            if (!opened)
-            {
-                throw new Exception("PDH APIでBLGファイルを開けませんでした");
-            }
-
             await Dispatcher.InvokeAsync(() =>
             {
-                AddOperationLog(LogLevel.Info, "BLGファイルを正常に開きました - カウンターデータを読み込み中...");
+                AddOperationLog(LogLevel.Info, "BLGファイルを開いて並列カウンター読み込みを開始します...");
             });
 
-            int processedCount = 0;
-            int successCount = 0;
-            var errors = new List<string>();
-
-            // 各カウンターのデータを読み込み
-            foreach (var counterPath in counters)
+            // スレッドセーフなコレクションを使用
+            var processedCounters = new System.Collections.Concurrent.ConcurrentDictionary<string, List<PerformanceDataPoint>>();
+            var errors = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var processedCount = 0;
+            var successCount = 0;
+            
+            // 並列処理で各カウンターのデータを読み込み
+            var semaphore = new SemaphoreSlim(Environment.ProcessorCount * 2, Environment.ProcessorCount * 2); // 最大同時実行数を制限
+            
+            var tasks = counters.Select(async counterPath =>
             {
+                await semaphore.WaitAsync();
                 try
                 {
-                    progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
+                    using var analyzer = new BlgFileAnalyzer();
+                    var opened = await analyzer.OpenBlgFileAsync(_currentBlgFile!, null);
+                    
+                    if (!opened)
+                    {
+                        errors.Add($"{counterPath}: BLGファイルを開けませんでした");
+                        return;
+                    }
+
+                    var currentProcessed = Interlocked.Increment(ref processedCount);
+                    progress?.Report($"並列カウンター読み込み中: {counterPath} ({currentProcessed}/{counters.Count})");
                     
                     // 時間制約がある場合は、時間制約付きの読み込みメソッドを使用
                     BlgFileAnalyzer.CounterInfo counterInfo;
                     if (useTimeConstraints)
                     {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress);
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, null);
                     }
                     else
                     {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, null);
                     }
                     
                     if (counterInfo.DataPoints.Count > 0)
@@ -2402,15 +2410,8 @@ public partial class MainWindow : Window
                         
                         if (dataPoints.Count > 0)
                         {
-                            _counterData[counterPath] = dataPoints;
-                            successCount++;
-                            
-                            // UIスレッドでデータテーブルを更新
-                            await Dispatcher.InvokeAsync(() =>
-                            {
-                                // グラフとデータテーブルの両方を更新
-                                AddCounterToChart(counterPath);
-                            });
+                            processedCounters[counterPath] = dataPoints;
+                            Interlocked.Increment(ref successCount);
                         }
                         else
                         {
@@ -2425,58 +2426,76 @@ public partial class MainWindow : Window
                 catch (Exception ex)
                 {
                     errors.Add($"{counterPath}: {ex.Message}");
-                    LogError($"カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                    LogError($"カウンター '{counterPath}' の並列読み込みに失敗: {ex.Message}");
                 }
-                
-                processedCount++;
-                
-                // 進行状況を操作ログに出力
-                if (processedCount % 10 == 0 || processedCount == counters.Count) // 10個ごと、または最後に出力
+                finally
                 {
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        AddOperationLog(LogLevel.Info, $"PDH API処理進行: {processedCount}/{counters.Count} - 成功 {successCount}個、エラー {errors.Count}個");
-                    });
+                    semaphore.Release();
                 }
+            });
+
+            // すべてのタスクが完了するまで待機
+            await Task.WhenAll(tasks);
+
+            // 並列処理完了後、UIスレッドでデータを順次追加（デッドロック防止）
+            progress?.Report("並列読み込み完了 - UIへの反映中...");
+            
+            await Dispatcher.InvokeAsync(() =>
+            {
+                AddOperationLog(LogLevel.Info, $"並列読み込み完了: 成功 {successCount}個、エラー {errors.Count}個 - UIに反映中...");
+            });
+
+            // UIスレッドでデータテーブルとグラフを順次更新
+            foreach (var kvp in processedCounters.OrderBy(x => x.Key))
+            {
+                _counterData[kvp.Key] = kvp.Value;
+                
+                // UIスレッドでデータテーブルを更新（非同期で実行してUIの応答性を保つ）
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // グラフとデータテーブルの両方を更新
+                    AddCounterToChart(kvp.Key);
+                });
             }
             
             // 最終結果を操作ログに出力
             await Dispatcher.InvokeAsync(() =>
             {
-                var resultText = $"PDH API実行結果: 処理したカウンター {processedCount}個、成功 {successCount}個、エラー {errors.Count}個";
+                var resultText = $"並列PDH API実行結果: 処理したカウンター {processedCount}個、成功 {successCount}個、エラー {errors.Count}個";
                 AddOperationLog(LogLevel.Info, resultText);
                 
                 if (errors.Count > 0)
                 {
                     // エラーの詳細も操作ログに出力（最初の3個のエラーのみ）
-                    foreach (var error in errors.Take(3))
+                    var errorList = errors.Take(3).ToList();
+                    foreach (var error in errorList)
                     {
-                        AddOperationLog(LogLevel.Warning, $"PDH APIエラー: {error}");
+                        AddOperationLog(LogLevel.Warning, $"並列PDH APIエラー: {error}");
                     }
                     if (errors.Count > 3)
                     {
-                        AddOperationLog(LogLevel.Warning, $"その他 {errors.Count - 3} 個のPDH APIエラーが発生しました");
+                        AddOperationLog(LogLevel.Warning, $"その他 {errors.Count - 3} 個の並列PDH APIエラーが発生しました");
                     }
                 }
             });
             
             if (successCount > 0)
             {
-                LogInfo($"PDH APIによるデータ読み込み完了。成功: {successCount}/{processedCount}");
-                progress?.Report("データテーブルへの読み込み完了");
+                LogInfo($"並列PDH APIによるデータ読み込み完了。成功: {successCount}/{processedCount}");
+                progress?.Report("並列データ読み込み完了");
             }
             else
             {
-                throw new Exception($"すべてのカウンターの読み込みに失敗しました。エラー: {errors.Count}");
+                throw new Exception($"すべてのカウンターの並列読み込みに失敗しました。エラー: {errors.Count}");
             }
         }
         catch (Exception ex)
         {
-            LogError($"PDH APIによるデータ読み込みに失敗: {ex.Message}");
+            LogError($"並列PDH APIによるデータ読み込みに失敗: {ex.Message}");
             
             await Dispatcher.InvokeAsync(() =>
             {
-                AddOperationLog(LogLevel.Error, $"PDH API実行エラー: {ex.Message}");
+                AddOperationLog(LogLevel.Error, $"並列PDH API実行エラー: {ex.Message}");
             });
             
             throw;
