@@ -297,7 +297,7 @@
                     </StackPanel>
                     
                     <!-- グラフ操作ボタン -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
                                x:Name="GraphControlPanel" Visibility="Collapsed">
                         <Button x:Name="CopyGraphButton" 
                                Content="📋 グラフをクリップボードにコピー" 
@@ -311,7 +311,7 @@
                     </StackPanel>
                     
                     <!-- 統計情報表示エリア -->
-                    <Border Grid.Row="2" x:Name="StatisticsBorder" 
+                    <Border Grid.Row="3" x:Name="StatisticsBorder" 
                            Background="#F8F8F8" 
                            BorderBrush="#E0E0E0" 
                            BorderThickness="0,1,0,0" 
