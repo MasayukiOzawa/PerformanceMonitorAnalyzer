@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Documents;
 using Microsoft.Win32;
 using System.Diagnostics;
@@ -324,6 +325,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // キーボードショートカットの設定
+        this.KeyDown += MainWindow_KeyDown;
         
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
@@ -1334,6 +1338,18 @@ public partial class MainWindow : Window
         {
             var hasData = _chartSeries.Any();
             StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            // グラフコントロールパネルの表示制御
+            GraphControlPanel.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
+            
+            // グラフメニューの有効/無効制御
+            GraphMenu.IsEnabled = hasData;
+            
+            // コンテキストメニューの有効/無効制御
+            if (ContextMenuCopyGraph != null)
+            {
+                ContextMenuCopyGraph.IsEnabled = hasData;
+            }
             
             if (!hasData)
             {
@@ -3420,6 +3436,79 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AddOperationLog(LogLevel.Error, $"エラーログのクリアに失敗: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region グラフ操作メソッド
+
+    /// <summary>
+    /// キーボードショートカットの処理
+    /// </summary>
+    private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+    {
+        // Ctrl+C でグラフをクリップボードにコピー
+        if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            if (GraphMenu.IsEnabled) // グラフが表示されている場合のみ実行
+            {
+                CopyGraphToClipboardInternal();
+                e.Handled = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// グラフをクリップボードにコピーする（UI イベント）
+    /// </summary>
+    private void CopyGraphToClipboard_Click(object sender, RoutedEventArgs e)
+    {
+        CopyGraphToClipboardInternal();
+    }
+
+    /// <summary>
+    /// グラフをクリップボードにコピーする内部実装
+    /// </summary>
+    private void CopyGraphToClipboardInternal()
+    {
+        try
+        {
+            // グラフにデータがあるかチェック
+            if (PerformanceChart.Plot.PlottableList.Count == 0)
+            {
+                MessageBox.Show("コピーするグラフデータがありません。\nカウンターを選択してグラフを表示してからコピーしてください。", 
+                               "グラフコピー", MessageBoxButton.OK, MessageBoxImage.Information);
+                AddOperationLog(LogLevel.Warning, "グラフコピー: 表示されているグラフがありません");
+                return;
+            }
+
+            // WPF コントロールから画像を取得
+            int width = (int)PerformanceChart.ActualWidth;
+            int height = (int)PerformanceChart.ActualHeight;
+            
+            if (width <= 0 || height <= 0)
+            {
+                width = 800;
+                height = 600;
+            }
+
+            var renderTargetBitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            renderTargetBitmap.Render(PerformanceChart);
+            
+            // クリップボードにコピー
+            Clipboard.SetImage(renderTargetBitmap);
+            
+            AddOperationLog(LogLevel.Info, "グラフをクリップボードにコピーしました");
+            
+            // ユーザーに成功を通知（オプション）
+            // MessageBox.Show("グラフをクリップボードにコピーしました。", "グラフコピー", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"グラフのクリップボードコピーに失敗: {ex.Message}");
+            MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}", 
+                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

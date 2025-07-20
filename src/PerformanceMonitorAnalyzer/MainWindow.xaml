@@ -31,6 +31,9 @@
                 <MenuItem Header="パターン設定ファイルを開く(_O)..." Click="OpenPatternConfig_Click"/>
                 <MenuItem Header="パターン設定を再読み込み(_R)" Click="ReloadPatternConfig_Click"/>
             </MenuItem>
+            <MenuItem Header="グラフ(_G)" x:Name="GraphMenu" IsEnabled="False">
+                <MenuItem Header="グラフをクリップボードにコピー(_C)" Click="CopyGraphToClipboard_Click" InputGestureText="Ctrl+C"/>
+            </MenuItem>
             <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="バージョン情報(_A)"/>
             </MenuItem>
@@ -215,12 +218,26 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
                                       Grid.Row="0"
-                                      Background="White" />
+                                      Background="White">
+                        <scottplot:WpfPlot.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="グラフをクリップボードにコピー(_C)" 
+                                         Click="CopyGraphToClipboard_Click"
+                                         InputGestureText="Ctrl+C"
+                                         x:Name="ContextMenuCopyGraph">
+                                    <MenuItem.Icon>
+                                        <TextBlock Text="📋"/>
+                                    </MenuItem.Icon>
+                                </MenuItem>
+                            </ContextMenu>
+                        </scottplot:WpfPlot.ContextMenu>
+                    </scottplot:WpfPlot>
                     
                     <!-- データなしの場合のメッセージ -->
                     <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -247,8 +264,22 @@
                                  Margin="5"/>
                     </StackPanel>
                     
+                    <!-- グラフ操作ボタン -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
+                               x:Name="GraphControlPanel" Visibility="Collapsed">
+                        <Button x:Name="CopyGraphButton" 
+                               Content="📋 グラフをクリップボードにコピー" 
+                               Click="CopyGraphToClipboard_Click"
+                               Background="#E3F2FD" 
+                               BorderBrush="#1976D2"
+                               Foreground="#1976D2"
+                               Padding="10,5"
+                               Margin="5"
+                               ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
+                    </StackPanel>
+                    
                     <!-- 統計情報表示エリア -->
-                    <Border Grid.Row="1" x:Name="StatisticsBorder" 
+                    <Border Grid.Row="2" x:Name="StatisticsBorder" 
                            Background="#F8F8F8" 
                            BorderBrush="#E0E0E0" 
                            BorderThickness="0,1,0,0" 
