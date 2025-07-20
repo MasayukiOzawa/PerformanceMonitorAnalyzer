@@ -298,6 +298,7 @@ public partial class MainWindow : Window
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
     private string? _actualComputerName;
+    private TimeSpan _samplingInterval = TimeSpan.Zero;
     
     // ScottPlot用のプロパティ
     private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
@@ -644,6 +645,9 @@ public partial class MainWindow : Window
         DataTabControl.Items.Clear();
         _counterData.Clear();
         _actualComputerName = null;
+        _samplingInterval = TimeSpan.Zero;
+        ComputerNameDisplay.Visibility = Visibility.Collapsed;
+        SamplingIntervalDisplay.Visibility = Visibility.Collapsed;
 
         // ログタブを再初期化
         InitializeLogTabs();
@@ -678,6 +682,19 @@ public partial class MainWindow : Window
                 ComputerNameDisplay.Visibility = Visibility.Visible;
             }
 
+            // データ取得間隔を表示
+            if (_samplingInterval != TimeSpan.Zero)
+            {
+                SamplingIntervalDisplay.Text = $"取得間隔: {FormatSamplingInterval(_samplingInterval)}";
+                SamplingIntervalDisplay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // 取得間隔が0の場合でも情報を表示
+                SamplingIntervalDisplay.Text = "取得間隔: 取得失敗";
+                SamplingIntervalDisplay.Visibility = Visibility.Visible;
+            }
+
             // 時間範囲を検出
             ProgressStatusText.Text = "時間範囲を検出中...";
             await DetectTimeRangeAsync(fileName, progress);
@@ -693,11 +710,16 @@ public partial class MainWindow : Window
                 ? $"⏰ 時間範囲: {_fileStartTime:yyyy/MM/dd HH:mm:ss} ～ {_fileEndTime:yyyy/MM/dd HH:mm:ss}" 
                 : "⚠️ 時間範囲の検出に失敗しました";
             
+            var samplingIntervalInfo = _samplingInterval != TimeSpan.Zero
+                ? $"⏱️ 取得間隔: {FormatSamplingInterval(_samplingInterval)}"
+                : "⚠️ 取得間隔の検出に失敗しました";
+            
             AddOperationLog(LogLevel.Success, $"BLGファイルが読み込まれました。\n" +
                            $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
                            $"🏷️  インスタンス: {totalInstances}個\n" +
                            $"📈 カウンター: {totalCounters}個\n" +
                            $"{timeRangeInfo}\n" +
+                           $"{samplingIntervalInfo}\n" +
                            $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。");
         }
         catch (Exception ex)
@@ -765,6 +787,22 @@ public partial class MainWindow : Window
             {
                 LogError($"Failed to extract computer name from BLG file: {ex.Message}");
                 _actualComputerName = null;
+            }
+
+            // BLGファイルからサンプリング間隔を取得
+            try
+            {
+                _samplingInterval = await analyzer.GetSamplingIntervalAsync(progress);
+                LogError($"Sampling interval extracted from BLG file: {_samplingInterval}");
+                if (_samplingInterval == TimeSpan.Zero)
+                {
+                    LogError("警告: 取得間隔が0です。単一サンプルまたはデータが不足している可能性があります。");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Failed to extract sampling interval from BLG file: {ex.Message}");
+                _samplingInterval = TimeSpan.Zero;
             }
             
             // 全てのカウンターパスを生成
@@ -1839,6 +1877,33 @@ public partial class MainWindow : Window
         }
         
         return "ローカルコンピューター";
+    }
+
+    /// <summary>
+    /// サンプリング間隔を分かりやすい形式にフォーマット
+    /// </summary>
+    private string FormatSamplingInterval(TimeSpan interval)
+    {
+        if (interval.TotalHours >= 1)
+        {
+            return $"{interval.TotalHours:F1}時間";
+        }
+        else if (interval.TotalMinutes >= 1)
+        {
+            return $"{interval.TotalMinutes:F1}分";
+        }
+        else if (interval.TotalSeconds >= 1)
+        {
+            return $"{interval.TotalSeconds:F1}秒";
+        }
+        else if (interval.TotalMilliseconds >= 1)
+        {
+            return $"{interval.TotalMilliseconds:F0}ミリ秒";
+        }
+        else
+        {
+            return "不明";
+        }
     }
 
     private void SelectAll_Click(object sender, RoutedEventArgs e)
