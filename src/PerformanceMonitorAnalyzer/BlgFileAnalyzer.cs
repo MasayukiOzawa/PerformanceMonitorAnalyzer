@@ -154,6 +154,248 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
+    /// データソースのサンプリング間隔を取得
+    /// </summary>
+    public async Task<TimeSpan> GetSamplingIntervalAsync(IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report("サンプリング間隔を取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                // 方法1: 実際のデータポイントから間隔を計算（より正確）
+                progress?.Report("実際のデータポイントから間隔を計算中...");
+                var actualInterval = CalculateIntervalFromActualData(progress);
+                
+                if (actualInterval != TimeSpan.Zero)
+                {
+                    progress?.Report($"実際のデータから計算した間隔: {FormatInterval(actualInterval)}");
+                    return actualInterval;
+                }
+                
+                // 方法2: フォールバック - PdhGetDataSourceTimeRange を使用
+                progress?.Report("フォールバック: PDH APIから時間範囲を取得中...");
+                uint bufferSize = (uint)Marshal.SizeOf<PdhApi.PDH_TIME_INFO>();
+                uint result = PdhApi.PdhGetDataSourceTimeRange(_filePath, out uint numEntries, out PdhApi.PDH_TIME_INFO timeInfo, ref bufferSize);
+                
+                PdhApi.CheckPdhStatus(result);
+
+                var startTime = PdhApi.DateTimeFromFileTime(timeInfo.StartTime);
+                var endTime = PdhApi.DateTimeFromFileTime(timeInfo.EndTime);
+                
+                progress?.Report($"PDH情報: サンプル数={numEntries}, 開始時刻={startTime:yyyy-MM-dd HH:mm:ss.fff}, 終了時刻={endTime:yyyy-MM-dd HH:mm:ss.fff}");
+                
+                // サンプル数が2以上の場合、時間範囲を(サンプル数-1)で割って間隔を計算
+                TimeSpan interval = TimeSpan.Zero;
+                if (numEntries > 1)
+                {
+                    var totalDuration = endTime - startTime;
+                    interval = TimeSpan.FromTicks(totalDuration.Ticks / (numEntries - 1));
+                    progress?.Report($"PDHベース計算: {FormatInterval(interval)} (総時間: {totalDuration}, サンプル数: {numEntries})");
+                }
+                else if (numEntries == 1)
+                {
+                    progress?.Report($"警告: サンプル数が1のため間隔計算不可 (単一サンプル)");
+                    // 単一サンプルの場合でも最小間隔を返す（例：1秒）
+                    interval = TimeSpan.FromSeconds(1);
+                }
+                else
+                {
+                    progress?.Report($"警告: サンプル数が0のため間隔計算不可");
+                    throw new InvalidOperationException($"BLGファイルにサンプルデータが含まれていません (サンプル数: {numEntries})");
+                }
+
+                return interval;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"サンプリング間隔取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+    
+    /// <summary>
+    /// 実際のデータポイントを使用してサンプリング間隔を計算
+    /// </summary>
+    private TimeSpan CalculateIntervalFromActualData(IProgress<string>? progress = null)
+    {
+        IntPtr query = IntPtr.Zero;
+        IntPtr counter = IntPtr.Zero;
+        
+        try
+        {
+            // BLGファイルを指定してクエリを開く
+            uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
+            if (result != PdhApi.ERROR_SUCCESS)
+            {
+                progress?.Report($"実データ検証用クエリオープンに失敗: {PdhApi.GetErrorMessage(result)}");
+                return TimeSpan.Zero;
+            }
+
+            // 利用可能なカウンターを取得
+            var machineNames = GetMachineNames();
+            string? machineName = machineNames.FirstOrDefault();
+            
+            if (string.IsNullOrEmpty(machineName))
+            {
+                progress?.Report("実データ検証: マシン名を取得できませんでした");
+                return TimeSpan.Zero;
+            }
+
+            // 確実に存在するカウンターパスのリストを試行
+            var testCounterPaths = new string[]
+            {
+                $"{machineName}\\Processor(_Total)\\% Processor Time",
+                $"{machineName}\\Memory\\Available Bytes",
+                $"{machineName}\\System\\System Calls/sec",
+                $"{machineName}\\Processor Information(_Total)\\% Processor Time"
+            };
+            
+            string? workingCounterPath = null;
+            
+            // 利用可能なカウンターを見つける
+            foreach (var testPath in testCounterPaths)
+            {
+                result = PdhApi.PdhAddCounter(query, testPath, IntPtr.Zero, out counter);
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    workingCounterPath = testPath;
+                    progress?.Report($"実データ検証に使用するカウンター: {testPath}");
+                    break;
+                }
+                else
+                {
+                    if (counter != IntPtr.Zero)
+                    {
+                        PdhApi.PdhRemoveCounter(counter);
+                        counter = IntPtr.Zero;
+                    }
+                }
+            }
+            
+            if (string.IsNullOrEmpty(workingCounterPath))
+            {
+                progress?.Report("実データ検証: 利用可能なテストカウンターが見つかりませんでした");
+                return TimeSpan.Zero;
+            }
+
+            // 最初の数個のデータポイントのタイムスタンプを取得
+            var timestamps = new List<DateTime>();
+            
+            for (int i = 0; i < 10; i++) // 最初の10個のサンプルを取得
+            {
+                result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
+                
+                if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
+                {
+                    break;
+                }
+                
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    timestamps.Add(PdhApi.DateTimeFromFileTime(timestamp));
+                }
+                else
+                {
+                    // 最初のコレクションでエラーが出ることがあるので、スキップして続行
+                    continue;
+                }
+            }
+
+            // タイムスタンプ間隔を計算
+            if (timestamps.Count >= 3) // 最低3個のサンプルが必要
+            {
+                var intervals = new List<TimeSpan>();
+                for (int i = 1; i < timestamps.Count; i++)
+                {
+                    var interval = timestamps[i] - timestamps[i - 1];
+                    if (interval.TotalSeconds > 0.1) // 0.1秒未満の間隔は無視（ノイズの可能性）
+                    {
+                        intervals.Add(interval);
+                    }
+                }
+                
+                if (intervals.Count >= 2)
+                {
+                    // 最も一般的な間隔を特定（四捨五入して秒単位でグループ化）
+                    var roundedIntervals = intervals
+                        .Select(t => Math.Round(t.TotalSeconds, 1))
+                        .GroupBy(s => s)
+                        .OrderByDescending(g => g.Count())
+                        .First();
+                    
+                    var mostCommonInterval = TimeSpan.FromSeconds(roundedIntervals.Key);
+                    
+                    progress?.Report($"実データ検証結果: {timestamps.Count}個のタイムスタンプから{intervals.Count}個の有効間隔を抽出");
+                    progress?.Report($"最も一般的な間隔: {mostCommonInterval.TotalSeconds:F1}秒 (出現回数: {roundedIntervals.Count()}/{intervals.Count})");
+                    
+                    return mostCommonInterval;
+                }
+                else
+                {
+                    progress?.Report($"実データ検証: 有効な間隔が不足 (有効間隔数: {intervals.Count})");
+                    return TimeSpan.Zero;
+                }
+            }
+            else
+            {
+                progress?.Report($"実データ検証: 十分なタイムスタンプを取得できませんでした (取得数: {timestamps.Count})");
+                return TimeSpan.Zero;
+            }
+        }
+        catch (Exception ex)
+        {
+            progress?.Report($"実データ間隔計算エラー: {ex.Message}");
+            return TimeSpan.Zero;
+        }
+        finally
+        {
+            if (counter != IntPtr.Zero)
+            {
+                PdhApi.PdhRemoveCounter(counter);
+            }
+            if (query != IntPtr.Zero)
+            {
+                PdhApi.PdhCloseQuery(query);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 時間間隔を分かりやすい形式にフォーマット
+    /// </summary>
+    private static string FormatInterval(TimeSpan interval)
+    {
+        if (interval.TotalHours >= 1)
+        {
+            return $"{interval.TotalHours:F1}時間";
+        }
+        else if (interval.TotalMinutes >= 1)
+        {
+            return $"{interval.TotalMinutes:F1}分";
+        }
+        else if (interval.TotalSeconds >= 1)
+        {
+            return $"{interval.TotalSeconds:F1}秒";
+        }
+        else if (interval.TotalMilliseconds >= 1)
+        {
+            return $"{interval.TotalMilliseconds:F0}ミリ秒";
+        }
+        else
+        {
+            return "不明";
+        }
+    }
+
+    /// <summary>
     /// 利用可能なマシン名を取得
     /// </summary>
     public async Task<List<string>> GetMachineNamesAsync(IProgress<string>? progress = null)
