@@ -343,17 +343,17 @@ public partial class MainWindow : Window
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
-        // グラフ領域のフォントサイズを+2に設定
-        // 軸ラベルのフォントサイズ設定（デフォルト12 + 2 = 14）
-        PerformanceChart.Plot.Axes.Bottom.Label.FontSize = 14;
-        PerformanceChart.Plot.Axes.Left.Label.FontSize = 14;
+        // グラフ領域のフォントサイズを16に設定
+        // 軸ラベルのフォントサイズ設定
+        PerformanceChart.Plot.Axes.Bottom.Label.FontSize = 16;
+        PerformanceChart.Plot.Axes.Left.Label.FontSize = 16;
         
-        // 軸目盛りのフォントサイズ設定（デフォルト10 + 2 = 12）
-        PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 12;
-        PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 12;
+        // 軸目盛りのフォントサイズ設定
+        PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 16;
+        PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
         
-        // 凡例のフォントサイズ設定（デフォルト11 + 2 = 13）
-        PerformanceChart.Plot.Legend.FontSize = 13;
+        // 凡例のフォントサイズ設定
+        PerformanceChart.Plot.Legend.FontSize = 16;
         
         // グラフの更新
         PerformanceChart.Refresh();
