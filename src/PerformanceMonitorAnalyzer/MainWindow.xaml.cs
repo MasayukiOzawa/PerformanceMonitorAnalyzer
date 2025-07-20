@@ -367,8 +367,8 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Legend.FontSize = 16;
         
         // 初期背景色を白に設定（透過率は後で制御）
-        PerformanceChart.Plot.FigureBackground.Color = System.Drawing.Color.White;
-        PerformanceChart.Plot.DataBackground.Color = System.Drawing.Color.White;
+        PerformanceChart.Plot.FigureBackground.Color = ScottPlot.Color.White;
+        PerformanceChart.Plot.DataBackground.Color = ScottPlot.Color.White;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -3641,10 +3641,10 @@ public partial class MainWindow : Window
                 // グラフ背景色を透過率に応じて設定
                 var backgroundColor = transparencyPercent switch
                 {
-                    0 => System.Drawing.Color.White,                                    // 完全不透明
-                    40 => System.Drawing.Color.FromArgb(153, 255, 255, 255),           // 40%透過
-                    80 => System.Drawing.Color.FromArgb(51, 255, 255, 255),            // 80%透過
-                    _ => System.Drawing.Color.White
+                    0 => ScottPlot.Color.White,                                        // 完全不透明
+                    40 => ScottPlot.Color.FromRgba(255, 255, 255, 153),               // 40%透過
+                    80 => ScottPlot.Color.FromRgba(255, 255, 255, 51),                // 80%透過
+                    _ => ScottPlot.Color.White
                 };
                 
                 // ScottPlotの背景色を更新
