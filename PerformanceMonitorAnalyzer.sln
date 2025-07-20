@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{3916A81C-EA6F-4B36-82EF-7D00910F11D6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PerformanceMonitorAnalyzer.Tests", "tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj", "{3E6B0262-518A-440A-85BB-A2F05ADE3B3B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{3E6B0262-518A-440A-85BB-A2F05ADE3B3B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E6B0262-518A-440A-85BB-A2F05ADE3B3B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E6B0262-518A-440A-85BB-A2F05ADE3B3B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E6B0262-518A-440A-85BB-A2F05ADE3B3B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3E6B0262-518A-440A-85BB-A2F05ADE3B3B} = {3916A81C-EA6F-4B36-82EF-7D00910F11D6}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,82 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ main, release, copilot/* ]
+  pull_request:
+    branches: [ main, release ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.csproj
+
+    - name: Build
+      run: dotnet build src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.csproj --no-restore --configuration Release
+
+    - name: Run tests
+      run: |
+        if (Test-Path "tests") {
+          dotnet test --no-build --configuration Release --verbosity normal
+        } else {
+          Write-Host "No test projects found, skipping tests"
+        }
+      shell: pwsh
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          src/PerformanceMonitorAnalyzer/bin/Release/
+          !src/PerformanceMonitorAnalyzer/bin/Release/**/*.pdb
+        retention-days: 7
+
+  publish:
+    name: Publish Release Builds
+    runs-on: windows-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release'
+
+    strategy:
+      matrix:
+        runtime: [win-x64, win-x86, win-arm64]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Publish ${{ matrix.runtime }}
+      run: |
+        dotnet publish src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.csproj `
+          --configuration Release `
+          --runtime ${{ matrix.runtime }} `
+          --self-contained true `
+          --output publish/${{ matrix.runtime }}
+
+    - name: Upload publish artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: publish-${{ matrix.runtime }}
+        path: publish/${{ matrix.runtime }}/
+        retention-days: 30

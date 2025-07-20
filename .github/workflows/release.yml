@@ -1,0 +1,67 @@
+name: Release from main
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release even if no changes'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  merge_to_main:
+    name: Merge release to main
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/release'
+
+    steps:
+    - name: Checkout release branch
+      uses: actions/checkout@v4
+      with:
+        ref: release
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Merge to main
+      run: |
+        git checkout main
+        git merge release --no-ff -m "Release merge from release branch"
+        git push origin main
+
+    - name: Create release tag
+      run: |
+        # Get version from project file
+        VERSION=$(grep -oP '<Version>\K[^<]+' src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.csproj || echo "1.0.0")
+        if [ -z "$VERSION" ]; then
+          VERSION="1.0.$(date +%Y%m%d)"
+        fi
+        
+        git tag -a "v$VERSION" -m "Release version $VERSION"
+        git push origin "v$VERSION"
+        
+        echo "RELEASE_VERSION=$VERSION" >> $GITHUB_ENV
+
+    - name: Create GitHub Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ env.RELEASE_VERSION }}
+        release_name: Release v${{ env.RELEASE_VERSION }}
+        body: |
+          Performance Monitor Analyzer Release v${{ env.RELEASE_VERSION }}
+          
+          ## Changes
+          This release includes the latest changes from the release branch.
+          
+          ## Downloads
+          - Windows x64: PerformanceMonitorAnalyzer-win-x64.exe
+          - Windows x86: PerformanceMonitorAnalyzer-win-x86.exe  
+          - Windows ARM64: PerformanceMonitorAnalyzer-win-arm64.exe
+        draft: false
+        prerelease: false
