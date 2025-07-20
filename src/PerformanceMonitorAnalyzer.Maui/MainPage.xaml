@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.Maui;assembly=LiveChartsCore.SkiaSharpView.Maui"
              Title="Performance Monitor Analyzer">
 
     <ScrollView>
@@ -205,9 +206,18 @@
                                Margin="0,0,0,10"/>
 
                         <!-- グラフプレースホルダー -->
+                        <lvc:CartesianChart x:Name="PerformanceChart"
+                                          HeightRequest="300"
+                                          Series="{Binding ChartSeries}"
+                                          XAxes="{Binding XAxes}"
+                                          YAxes="{Binding YAxes}"
+                                          BackgroundColor="White"
+                                          IsVisible="False"/>
+                        
                         <Frame BackgroundColor="White" 
                                BorderColor="{StaticResource BorderGray}"
-                               HeightRequest="300">
+                               HeightRequest="300"
+                               x:Name="ChartPlaceholderFrame">
                             <StackLayout x:Name="NoDataMessagePanel" 
                                        IsVisible="True"
                                        VerticalOptions="Center" 
@@ -231,7 +241,7 @@
                                         </FormattedString>
                                     </Label.FormattedText>
                                 </Label>
-                                <Label Text="✨ グラフ機能が実装されました！"
+                                <Label Text="✨ LiveCharts グラフ機能が実装されました！"
                                        HorizontalOptions="Center"
                                        FontSize="12"
                                        TextColor="{StaticResource AccentGreen}"

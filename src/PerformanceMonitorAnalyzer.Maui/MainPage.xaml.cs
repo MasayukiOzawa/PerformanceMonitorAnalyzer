@@ -4,6 +4,10 @@ using Microsoft.Maui.Storage;
 using CommunityToolkit.Maui.Storage;
 using Newtonsoft.Json;
 using System.Text;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
+using SkiaSharp;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -88,7 +92,7 @@ public enum NodeType
     Counter
 }
 
-public partial class MainPage : ContentPage
+public partial class MainPage : ContentPage, INotifyPropertyChanged
 {
     private BlgFileAnalyzer? _blgAnalyzer;
     private CounterPattern? _counterPattern;
@@ -96,12 +100,42 @@ public partial class MainPage : ContentPage
     private string? _currentBlgFilePath;
     private CancellationTokenSource? _cancellationTokenSource;
     
+    // LiveCharts properties
+    public ObservableCollection<ISeries> ChartSeries { get; set; } = new();
+    public ObservableCollection<Axis> XAxes { get; set; } = new();
+    public ObservableCollection<Axis> YAxes { get; set; } = new();
+    
+    public event PropertyChangedEventHandler? PropertyChanged;
+    
     public MainPage()
     {
         InitializeComponent();
         CounterCollectionView.ItemsSource = _counterItems;
         
+        // LiveCharts初期化
+        InitializeChart();
+        BindingContext = this;
+        
         InitializeAsync();
+    }
+    
+    private void InitializeChart()
+    {
+        XAxes.Add(new Axis
+        {
+            Name = "時間",
+            NamePaint = new SolidColorPaint(SKColors.Black),
+            LabelsPaint = new SolidColorPaint(SKColors.Gray),
+            TextSize = 12
+        });
+        
+        YAxes.Add(new Axis
+        {
+            Name = "値",
+            NamePaint = new SolidColorPaint(SKColors.Black),
+            LabelsPaint = new SolidColorPaint(SKColors.Gray),
+            TextSize = 12
+        });
     }
     
     private async void InitializeAsync()
@@ -427,6 +461,9 @@ public partial class MainPage : ContentPage
         
         // データテーブルを更新
         UpdateDataTables(counterDataMap);
+        
+        // グラフを更新
+        UpdateChart(counterDataMap);
     }
     
     private void UpdateStatistics(Dictionary<string, List<BlgFileAnalyzer.CounterDataPoint>> counterDataMap)
@@ -641,5 +678,57 @@ public partial class MainPage : ContentPage
         {
             await DisplayAlert("CSV出力エラー", $"CSV出力中にエラーが発生しました: {ex.Message}", "OK");
         }
+    }
+    
+    private void UpdateChart(Dictionary<string, List<BlgFileAnalyzer.CounterDataPoint>> counterDataMap)
+    {
+        ChartSeries.Clear();
+        
+        var colors = new SKColor[]
+        {
+            SKColors.Blue, SKColors.Red, SKColors.Green, SKColors.Orange,
+            SKColors.Purple, SKColors.Brown, SKColors.Pink, SKColors.Gray
+        };
+        
+        int colorIndex = 0;
+        
+        foreach (var kvp in counterDataMap.Take(8)) // 最大8つのカウンターまで表示
+        {
+            var counterPath = kvp.Key;
+            var dataPoints = kvp.Value;
+            
+            if (dataPoints.Count == 0) continue;
+            
+            var values = dataPoints.Select((dp, index) => new ObservablePoint(index, dp.Value)).ToArray();
+            
+            var series = new LineSeries<ObservablePoint>
+            {
+                Name = Path.GetFileName(counterPath),
+                Values = values,
+                LineSmoothness = 0.5,
+                Stroke = new SolidColorPaint(colors[colorIndex % colors.Length]) { StrokeThickness = 2 },
+                Fill = null,
+                GeometryStroke = new SolidColorPaint(colors[colorIndex % colors.Length]) { StrokeThickness = 4 },
+                GeometryFill = new SolidColorPaint(colors[colorIndex % colors.Length]),
+                GeometrySize = 4
+            };
+            
+            ChartSeries.Add(series);
+            colorIndex++;
+        }
+        
+        // グラフを表示
+        if (ChartSeries.Count > 0)
+        {
+            PerformanceChart.IsVisible = true;
+            ChartPlaceholderFrame.IsVisible = false;
+        }
+        else
+        {
+            PerformanceChart.IsVisible = false;
+            ChartPlaceholderFrame.IsVisible = true;
+        }
+        
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChartSeries)));
     }
 }
