@@ -1709,8 +1709,8 @@ public partial class MainWindow : Window
             
             // 現在のチャートタイプに応じて統計情報を計算
             var currentCounters = _currentChartType == ChartType.LineChart 
-                ? _chartSeries.Keys 
-                : _areaChartSeries.Keys;
+                ? (IEnumerable<string>)_chartSeries.Keys 
+                : (IEnumerable<string>)_areaChartSeries.Keys;
             
             // 各カウンターの統計情報を計算
             foreach (var counterName in currentCounters.OrderBy(c => c))
@@ -3090,8 +3090,8 @@ public partial class MainWindow : Window
             
             // 現在のチャートタイプに応じてカウンターを取得
             var currentCounters = _currentChartType == ChartType.LineChart 
-                ? _chartSeries.Keys 
-                : _areaChartSeries.Keys;
+                ? (IEnumerable<string>)_chartSeries.Keys 
+                : (IEnumerable<string>)_areaChartSeries.Keys;
             
             // 各カウンターのスケール設定コントロールを追加
             foreach (var counter in currentCounters.OrderBy(c => c))
