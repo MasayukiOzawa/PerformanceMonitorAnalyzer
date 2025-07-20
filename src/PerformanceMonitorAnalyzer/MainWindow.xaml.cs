@@ -304,6 +304,9 @@ public partial class MainWindow : Window
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
     
+    // レート計算モードのフラグ
+    private bool _isRateCalculationMode = false;
+    
     // サポートされるスケール値
     private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
     
@@ -1111,6 +1114,113 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// データポイントのリストからレート計算を行い、新しいデータポイントリストを返す
+    /// </summary>
+    /// <param name="dataPoints">元のデータポイント</param>
+    /// <returns>レート計算されたデータポイント</returns>
+    private List<PerformanceDataPoint> CalculateRateValues(List<PerformanceDataPoint> dataPoints)
+    {
+        if (dataPoints.Count < 2)
+        {
+            // データが1つ以下の場合はレート計算できないため、空のリストを返す
+            return new List<PerformanceDataPoint>();
+        }
+
+        var rateDataPoints = new List<PerformanceDataPoint>();
+        
+        for (int i = 1; i < dataPoints.Count; i++)
+        {
+            var currentPoint = dataPoints[i];
+            var previousPoint = dataPoints[i - 1];
+            
+            // 時間間隔を計算（秒単位）
+            var timeSpan = currentPoint.Timestamp - previousPoint.Timestamp;
+            var intervalSeconds = timeSpan.TotalSeconds;
+            
+            // 時間間隔が0の場合はスキップ
+            if (intervalSeconds <= 0)
+            {
+                continue;
+            }
+            
+            // 値の差分を計算
+            var valueDifference = currentPoint.Value - previousPoint.Value;
+            
+            // レート（差分/時間間隔）を計算
+            var rateValue = valueDifference / intervalSeconds;
+            
+            // レート計算されたデータポイントを作成
+            var rateDataPoint = new PerformanceDataPoint
+            {
+                Timestamp = currentPoint.Timestamp,
+                Value = rateValue,
+                FormattedValue = FormatValueWithUnit(rateValue, "/sec")
+            };
+            
+            rateDataPoints.Add(rateDataPoint);
+        }
+        
+        return rateDataPoints;
+    }
+
+    /// <summary>
+    /// 表示モード変更時のイベントハンドラー
+    /// </summary>
+    private void DisplayMode_Changed(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is RadioButton radioButton && radioButton.IsChecked == true)
+            {
+                // レート計算モードの状態を更新
+                _isRateCalculationMode = radioButton.Name == "RateCalculationRadioButton";
+                
+                System.Diagnostics.Debug.WriteLine($"Display mode changed to: {(_isRateCalculationMode ? "Rate Calculation" : "Raw Values")}");
+                
+                // 既存のグラフを全て再描画
+                RefreshAllChartsWithCurrentMode();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in DisplayMode_Changed: {ex.Message}");
+            LogError($"Error in DisplayMode_Changed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 現在のモードで全てのチャートを再描画
+    /// </summary>
+    private void RefreshAllChartsWithCurrentMode()
+    {
+        try
+        {
+            // 現在チャートに表示されているカウンターのリストを取得
+            var currentCounters = _chartSeries.Keys.ToList();
+            
+            // 一旦全てのシリーズをクリア
+            PerformanceChart.Plot.Clear();
+            _chartSeries.Clear();
+            
+            // 各カウンターを新しいモードで再描画
+            foreach (var counter in currentCounters)
+            {
+                AddCounterToChartInternal(counter);
+            }
+            
+            // グラフを更新
+            PerformanceChart.Plot.Axes.AutoScale();
+            PerformanceChart.Refresh();
+            
+            System.Diagnostics.Debug.WriteLine($"Refreshed {currentCounters.Count} chart series with {(_isRateCalculationMode ? "rate calculation" : "raw values")} mode");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in RefreshAllChartsWithCurrentMode: {ex.Message}");
+            LogError($"Error in RefreshAllChartsWithCurrentMode: {ex}");
+        }
+    }
 
 
     private void AddCounterToChart(string counter)
@@ -1144,9 +1254,20 @@ public partial class MainWindow : Window
             return;
         }
         
+        // レート計算モードが有効な場合はレート計算を適用
+        if (_isRateCalculationMode)
+        {
+            dataPoints = CalculateRateValues(dataPoints);
+            if (!dataPoints.Any())
+            {
+                System.Diagnostics.Debug.WriteLine($"No rate data points calculated for counter: {counter}");
+                return;
+            }
+        }
+        
         // カウンターのスケール設定を取得（デフォルトは1.0）
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
-        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter} (mode: {(_isRateCalculationMode ? "rate" : "raw")})");
         
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
         var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
@@ -1207,9 +1328,20 @@ public partial class MainWindow : Window
             return;
         }
         
+        // レート計算モードが有効な場合はレート計算を適用
+        if (_isRateCalculationMode)
+        {
+            dataPoints = CalculateRateValues(dataPoints);
+            if (!dataPoints.Any())
+            {
+                System.Diagnostics.Debug.WriteLine($"No rate data points calculated for counter: {counter}");
+                return;
+            }
+        }
+        
         // カウンターのスケール設定を取得（デフォルトは1.0）
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
-        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter} (mode: {(_isRateCalculationMode ? "rate" : "raw")})");
         
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
         var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
