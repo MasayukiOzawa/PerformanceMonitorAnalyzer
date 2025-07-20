@@ -822,9 +822,8 @@ public partial class MainWindow : Window
             
             if (counters.Count > 0)
             {
-                progress?.Report("カウンターデータを読み込み中...");
-                // 実際のカウンターデータを読み込み（最初の10個のみテスト用）
-                await LoadCounterDataWithPdhApiAsync(analyzer, counters, progress);
+                // カウンターパスの生成が完了 - データポイントの読み込みは選択時に実行
+                progress?.Report($"カウンター構造を構築しました（{counters.Count}個のカウンター）");
                 return counters;
             }
             else
@@ -846,6 +845,9 @@ public partial class MainWindow : Window
 
 
 
+    /* 
+    // 注意: このメソッドは初期読み込み時の処理高速化のため無効化されました
+    // 実際のカウンターデータ読み込みは「選択されたカウンターを読み込み」ボタン押下時に実行されます
     private async Task LoadCounterDataWithPdhApiAsync(BlgFileAnalyzer analyzer, List<string> counters, IProgress<string>? progress)
     {
         try
@@ -905,6 +907,7 @@ public partial class MainWindow : Window
             throw;
         }
     }
+    */
 
     private void BuildCounterTree(List<string> counters)
     {
@@ -2091,37 +2094,21 @@ public partial class MainWindow : Window
             {
                 LogError($"PDH APIによる直接時間範囲取得に失敗、フォールバック方法を試行: {ex.Message}");
                 
-                // フォールバック: サンプルカウンターから時間範囲を取得
+                // フォールバック: GetTimeRangeAsyncメソッドを使用（データポイントを読み込まずに時間範囲を取得）
                 try
                 {
-                    // ワイルドカードパスを使用してカウンターを取得
-                    var expandedCounters = await analyzer.ExpandWildCardPathAsync(@"\*(*)\*", progress);
+                    progress?.Report("フォールバック方法で時間範囲を取得中...");
+                    var (startTime, endTime) = await analyzer.GetTimeRangeAsync(progress);
                     
-                    if (expandedCounters.Count == 0)
-                    {
-                        expandedCounters = await analyzer.ExpandWildCardPathAsync(@"\*\*", progress);
-                    }
+                    _fileStartTime = startTime;
+                    _fileEndTime = endTime;
+                    _timeRangeDetected = true;
                     
-                    if (expandedCounters.Count > 0)
-                    {
-                        var sampleCounterPath = expandedCounters.First();
-                        progress?.Report($"サンプルカウンター '{sampleCounterPath}' から時間範囲を取得中...");
-                        
-                        var counterInfo = await analyzer.LoadCounterDataAsync(sampleCounterPath, progress);
-                        
-                        if (counterInfo.DataPoints.Count > 0)
-                        {
-                            _fileStartTime = counterInfo.DataPoints.First().Timestamp;
-                            _fileEndTime = counterInfo.DataPoints.Last().Timestamp;
-                            _timeRangeDetected = true;
-                            
-                            // UIを更新
-                            UpdateTimeRangeUI();
-                            
-                            LogError($"フォールバック方法で時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
-                            return true;
-                        }
-                    }
+                    // UIを更新
+                    UpdateTimeRangeUI();
+                    
+                    LogError($"フォールバック方法で時間範囲を検出: {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
+                    return true;
                 }
                 catch (Exception fallbackEx)
                 {
