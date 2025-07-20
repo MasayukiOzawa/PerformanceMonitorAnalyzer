@@ -299,6 +299,15 @@
                     <!-- グラフ操作ボタン -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
                                x:Name="GraphControlPanel" Visibility="Collapsed">
+                        <Button x:Name="ResetZoomButton" 
+                               Content="🔄 ズームをリセット" 
+                               Click="ResetZoom_Click"
+                               Background="#FFF3E0" 
+                               BorderBrush="#F57C00"
+                               Foreground="#F57C00"
+                               Padding="10,5"
+                               Margin="5"
+                               ToolTip="時間範囲とズーム倍率を初期状態にリセットします"/>
                         <Button x:Name="CopyGraphButton" 
                                Content="📋 グラフをクリップボードにコピー" 
                                Click="CopyGraphToClipboard_Click"

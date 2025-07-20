@@ -3951,6 +3951,39 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// ズームリセットボタンのクリックイベント
+    /// </summary>
+    private void ResetZoom_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // 時間範囲スライダーを初期状態にリセット
+            StartTimeSlider.Value = 0;
+            EndTimeSlider.Value = 100;
+            
+            // スライダーテキストを更新
+            UpdateTimeSliderTexts();
+            
+            // ScottPlotの自動スケールを適用してズームをリセット
+            PerformanceChart.Plot.Axes.AutoScale();
+            
+            // X軸範囲を更新（全体範囲に戻す）
+            UpdateChartXAxisRange();
+            
+            // グラフを更新
+            PerformanceChart.Refresh();
+            
+            AddOperationLog(LogLevel.Info, "ズームと時間範囲をリセットしました。");
+            System.Diagnostics.Debug.WriteLine("ズームリセット: 時間範囲とズーム倍率を初期状態に戻しました");
+        }
+        catch (Exception ex)
+        {
+            LogError($"ズームリセットエラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"ズームリセット中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// グラフをクリップボードにコピーする内部実装
     /// </summary>
     private void CopyGraphToClipboardInternal()
