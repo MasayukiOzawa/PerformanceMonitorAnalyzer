@@ -1332,6 +1332,9 @@ public partial class MainWindow : Window
         // Y軸の最小値を0に制限
         EnsureYAxisMinimumZero();
         
+        // X軸の範囲を選択された時間範囲に設定
+        UpdateChartXAxisRange();
+        
         PerformanceChart.Refresh();
     }
 
@@ -1390,6 +1393,9 @@ public partial class MainWindow : Window
         
         // Y軸の最小値を0に制限
         EnsureYAxisMinimumZero();
+        
+        // X軸の範囲を選択された時間範囲に設定
+        UpdateChartXAxisRange();
         
         PerformanceChart.Refresh();
         
@@ -1523,6 +1529,9 @@ public partial class MainWindow : Window
             
             // Y軸の最小値を0に制限
             EnsureYAxisMinimumZero();
+            
+            // X軸の範囲を選択された時間範囲に設定
+            UpdateChartXAxisRange();
             
             PerformanceChart.Refresh();
             UpdateChartVisibility();
@@ -2519,6 +2528,9 @@ public partial class MainWindow : Window
             
             // 実行ボタンを有効化
             ExecuteButton.IsEnabled = true;
+            
+            // グラフのX軸範囲を初期化
+            UpdateChartXAxisRange();
         }
         else
         {
@@ -2570,6 +2582,9 @@ public partial class MainWindow : Window
             
             // relog.exe情報表示を更新
             UpdateRelogCommandDisplay();
+            
+            // グラフのX軸範囲を更新
+            UpdateChartXAxisRange();
         }
     }
 
@@ -3171,6 +3186,10 @@ public partial class MainWindow : Window
                         PerformanceChart.Plot.Remove(scatter);
                         _chartSeries.Remove(counter);
                         PerformanceChart.Refresh();
+                        
+                        // X軸の範囲を選択された時間範囲に設定
+                        UpdateChartXAxisRange();
+                        
                         System.Diagnostics.Debug.WriteLine($"Removed line series from chart for: {counter}");
                     }
                     
@@ -3681,6 +3700,52 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"relog.exe情報表示の更新エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 時間スライダーの値から実際のDateTime値を計算する
+    /// </summary>
+    private (DateTime startTime, DateTime endTime) GetSelectedTimeRange()
+    {
+        if (!_timeRangeDetected)
+        {
+            return (_fileStartTime, _fileEndTime);
+        }
+
+        var totalDuration = _fileEndTime - _fileStartTime;
+        var startTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * StartTimeSlider.Value / 100);
+        var endTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * EndTimeSlider.Value / 100);
+        
+        return (startTime, endTime);
+    }
+
+    /// <summary>
+    /// グラフのX軸範囲を選択された時間範囲に設定する
+    /// </summary>
+    private void UpdateChartXAxisRange()
+    {
+        try
+        {
+            if (!_timeRangeDetected)
+            {
+                return;
+            }
+
+            var (startTime, endTime) = GetSelectedTimeRange();
+            
+            // ScottPlotでX軸の範囲を設定
+            PerformanceChart.Plot.Axes.Bottom.Min = startTime.ToOADate();
+            PerformanceChart.Plot.Axes.Bottom.Max = endTime.ToOADate();
+            
+            // グラフを更新
+            PerformanceChart.Refresh();
+            
+            System.Diagnostics.Debug.WriteLine($"X軸範囲を更新: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}");
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフX軸範囲の更新エラー: {ex.Message}");
         }
     }
 
