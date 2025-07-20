@@ -2789,7 +2789,6 @@ public partial class MainWindow : Window
                                 errors.Add($"{counterInfo.FullPath}: 有効なデータポイントが見つかりませんでした");
                             }
                         }
-                        }
                         else
                         {
                             errors.Add($"{counterInfo.FullPath}: データポイントが見つかりませんでした");
