@@ -5,8 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:scottplot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
-        Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized">
-    <Grid>
+        Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized"
+        Background="{StaticResource BackgroundColor}">
+    <Grid Background="{StaticResource BackgroundColor}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -37,17 +38,20 @@
         </Menu>
 
         <!-- プログレスバー -->
-        <Grid Grid.Row="1" x:Name="ProgressGrid" Visibility="Collapsed" Background="#F0F0F0" Margin="10,5">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" x:Name="ProgressStatusText" Text="ファイルを読み込み中..." 
-                       Margin="10,10,10,5" FontWeight="Bold"/>
-            <ProgressBar Grid.Row="1" x:Name="LoadingProgressBar" 
-                         Height="20" Margin="10,0,10,10" 
-                         IsIndeterminate="True"/>
-        </Grid>
+        <Border Grid.Row="1" x:Name="ProgressGrid" Visibility="Collapsed" Style="{StaticResource ModernCard}" Margin="10,5">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" x:Name="ProgressStatusText" Text="📁 ファイルを読み込み中..." 
+                           Margin="10,10,10,5" FontWeight="SemiBold" Foreground="{StaticResource OnSurfaceColor}"/>
+                <ProgressBar Grid.Row="1" x:Name="LoadingProgressBar" 
+                             Height="8" Margin="10,0,10,10" 
+                             Style="{StaticResource ModernProgressBar}"
+                             IsIndeterminate="True"/>
+            </Grid>
+        </Border>
 
         <!-- 上部: カウンター選択とグラフ表示 -->
         <Grid Grid.Row="2" Margin="10">
@@ -58,7 +62,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- 左側: カウンター一覧 -->
-            <GroupBox Grid.Column="0" Header="パフォーマンスカウンター" Margin="0,0,10,0">
+            <GroupBox Grid.Column="0" Header="📊 パフォーマンスカウンター" Margin="0,0,10,0" Style="{StaticResource ModernGroupBox}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -97,12 +101,14 @@
                         <ComboBox x:Name="PatternComboBox" 
                                 DisplayMemberPath="Name"
                                 SelectionChanged="PatternComboBox_SelectionChanged"
+                                Style="{StaticResource ModernComboBox}"
                                 ToolTip="事前定義されたカウンターパターンを選択"/>
                         <Button x:Name="ApplyPatternButton" 
-                              Content="パターンを適用" 
+                              Content="✨ パターンを適用" 
                               Margin="0,3,0,0" 
                               Click="ApplyPattern_Click"
                               IsEnabled="False"
+                              Style="{StaticResource ModernButton}"
                               ToolTip="選択されたパターンでカウンターを自動選択します"/>
                     </StackPanel>
                     
@@ -142,10 +148,11 @@
 
                     <!-- 時間範囲選択 -->
                     <Expander Grid.Row="5" Header="📅 時間範囲選択" IsExpanded="False" Margin="5,5,5,0"
-                             x:Name="TimeRangeExpander" Visibility="Collapsed">
+                             x:Name="TimeRangeExpander" Visibility="Collapsed" 
+                             Foreground="{StaticResource OnSurfaceColor}">
                         <StackPanel Margin="10">
-                            <TextBlock Text="時間範囲:" FontWeight="SemiBold" Margin="0,0,0,5"/>
-                            <TextBlock x:Name="TimeRangeDisplay" Text="時間範囲が検出されていません" Margin="0,0,0,10" FontSize="11" Foreground="DarkGray"/>
+                            <TextBlock Text="時間範囲:" FontWeight="SemiBold" Margin="0,0,0,5" Foreground="{StaticResource OnSurfaceColor}"/>
+                            <TextBlock x:Name="TimeRangeDisplay" Text="時間範囲が検出されていません" Margin="0,0,0,10" FontSize="11" Foreground="{StaticResource OnSurfaceVariantColor}"/>
                             
                             <Grid Margin="0,5">
                                 <Grid.RowDefinitions>
@@ -180,12 +187,14 @@
                     
                     <!-- relog.exe情報表示 -->
                     <Expander Grid.Row="6" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
-                             Margin="5,5,5,0" x:Name="RelogCommandExpander" Visibility="Collapsed">
+                             Margin="5,5,5,0" x:Name="RelogCommandExpander" Visibility="Collapsed"
+                             Foreground="{StaticResource OnSurfaceColor}">
                         <StackPanel Margin="5">
-                            <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
+                            <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" 
+                                     Margin="0,0,0,3" Foreground="{StaticResource OnSurfaceColor}"/>
                             <TextBox x:Name="RelogCommandDisplay" 
                                     IsReadOnly="True" 
-                                    Background="LightCyan"
+                                    Style="{StaticResource ModernTextBox}"
                                     FontFamily="Consolas"
                                     FontSize="10"
                                     TextWrapping="Wrap"
@@ -198,19 +207,19 @@
                         <Button Content="🚀 選択されたカウンターを読み込み" 
                                AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"
-                               Background="LightBlue" 
-                               Padding="8,4"
+                               Style="{StaticResource ModernButton}"
+                               Padding="12,8"
                                Margin="0,0,10,0"
                                IsEnabled="False"
                                x:Name="ExecuteButton"/>
-                        <Button Content="すべて選択" Click="SelectAll_Click" Margin="0,0,5,0"/>
-                        <Button Content="すべて解除" Click="UnselectAll_Click"/>
+                        <Button Content="✅ すべて選択" Click="SelectAll_Click" Margin="0,0,5,0" Style="{StaticResource ModernSecondaryButton}"/>
+                        <Button Content="❌ すべて解除" Click="UnselectAll_Click" Style="{StaticResource ModernSecondaryButton}"/>
                     </StackPanel>
                 </Grid>
             </GroupBox>
 
             <!-- 中央: グラフ表示 -->
-            <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
+            <GroupBox Grid.Column="1" Header="📈 グラフ表示" Margin="0,0,10,0" Style="{StaticResource ModernGroupBox}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -219,23 +228,26 @@
                     </Grid.RowDefinitions>
                     
                     <!-- グラフタイプ選択 -->
-                    <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Margin="5,5,5,0">
+                    <Border Grid.Row="0" Style="{StaticResource ModernCard}" Margin="5,5,5,0">
                         <StackPanel Orientation="Horizontal" Margin="10,8">
                             <TextBlock Text="📊 グラフタイプ:" 
                                      VerticalAlignment="Center" 
                                      FontWeight="SemiBold" 
+                                     Foreground="{StaticResource OnSurfaceColor}"
                                      Margin="0,0,15,0"/>
                             <RadioButton x:Name="LineChartRadio" 
-                                       Content="折れ線グラフ" 
+                                       Content="📈 折れ線グラフ" 
                                        IsChecked="True" 
                                        GroupName="ChartType"
                                        Checked="ChartType_Changed"
+                                       Style="{StaticResource ModernRadioButton}"
                                        Margin="0,0,20,0"
                                        VerticalAlignment="Center"/>
                             <RadioButton x:Name="StackedAreaChartRadio" 
-                                       Content="積み重ね面グラフ" 
+                                       Content="📊 積み重ね面グラフ" 
                                        GroupName="ChartType"
                                        Checked="ChartType_Changed"
+                                       Style="{StaticResource ModernRadioButton}"
                                        VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
@@ -272,9 +284,7 @@
                     
                     <!-- 統計情報表示エリア -->
                     <Border Grid.Row="2" x:Name="StatisticsBorder" 
-                           Background="#F8F8F8" 
-                           BorderBrush="#E0E0E0" 
-                           BorderThickness="0,1,0,0" 
+                           Style="{StaticResource ModernCard}"
                            Margin="5,0,5,5"
                            Visibility="Collapsed">
                         <Grid Margin="8">
@@ -369,7 +379,7 @@
             </GroupBox>
 
             <!-- 右側: スケール設定 -->
-            <GroupBox Grid.Column="2" Header="スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed">
+            <GroupBox Grid.Column="2" Header="⚙️ スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed" Style="{StaticResource ModernGroupBox}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -422,7 +432,7 @@
             </Grid.ColumnDefinitions>
             
             <!-- 左側: データテーブル（タブ形式） -->
-            <GroupBox Grid.Column="0" Header="📊 データテーブル">
+            <GroupBox Grid.Column="0" Header="📊 データテーブル" Style="{StaticResource ModernGroupBox}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -430,21 +440,24 @@
                     </Grid.RowDefinitions>
                     
                     <!-- データテーブルの説明とコントロール -->
-                    <Border Grid.Row="0" Margin="5" Background="#F8F8F8" Padding="5">
+                    <Border Grid.Row="0" Margin="5" Style="{StaticResource ModernCard}" Padding="16">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0">
+                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0" 
+                                     Foreground="{StaticResource OnSurfaceColor}">
                                 <Run Text="📈 カウンター選択方法: "/>
-                                <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="DarkBlue"/>
+                                <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="{StaticResource PrimaryColor}"/>
                                 <Run Text=" または "/>
-                                <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="DarkGreen"/>
+                                <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="{StaticResource SuccessColor}"/>
                             </TextBlock>
-                            <Button Content="すべてのタブを閉じる" 
+                            <Button Content="🗂️ すべてのタブを閉じる" 
                                   Click="CloseAllTabs_Click" 
-                                  Padding="8,2,8,2"
+                                  Style="{StaticResource ModernSecondaryButton}"
+                                  Padding="12,6"
                                   Margin="0,0,10,0"/>
-                            <Button Content="全データをCSV出力" 
+                            <Button Content="💾 全データをCSV出力" 
                                   Click="ExportAllDataToCsv_Click" 
-                                  Padding="8,2,8,2"/>
+                                  Style="{StaticResource ModernSecondaryButton}"
+                                  Padding="12,6"/>
                         </StackPanel>
                     </Border>
                     
@@ -477,7 +490,7 @@
             </GridSplitter>
             
             <!-- 右側: ログ表示 -->
-            <GroupBox Grid.Column="2" Header="📋 ログ表示">
+            <GroupBox Grid.Column="2" Header="📋 ログ表示" Style="{StaticResource ModernGroupBox}">
                 <TabControl x:Name="LogTabControl">
                     <!-- ログタブは動的に追加される -->
                 </TabControl>
