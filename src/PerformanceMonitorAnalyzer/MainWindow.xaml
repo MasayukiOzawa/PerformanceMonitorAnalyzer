@@ -88,7 +88,7 @@
                              Text="" 
                              Margin="5,25,5,10" 
                              FontWeight="Bold"
-                             Foreground="DarkGray"
+                             Foreground="DarkBlue"
                              TextWrapping="Wrap"
                              Visibility="Collapsed"/>
                     
@@ -97,7 +97,7 @@
                              Text="" 
                              Margin="5,45,5,10" 
                              FontWeight="Bold"
-                             Foreground="DarkGray"
+                             Foreground="DarkBlue"
                              TextWrapping="Wrap"
                              Visibility="Collapsed"/>
                     
