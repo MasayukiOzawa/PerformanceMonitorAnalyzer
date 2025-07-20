@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage x:Class="PerformanceMonitorAnalyzer.MainPage"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             Title="Performance Monitor Analyzer">
+
+    <ScrollView>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="300"/>
+            </Grid.RowDefinitions>
+
+            <!-- ツールバー -->
+            <Grid Grid.Row="0" BackgroundColor="{StaticResource Primary}" Padding="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <Label Grid.Column="0" 
+                       Text="Performance Monitor Analyzer" 
+                       FontSize="18" 
+                       FontAttributes="Bold" 
+                       TextColor="White" 
+                       VerticalOptions="Center"/>
+                
+                <Button Grid.Column="1" 
+                        Text="📂 BLGファイルを開く" 
+                        Clicked="OpenBlgFile_Click" 
+                        BackgroundColor="Transparent" 
+                        TextColor="White" 
+                        BorderColor="White" 
+                        BorderWidth="1" 
+                        Margin="5,0"/>
+                
+                <Button Grid.Column="2" 
+                        Text="🎯 パターン設定" 
+                        Clicked="OpenPatternConfig_Click" 
+                        BackgroundColor="Transparent" 
+                        TextColor="White" 
+                        BorderColor="White" 
+                        BorderWidth="1" 
+                        Margin="5,0"/>
+                
+                <Button Grid.Column="3" 
+                        Text="❌ 終了" 
+                        Clicked="Exit_Click" 
+                        BackgroundColor="Transparent" 
+                        TextColor="White" 
+                        BorderColor="White" 
+                        BorderWidth="1" 
+                        Margin="5,0"/>
+            </Grid>
+
+            <!-- プログレスバー -->
+            <Frame Grid.Row="1" 
+                   x:Name="ProgressFrame" 
+                   IsVisible="False" 
+                   BackgroundColor="{StaticResource BackgroundGray}" 
+                   BorderColor="{StaticResource BorderGray}"
+                   Margin="10,5">
+                <StackLayout>
+                    <Label x:Name="ProgressStatusText" 
+                           Text="ファイルを読み込み中..." 
+                           FontAttributes="Bold"/>
+                    <ActivityIndicator x:Name="LoadingProgressBar" 
+                                     IsRunning="True" 
+                                     IsVisible="True"/>
+                </StackLayout>
+            </Frame>
+
+            <!-- メインコンテンツ -->
+            <Grid Grid.Row="2" Margin="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="350"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左側: カウンター選択 -->
+                <Frame Grid.Column="0" BorderColor="{StaticResource BorderGray}" Margin="0,0,10,0">
+                    <StackLayout>
+                        <Label Text="パフォーマンスカウンター" 
+                               FontSize="16" 
+                               FontAttributes="Bold" 
+                               Margin="0,0,0,10"/>
+
+                        <!-- ファイル名表示 -->
+                        <Label x:Name="FileNameDisplay" 
+                               Text="ファイルが選択されていません" 
+                               FontAttributes="Bold"
+                               TextColor="{StaticResource AccentBlue}"
+                               Margin="0,0,0,10"/>
+
+                        <!-- パターン選択 -->
+                        <StackLayout Margin="0,0,0,15">
+                            <Label Text="🎯 カウンターパターン:" 
+                                   FontAttributes="Bold" 
+                                   Margin="0,0,0,5"/>
+                            <Picker x:Name="PatternPicker" 
+                                    Title="パターンを選択..."
+                                    SelectedIndexChanged="PatternPicker_SelectedIndexChanged"/>
+                            <Button x:Name="ApplyPatternButton" 
+                                    Text="パターンを適用" 
+                                    Clicked="ApplyPattern_Click"
+                                    IsEnabled="False"
+                                    Margin="0,5,0,0"/>
+                        </StackLayout>
+
+                        <Label Text="📈 表示したいカウンターをチェック:" 
+                               FontAttributes="Bold" 
+                               Margin="0,0,0,5"/>
+
+                        <!-- カウンタートリービュー（CollectionViewで代替） -->
+                        <ScrollView HeightRequest="300">
+                            <CollectionView x:Name="CounterCollectionView"
+                                          ItemsSource="{Binding CounterItems}">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Padding="5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <CheckBox Grid.Column="0" 
+                                                    IsChecked="{Binding IsChecked}"
+                                                    CheckedChanged="CounterCheckBox_CheckedChanged"/>
+                                            <Label Grid.Column="1" 
+                                                   Text="📊" 
+                                                   Margin="5,0"/>
+                                            <Label Grid.Column="2" 
+                                                   Text="{Binding DisplayName}"
+                                                   VerticalOptions="Center"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </ScrollView>
+
+                        <!-- 時間範囲選択 -->
+                        <toolkit:Expander x:Name="TimeRangeExpander" 
+                                        IsVisible="False"
+                                        Margin="0,10,0,0">
+                            <toolkit:Expander.Header>
+                                <Label Text="📅 時間範囲選択" FontAttributes="Bold"/>
+                            </toolkit:Expander.Header>
+                            <StackLayout Margin="10">
+                                <Label x:Name="TimeRangeDisplay" 
+                                       Text="時間範囲が検出されていません" 
+                                       FontSize="11" 
+                                       TextColor="{StaticResource Gray500}"/>
+                                
+                                <Label Text="開始時間:" FontSize="11" Margin="0,10,0,2"/>
+                                <Slider x:Name="StartTimeSlider" 
+                                        Minimum="0" Maximum="100" Value="0"
+                                        ValueChanged="TimeSlider_ValueChanged"/>
+                                <Label x:Name="StartTimeText" 
+                                       Text="--:--:--" 
+                                       FontSize="10" 
+                                       TextColor="{StaticResource AccentBlue}"/>
+                                
+                                <Label Text="終了時間:" FontSize="11" Margin="0,10,0,2"/>
+                                <Slider x:Name="EndTimeSlider" 
+                                        Minimum="0" Maximum="100" Value="100"
+                                        ValueChanged="TimeSlider_ValueChanged"/>
+                                <Label x:Name="EndTimeText" 
+                                       Text="--:--:--" 
+                                       FontSize="10" 
+                                       TextColor="{StaticResource AccentBlue}"/>
+                            </StackLayout>
+                        </toolkit:Expander>
+
+                        <!-- 操作ボタン -->
+                        <StackLayout Orientation="Horizontal" 
+                                   HorizontalOptions="End" 
+                                   Margin="0,15,0,0">
+                            <Button Text="🚀 選択されたカウンターを読み込み" 
+                                    x:Name="ExecuteButton"
+                                    Clicked="ExecuteSelectedCounters_Click"
+                                    BackgroundColor="{StaticResource AccentBlue}" 
+                                    IsEnabled="False"
+                                    Margin="0,0,10,0"/>
+                            <Button Text="すべて選択" 
+                                    Clicked="SelectAll_Click" 
+                                    Margin="0,0,5,0"/>
+                            <Button Text="すべて解除" 
+                                    Clicked="UnselectAll_Click"/>
+                        </StackLayout>
+                    </StackLayout>
+                </Frame>
+
+                <!-- 右側: グラフ表示 -->
+                <Frame Grid.Column="1" BorderColor="{StaticResource BorderGray}">
+                    <StackLayout>
+                        <Label Text="グラフ表示" 
+                               FontSize="16" 
+                               FontAttributes="Bold" 
+                               Margin="0,0,0,10"/>
+
+                        <!-- グラフプレースホルダー -->
+                        <Frame BackgroundColor="White" 
+                               BorderColor="{StaticResource BorderGray}"
+                               HeightRequest="300">
+                            <StackLayout x:Name="NoDataMessagePanel" 
+                                       IsVisible="True"
+                                       VerticalOptions="Center" 
+                                       HorizontalOptions="Center">
+                                <Label x:Name="NoDataMessage" 
+                                       Text="📊 BLGファイルを開いてカウンターを選択してください"
+                                       HorizontalOptions="Center"
+                                       FontSize="16"
+                                       TextColor="{StaticResource Gray500}"/>
+                                <Label HorizontalOptions="Center" 
+                                       FontSize="12" 
+                                       TextColor="{StaticResource Gray400}" 
+                                       Margin="0,5,0,0">
+                                    <Label.FormattedText>
+                                        <FormattedString>
+                                            <Span Text="💡 "/>
+                                            <Span Text="チェックボックス" FontAttributes="Bold"/>
+                                            <Span Text=" または "/>
+                                            <Span Text="カウンター名" FontAttributes="Bold"/>
+                                            <Span Text="をクリックして詳細データを表示"/>
+                                        </FormattedString>
+                                    </Label.FormattedText>
+                                </Label>
+                                <Label Text="✨ グラフ機能が実装されました！"
+                                       HorizontalOptions="Center"
+                                       FontSize="12"
+                                       TextColor="{StaticResource AccentGreen}"
+                                       FontAttributes="Bold"
+                                       Margin="0,5,0,0"/>
+                            </StackLayout>
+                        </Frame>
+
+                        <!-- 統計情報表示エリア -->
+                        <Frame x:Name="StatisticsFrame" 
+                               IsVisible="False"
+                               BackgroundColor="{StaticResource BackgroundGray}" 
+                               BorderColor="{StaticResource BorderGray}" 
+                               Margin="0,10,0,0">
+                            <StackLayout>
+                                <Label Text="📊 選択カウンターの統計情報" 
+                                       FontAttributes="Bold" 
+                                       FontSize="12"
+                                       TextColor="{StaticResource AccentBlue}"
+                                       Margin="0,0,0,8"/>
+                                
+                                <!-- 統計情報をラベルで表示（DataGridの代替） -->
+                                <ScrollView HeightRequest="150">
+                                    <StackLayout x:Name="StatisticsStackLayout">
+                                        <!-- 統計情報が動的に追加される -->
+                                    </StackLayout>
+                                </ScrollView>
+                            </StackLayout>
+                        </Frame>
+                    </StackLayout>
+                </Frame>
+            </Grid>
+
+            <!-- 下部: データテーブルとログ表示 -->
+            <Grid Grid.Row="3" Margin="10,0,10,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="300"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- 左側: データテーブル -->
+                <Frame Grid.Column="0" BorderColor="{StaticResource BorderGray}" Margin="0,0,10,0">
+                    <StackLayout>
+                        <Label Text="📊 データテーブル" 
+                               FontSize="16" 
+                               FontAttributes="Bold" 
+                               Margin="0,0,0,10"/>
+                        
+                        <StackLayout Orientation="Horizontal" Margin="0,0,0,10">
+                            <Label VerticalOptions="Center" FontAttributes="Bold">
+                                <Label.FormattedText>
+                                    <FormattedString>
+                                        <Span Text="📈 カウンター選択方法: "/>
+                                        <Span Text="チェックボックスをクリック" FontAttributes="Bold" TextColor="{StaticResource AccentBlue}"/>
+                                        <Span Text=" または "/>
+                                        <Span Text="カウンター名をクリック" FontAttributes="Bold" TextColor="{StaticResource AccentGreen}"/>
+                                    </FormattedString>
+                                </Label.FormattedText>
+                            </Label>
+                            <Button Text="すべてのタブを閉じる" 
+                                    Clicked="CloseAllTabs_Click" 
+                                    Margin="20,0,10,0"/>
+                            <Button Text="全データをCSV出力" 
+                                    Clicked="ExportAllDataToCsv_Click"/>
+                        </StackLayout>
+                        
+                        <!-- タブビュー（CollectionViewで代替） -->
+                        <ScrollView>
+                            <StackLayout x:Name="DataTabStackLayout">
+                                <!-- データタブが動的に追加される -->
+                            </StackLayout>
+                        </ScrollView>
+                    </StackLayout>
+                </Frame>
+                
+                <!-- 右側: ログ表示 -->
+                <Frame Grid.Column="1" BorderColor="{StaticResource BorderGray}">
+                    <StackLayout>
+                        <Label Text="📋 ログ表示" 
+                               FontSize="16" 
+                               FontAttributes="Bold" 
+                               Margin="0,0,0,10"/>
+                        
+                        <ScrollView>
+                            <StackLayout x:Name="LogStackLayout">
+                                <!-- ログが動的に追加される -->
+                            </StackLayout>
+                        </ScrollView>
+                    </StackLayout>
+                </Frame>
+            </Grid>
+        </Grid>
+    </ScrollView>
+
+</ContentPage>
