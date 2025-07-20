@@ -15,17 +15,20 @@
 - Windows SDK（WPF開発用）
 
 #### Linux/macOS環境
-- Docker（Dev Container使用時）
-- Visual Studio Code with Dev Containers extension
-- **注意**: WPFアプリケーションはWindows専用のため、実際の動作はWindowsでのみ可能
+- **制約**: PDH API はWindows専用のため、実行不可
+- **可能な作業**: コード編集、静的解析、コンパイル
+- **実行テスト**: Windows環境でのみ可能
+- **開発用途**: UI以外のロジック開発（限定的）
 
-### 🐳 Dev Container 対応
-プロジェクトは完全にDev Container対応しており、以下が自動設定されます：
-- .NET 8.0 SDK
+### 🐳 Dev Container 対応（Windows専用）
+プロジェクトは **Windows ベースの Dev Container** に対応しており、以下が自動設定されます：
+- .NET 8.0 SDK（Windows Server Core）
 - 必要なVS Code拡張機能
 - C#開発ツール（OmniSharp、CodeLens等）
+- **PDH API サポート**（Windows専用）
 - YAML、JSON、PowerShell サポート
-- GitHub Copilot統合
+
+**重要**: このアプリケーションは Windows 専用の PDH (Performance Data Helper) API を使用するため、**Linux ベースの Dev Container では実行できません**。
 
 ## セットアップ手順
 
@@ -35,18 +38,29 @@ git clone https://github.com/MasayukiOzawa/PerformanceMonitorAnalyzer.git
 cd PerformanceMonitorAnalyzer
 ```
 
-### 2. Dev Container を使用する場合（推奨）
+### 2. Dev Container を使用する場合（Windows環境のみ）
 
 #### 前提条件
-- Docker Desktop
+- **Windows 11** または **Windows Server 2022**
+- **Docker Desktop for Windows**（Windows コンテナーモード）
 - Visual Studio Code
 - Dev Containers extension
 
+#### Windows PDH API の制約
+このアプリケーションは `pdh.dll` を使用するため：
+- **Windows コンテナーが必須**
+- Linux/macOS の Dev Container では実行不可
+- コンパイルは可能だが、実行時に `DllNotFoundException` が発生
+
 #### 手順
-1. Visual Studio Code でプロジェクトを開く
-2. コマンドパレット（Ctrl+Shift+P）を開く
-3. "Dev Containers: Reopen in Container" を選択
-4. 自動的に開発環境が構築される
+1. Docker Desktop を **Windows コンテナーモード** に切り替え
+2. Visual Studio Code でプロジェクトを開く
+3. コマンドパレット（Ctrl+Shift+P）を開く
+4. "Dev Containers: Reopen in Container" を選択
+5. Windows Server Core イメージのダウンロード（初回は5-10分）
+6. 自動的に開発環境が構築される
+
+詳細は [.devcontainer/README.md](.devcontainer/README.md) を参照してください。
 
 ### 3. ローカル環境でのセットアップ
 
