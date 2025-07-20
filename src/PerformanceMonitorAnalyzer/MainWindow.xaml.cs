@@ -359,6 +359,15 @@ public partial class MainWindow : Window
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
+        // Y軸の最小値を0に制限（パフォーマンス監視データは負の値を持たない）
+        PerformanceChart.Plot.Axes.Left.Min = 0;
+        
+        // ユーザーのドラッグ操作後にもY軸の最小値を制限
+        PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
+        {
+            EnsureYAxisMinimumZero();
+        };
+        
         // グラフ領域のフォントサイズを16に設定
         // 軸ラベルのフォントサイズ設定
         PerformanceChart.Plot.Axes.Bottom.Label.FontSize = 16;
@@ -373,6 +382,26 @@ public partial class MainWindow : Window
         
         // グラフの更新
         PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// Y軸の最小値を0に制限する（パフォーマンス監視データは負の値を持たない）
+    /// </summary>
+    private void EnsureYAxisMinimumZero()
+    {
+        try
+        {
+            // 現在のY軸の最小値が0未満の場合は0に設定
+            if (PerformanceChart.Plot.Axes.Left.Min < 0)
+            {
+                PerformanceChart.Plot.Axes.Left.Min = 0;
+                System.Diagnostics.Debug.WriteLine("Y軸の最小値を0に制限しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Y軸最小値制限エラー: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -1300,6 +1329,8 @@ public partial class MainWindow : Window
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
         
+        // Y軸の最小値を0に制限
+        EnsureYAxisMinimumZero();
         
         PerformanceChart.Refresh();
     }
@@ -1357,6 +1388,8 @@ public partial class MainWindow : Window
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
         
+        // Y軸の最小値を0に制限
+        EnsureYAxisMinimumZero();
         
         PerformanceChart.Refresh();
         
@@ -1487,6 +1520,10 @@ public partial class MainWindow : Window
             }
             
             PerformanceChart.Plot.Axes.AutoScale();
+            
+            // Y軸の最小値を0に制限
+            EnsureYAxisMinimumZero();
+            
             PerformanceChart.Refresh();
             UpdateChartVisibility();
             
