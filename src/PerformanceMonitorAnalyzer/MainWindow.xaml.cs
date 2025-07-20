@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -333,7 +334,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
     
     // プロット処理の直列化のためのlockオブジェクト
-    private readonly object _plotLock = new();
+    private readonly SemaphoreSlim _plotLock = new(1, 1);
 
     public MainWindow()
     {
@@ -2739,7 +2740,8 @@ public partial class MainWindow : Window
             }
 
             // プロット処理は直列化
-            lock (_plotLock)
+            await _plotLock.WaitAsync();
+            try
             {
                 // 読み込み結果を処理
                 foreach (var counterInfo in counterInfos)
@@ -2800,6 +2802,10 @@ public partial class MainWindow : Window
                         LogError($"カウンター '{counterInfo.FullPath}' の読み込みに失敗: {ex.Message}");
                     }
                 }
+            }
+            finally
+            {
+                _plotLock.Release();
             }
             
             // 最終結果を操作ログに出力
