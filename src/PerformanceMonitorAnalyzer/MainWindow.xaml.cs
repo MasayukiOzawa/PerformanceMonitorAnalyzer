@@ -1277,7 +1277,8 @@ public partial class MainWindow : Window
         
         // 新しいシリーズを作成
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
-        scatter.LegendText = GetCounterDisplayName(counter);
+        var displayName = GetCounterDisplayName(counter);
+        scatter.LegendText = _isRateCalculationMode ? $"{displayName} (レート)" : displayName;
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         
@@ -1351,7 +1352,8 @@ public partial class MainWindow : Window
         
         // 新しいシリーズを作成
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
-        scatter.LegendText = GetCounterDisplayName(counter);
+                var displayName = GetCounterDisplayName(counter);
+        scatter.LegendText = _isRateCalculationMode ? $"{displayName} (レート)" : displayName;
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         
