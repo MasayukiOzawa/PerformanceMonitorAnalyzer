@@ -1397,7 +1397,7 @@ public partial class MainWindow : Window
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
             
             // 選択されているカウンターを取得
-            var selectedCounters = GetSelectedCounters().ToList();
+            var selectedCounters = GetSelectedCounters();
             
             if (!selectedCounters.Any())
             {
