@@ -286,6 +286,15 @@ public class CounterStatistics
 }
 
 /// <summary>
+/// グラフタイプの列挙型
+/// </summary>
+public enum ChartType
+{
+    LineChart,        // 折れ線グラフ
+    StackedAreaChart  // 積み重ね面グラフ
+}
+
+/// <summary>
 /// Interaction logic for MainWindow.xaml
 /// </summary>
 public partial class MainWindow : Window
@@ -298,8 +307,12 @@ public partial class MainWindow : Window
     private bool _timeRangeDetected = false;
     private string? _actualComputerName;
     
+    // グラフタイプ切り替え用のフィールド
+    private readonly Dictionary<string, ScottPlot.Plottables.FillY> _areaChartSeries = new();
+    private ChartType _currentChartType = ChartType.LineChart;
+    
     // ScottPlot用のプロパティ
-    private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _chartSeries = new();
+    private readonly Dictionary<string, ScottPlot.Plottables.Scatter> _lineChartSeries = new();
     
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
@@ -1130,7 +1143,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
         // 既存のシリーズをチェック
-        if (_chartSeries.ContainsKey(counter))
+        if (_lineChartSeries.ContainsKey(counter) || _areaChartSeries.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
             return;
@@ -1144,6 +1157,33 @@ public partial class MainWindow : Window
             return;
         }
         
+        // 現在のグラフタイプに応じて処理を分岐
+        if (_currentChartType == ChartType.LineChart)
+        {
+            AddLineChartCounter(counter, dataPoints);
+        }
+        else if (_currentChartType == ChartType.StackedAreaChart)
+        {
+            // 積み重ね面グラフは全体再描画が必要
+            RefreshChartWithCurrentType();
+            return;
+        }
+        
+        // データテーブルタブを作成（チェックボックス経由）
+        AddCounterTab(counter);
+        
+        // グラフが表示されたらメッセージを非表示
+        UpdateChartVisibility();
+        
+        // スケールコントロールの表示を更新
+        UpdateScaleControlVisibility();
+    }
+
+    /// <summary>
+    /// 折れ線グラフ用のカウンター追加
+    /// </summary>
+    private void AddLineChartCounter(string counter, List<PerformanceDataPoint> dataPoints)
+    {
         // カウンターのスケール設定を取得（デフォルトは1.0）
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
         System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
@@ -1161,22 +1201,13 @@ public partial class MainWindow : Window
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         
         // シリーズを記録
-        _chartSeries[counter] = scatter;
+        _lineChartSeries[counter] = scatter;
         
-        System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
+        System.Diagnostics.Debug.WriteLine($"Added line chart series for: {counter}");
         
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
         PerformanceChart.Refresh();
-        
-        // データテーブルタブを作成（チェックボックス経由）
-        AddCounterTab(counter);
-        
-        // グラフが表示されたらメッセージを非表示
-        UpdateChartVisibility();
-        
-        // スケールコントロールの表示を更新
-        UpdateScaleControlVisibility();
     }
 
     /// <summary>
@@ -1193,7 +1224,7 @@ public partial class MainWindow : Window
         }
 
         // 既存のシリーズをチェック
-        if (_chartSeries.ContainsKey(counter))
+        if (_lineChartSeries.ContainsKey(counter) || _areaChartSeries.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Series already exists for: {counter}");
             return;
@@ -1207,6 +1238,19 @@ public partial class MainWindow : Window
             return;
         }
         
+        // 現在のグラフタイプに応じて処理を分岐
+        if (_currentChartType == ChartType.LineChart)
+        {
+            AddLineChartCounterInternal(counter, dataPoints);
+        }
+        // 積み重ね面グラフの場合は全体再描画が必要なので、ここでは何もしない
+    }
+
+    /// <summary>
+    /// 折れ線グラフ用のカウンター追加（内部用）
+    /// </summary>
+    private void AddLineChartCounterInternal(string counter, List<PerformanceDataPoint> dataPoints)
+    {
         // カウンターのスケール設定を取得（デフォルトは1.0）
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
         System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
@@ -1224,32 +1268,43 @@ public partial class MainWindow : Window
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         
         // シリーズを記録
-        _chartSeries[counter] = scatter;
+        _lineChartSeries[counter] = scatter;
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
         // グラフを更新
         PerformanceChart.Plot.Axes.AutoScale();
         PerformanceChart.Refresh();
-        
-        // データテーブルタブを作成（チェックボックス経由）
-        AddCounterTab(counter);
-        
-        // グラフが表示されたらメッセージを非表示
-        UpdateChartVisibility();
     }
 
     private void RemoveCounterFromChart(string counter)
     {
         System.Diagnostics.Debug.WriteLine($"RemoveCounterFromChart called for: {counter}");
         
-        // 対応するシリーズを削除
-        if (_chartSeries.TryGetValue(counter, out var scatter))
+        // 折れ線グラフのシリーズを削除
+        if (_lineChartSeries.TryGetValue(counter, out var scatter))
         {
             PerformanceChart.Plot.Remove(scatter);
-            _chartSeries.Remove(counter);
+            _lineChartSeries.Remove(counter);
+            System.Diagnostics.Debug.WriteLine($"Removed line chart series for: {counter}");
+        }
+        
+        // 積み重ね面グラフのシリーズを削除
+        if (_areaChartSeries.TryGetValue(counter, out var fillPlot))
+        {
+            PerformanceChart.Plot.Remove(fillPlot);
+            _areaChartSeries.Remove(counter);
+            System.Diagnostics.Debug.WriteLine($"Removed area chart series for: {counter}");
+        }
+        
+        // 積み重ね面グラフの場合は全体再描画が必要
+        if (_currentChartType == ChartType.StackedAreaChart)
+        {
+            RefreshChartWithCurrentType();
+        }
+        else
+        {
             PerformanceChart.Refresh();
-            System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
         }
         
         // スケール設定も削除
@@ -1276,10 +1331,12 @@ public partial class MainWindow : Window
         var selectedCounters = GetSelectedCounters().ToHashSet();
         
         // 現在グラフに表示されているカウンターのリストを作成
-        var currentChartCounters = _chartSeries.Keys.ToList();
+        var currentChartCounters = new List<string>();
+        currentChartCounters.AddRange(_lineChartSeries.Keys);
+        currentChartCounters.AddRange(_areaChartSeries.Keys);
         
         // 選択されていないカウンターをグラフから削除
-        foreach (var counter in currentChartCounters)
+        foreach (var counter in currentChartCounters.Distinct())
         {
             if (!selectedCounters.Contains(counter))
             {
@@ -1288,13 +1345,16 @@ public partial class MainWindow : Window
             }
         }
         
+        // 現在のグラフタイプに応じて再描画
+        RefreshChartWithCurrentType();
+        
         System.Diagnostics.Debug.WriteLine($"Chart initialized with {selectedCounters.Count} selected counters");
     }
     
     private void UpdateChartVisibility()
     {
         // シリーズがある場合はメッセージを非表示、ない場合は表示
-        var hasData = _chartSeries.Any();
+        var hasData = _lineChartSeries.Any() || _areaChartSeries.Any();
         NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
         System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
         
@@ -1309,7 +1369,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var hasData = _chartSeries.Any();
+            var hasData = _lineChartSeries.Any() || _areaChartSeries.Any();
             StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
             
             if (!hasData)
@@ -1321,8 +1381,12 @@ public partial class MainWindow : Window
             // 統計情報のコレクションを作成
             var statisticsItems = new List<CounterStatisticsItem>();
             
-            // 各カウンターの統計情報を計算
-            foreach (var counterName in _chartSeries.Keys.OrderBy(c => c))
+            // 各カウンターの統計情報を計算（両方のグラフタイプから）
+            var allCounters = new List<string>();
+            allCounters.AddRange(_lineChartSeries.Keys);
+            allCounters.AddRange(_areaChartSeries.Keys);
+            
+            foreach (var counterName in allCounters.Distinct().OrderBy(c => c))
             {
                 if (_counterData.TryGetValue(counterName, out var dataPoints) && dataPoints.Any())
                 {
@@ -2678,7 +2742,7 @@ public partial class MainWindow : Window
             return;
         }
         
-        bool hasChartData = _chartSeries.Any();
+        bool hasChartData = _lineChartSeries.Any() || _areaChartSeries.Any();
         ScaleControlGroupBox.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
         
         if (hasChartData)
@@ -2686,8 +2750,13 @@ public partial class MainWindow : Window
             // 既存のコントロールをクリア
             CounterScaleStackPanel.Children.Clear();
             
+            // 両方のグラフタイプから表示中のカウンターを取得
+            var allCounters = new List<string>();
+            allCounters.AddRange(_lineChartSeries.Keys);
+            allCounters.AddRange(_areaChartSeries.Keys);
+            
             // 各カウンターのスケール設定コントロールを追加
-            foreach (var counter in _chartSeries.Keys.OrderBy(c => c))
+            foreach (var counter in allCounters.Distinct().OrderBy(c => c))
             {
                 var control = CreateCounterScaleControl(counter);
                 CounterScaleStackPanel.Children.Add(control);
@@ -2700,7 +2769,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void RefreshCounterInChart(string counter)
     {
-        if (_chartSeries.ContainsKey(counter))
+        if (_lineChartSeries.ContainsKey(counter) || _areaChartSeries.ContainsKey(counter))
         {
             System.Diagnostics.Debug.WriteLine($"Refreshing chart for counter: {counter}");
             
@@ -2709,17 +2778,24 @@ public partial class MainWindow : Window
             
             try
             {
-                // 既存のシリーズを削除（スケールコントロール更新なし）
-                if (_chartSeries.TryGetValue(counter, out var scatter))
+                // 積み重ね面グラフの場合は全体再描画
+                if (_currentChartType == ChartType.StackedAreaChart)
                 {
-                    PerformanceChart.Plot.Remove(scatter);
-                    _chartSeries.Remove(counter);
-                    PerformanceChart.Refresh();
-                    System.Diagnostics.Debug.WriteLine($"Removed series from chart for: {counter}");
+                    RefreshChartWithCurrentType();
                 }
-                
-                // 新しいスケールで再追加（スケールコントロール更新なし）
-                AddCounterToChartInternal(counter);
+                else
+                {
+                    // 折れ線グラフの場合は個別更新
+                    if (_lineChartSeries.TryGetValue(counter, out var scatter))
+                    {
+                        PerformanceChart.Plot.Remove(scatter);
+                        _lineChartSeries.Remove(counter);
+                        System.Diagnostics.Debug.WriteLine($"Removed line chart series for: {counter}");
+                    }
+                    
+                    // 新しいスケールで再追加
+                    AddCounterToChartInternal(counter);
+                }
             }
             finally
             {
@@ -3397,6 +3473,246 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             AddOperationLog(LogLevel.Error, $"エラーログのクリアに失敗: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    #region グラフタイプ切り替え機能
+
+    /// <summary>
+    /// グラフタイプ変更イベントハンドラー
+    /// </summary>
+    private void ChartType_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton radioButton)
+        {
+            if (radioButton == LineChartRadio && radioButton.IsChecked == true)
+            {
+                _currentChartType = ChartType.LineChart;
+            }
+            else if (radioButton == StackedAreaChartRadio && radioButton.IsChecked == true)
+            {
+                _currentChartType = ChartType.StackedAreaChart;
+            }
+            
+            RefreshChartWithCurrentType();
+        }
+    }
+
+    /// <summary>
+    /// 現在のグラフタイプでチャート全体を再描画
+    /// </summary>
+    private void RefreshChartWithCurrentType()
+    {
+        if (_counterData.Count == 0) return;
+
+        try
+        {
+            // チャートをクリア
+            PerformanceChart.Plot.Clear();
+            _lineChartSeries.Clear();
+            _areaChartSeries.Clear();
+            
+            // 日時軸の設定
+            PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+            
+            // 選択されているカウンターを取得
+            var selectedCounters = GetSelectedCounters();
+            
+            if (!selectedCounters.Any())
+            {
+                PerformanceChart.Refresh();
+                return;
+            }
+            
+            // 現在のグラフタイプに応じて描画
+            if (_currentChartType == ChartType.LineChart)
+            {
+                DrawLineChart(selectedCounters);
+            }
+            else if (_currentChartType == ChartType.StackedAreaChart)
+            {
+                DrawStackedAreaChart(selectedCounters);
+            }
+            
+            PerformanceChart.Refresh();
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"グラフ描画エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 折れ線グラフを描画
+    /// </summary>
+    private void DrawLineChart(IEnumerable<CounterTreeNode> selectedCounters)
+    {
+        int colorIndex = 0;
+        foreach (var counter in selectedCounters)
+        {
+            if (_counterData.TryGetValue(counter.FullPath, out var dataPoints) && dataPoints.Any())
+            {
+                AddLineChartSeries(counter.FullPath, dataPoints, colorIndex++);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 積み重ね面グラフを描画
+    /// </summary>
+    private void DrawStackedAreaChart(IEnumerable<CounterTreeNode> selectedCounters)
+    {
+        var counterList = selectedCounters.ToList();
+        if (!counterList.Any()) return;
+
+        // 全タイムスタンプを収集してソート
+        var allTimestamps = new SortedSet<DateTime>();
+        foreach (var counter in counterList)
+        {
+            if (_counterData.TryGetValue(counter.FullPath, out var dataPoints))
+            {
+                foreach (var point in dataPoints)
+                {
+                    allTimestamps.Add(point.Timestamp);
+                }
+            }
+        }
+
+        var timeArray = allTimestamps.ToArray();
+        var baselineValues = new double[timeArray.Length]; // 累積ベースライン
+
+        int colorIndex = 0;
+        foreach (var counter in counterList)
+        {
+            if (_counterData.TryGetValue(counter.FullPath, out var dataPoints) && dataPoints.Any())
+            {
+                // 各タイムスタンプでの値を補間
+                var interpolatedValues = new double[timeArray.Length];
+                for (int i = 0; i < timeArray.Length; i++)
+                {
+                    var scale = GetCounterScale(counter.FullPath);
+                    interpolatedValues[i] = InterpolateValue(dataPoints, timeArray[i], scale);
+                }
+
+                // 累積値を計算
+                var stackedValues = new double[timeArray.Length];
+                for (int i = 0; i < timeArray.Length; i++)
+                {
+                    stackedValues[i] = baselineValues[i] + interpolatedValues[i];
+                }
+
+                // 面グラフを追加
+                var fillPlot = PerformanceChart.Plot.Add.FillY(timeArray, baselineValues, stackedValues);
+                fillPlot.FillColor = GetNextColor(colorIndex++);
+                fillPlot.LineColor = fillPlot.FillColor;
+                fillPlot.LineWidth = 1;
+                fillPlot.Label = counter.DisplayName;
+
+                // ベースラインを更新
+                Array.Copy(stackedValues, baselineValues, timeArray.Length);
+                
+                _areaChartSeries[counter.FullPath] = fillPlot;
+            }
+        }
+    }
+
+    /// <summary>
+    /// データポイント間の線形補間
+    /// </summary>
+    private double InterpolateValue(List<PerformanceDataPoint> dataPoints, DateTime targetTime, double scale)
+    {
+        if (!dataPoints.Any()) return 0;
+
+        // 目標時間と一致するデータポイントを探す
+        var exactMatch = dataPoints.FirstOrDefault(dp => dp.Timestamp == targetTime);
+        if (exactMatch != null)
+        {
+            return exactMatch.Value * scale;
+        }
+
+        // 目標時間の前後のデータポイントを見つける
+        var before = dataPoints.Where(dp => dp.Timestamp <= targetTime).LastOrDefault();
+        var after = dataPoints.Where(dp => dp.Timestamp >= targetTime).FirstOrDefault();
+
+        if (before == null && after == null) return 0;
+        if (before == null) return after!.Value * scale;
+        if (after == null) return before.Value * scale;
+        if (before == after) return before.Value * scale;
+
+        // 線形補間
+        var totalSpan = (after.Timestamp - before.Timestamp).TotalSeconds;
+        var targetSpan = (targetTime - before.Timestamp).TotalSeconds;
+        var ratio = totalSpan > 0 ? targetSpan / totalSpan : 0;
+
+        var interpolatedValue = before.Value + (after.Value - before.Value) * ratio;
+        return interpolatedValue * scale;
+    }
+
+    /// <summary>
+    /// 積み重ね面グラフ用の色を取得
+    /// </summary>
+    private ScottPlot.Color GetNextColor(int index)
+    {
+        var colors = new[]
+        {
+            ScottPlot.Colors.Blue,
+            ScottPlot.Colors.Red,
+            ScottPlot.Colors.Green,
+            ScottPlot.Colors.Orange,
+            ScottPlot.Colors.Purple,
+            ScottPlot.Colors.Brown,
+            ScottPlot.Colors.Pink,
+            ScottPlot.Colors.Gray,
+            ScottPlot.Colors.Olive,
+            ScottPlot.Colors.Cyan
+        };
+        
+        return colors[index % colors.Length];
+    }
+
+    /// <summary>
+    /// 個別の折れ線シリーズを追加
+    /// </summary>
+    private void AddLineChartSeries(string counterPath, List<PerformanceDataPoint> dataPoints, int colorIndex)
+    {
+        var scale = GetCounterScale(counterPath);
+        var timestamps = dataPoints.Select(p => p.Timestamp).ToArray();
+        var values = dataPoints.Select(p => p.Value * scale).ToArray();
+
+        var scatter = PerformanceChart.Plot.Add.Scatter(timestamps, values);
+        scatter.Color = GetNextColor(colorIndex);
+        scatter.LineWidth = 2;
+        scatter.MarkerSize = 0;
+        
+        var displayName = _counterTreeNodes.SelectMany(GetAllNodes)
+            .FirstOrDefault(n => n.FullPath == counterPath)?.DisplayName ?? Path.GetFileName(counterPath);
+        scatter.Label = displayName;
+
+        _lineChartSeries[counterPath] = scatter;
+    }
+
+    /// <summary>
+    /// カウンターのスケール値を取得
+    /// </summary>
+    private double GetCounterScale(string counterPath)
+    {
+        return _counterScales.GetValueOrDefault(counterPath, 1.0);
+    }
+
+    /// <summary>
+    /// TreeNodeから全ての子ノードを再帰的に取得
+    /// </summary>
+    private IEnumerable<CounterTreeNode> GetAllNodes(CounterTreeNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+        {
+            foreach (var descendant in GetAllNodes(child))
+            {
+                yield return descendant;
+            }
         }
     }
 

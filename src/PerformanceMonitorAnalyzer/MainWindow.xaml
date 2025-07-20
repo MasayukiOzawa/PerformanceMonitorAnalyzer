@@ -213,13 +213,36 @@
             <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
+                    <!-- グラフタイプ選択 -->
+                    <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Margin="5,5,5,0">
+                        <StackPanel Orientation="Horizontal" Margin="10,8">
+                            <TextBlock Text="📊 グラフタイプ:" 
+                                     VerticalAlignment="Center" 
+                                     FontWeight="SemiBold" 
+                                     Margin="0,0,15,0"/>
+                            <RadioButton x:Name="LineChartRadio" 
+                                       Content="折れ線グラフ" 
+                                       IsChecked="True" 
+                                       GroupName="ChartType"
+                                       Checked="ChartType_Changed"
+                                       Margin="0,0,20,0"
+                                       VerticalAlignment="Center"/>
+                            <RadioButton x:Name="StackedAreaChartRadio" 
+                                       Content="積み重ね面グラフ" 
+                                       GroupName="ChartType"
+                                       Checked="ChartType_Changed"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
-                                      Grid.Row="0"
+                                      Grid.Row="1"
                                       Background="White" />
                     
                     <!-- データなしの場合のメッセージ -->
@@ -248,7 +271,7 @@
                     </StackPanel>
                     
                     <!-- 統計情報表示エリア -->
-                    <Border Grid.Row="1" x:Name="StatisticsBorder" 
+                    <Border Grid.Row="2" x:Name="StatisticsBorder" 
                            Background="#F8F8F8" 
                            BorderBrush="#E0E0E0" 
                            BorderThickness="0,1,0,0" 
