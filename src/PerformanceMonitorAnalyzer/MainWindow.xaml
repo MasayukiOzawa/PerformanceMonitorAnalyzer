@@ -87,8 +87,17 @@
                     <TextBlock Grid.Row="0" x:Name="ComputerNameDisplay" 
                              Text="" 
                              Margin="5,25,5,10" 
-                             FontSize="11"
-                             Foreground="DarkGray"
+                             FontWeight="Bold"
+                             Foreground="DarkBlue"
+                             TextWrapping="Wrap"
+                             Visibility="Collapsed"/>
+                    
+                    <!-- データ取得間隔表示 -->
+                    <TextBlock Grid.Row="0" x:Name="SamplingIntervalDisplay" 
+                             Text="" 
+                             Margin="5,45,5,10" 
+                             FontWeight="Bold"
+                             Foreground="DarkBlue"
                              TextWrapping="Wrap"
                              Visibility="Collapsed"/>
                     
