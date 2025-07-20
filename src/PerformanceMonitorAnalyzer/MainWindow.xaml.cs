@@ -331,6 +331,9 @@ public partial class MainWindow : Window
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
+    
+    // プロット処理の直列化のためのlockオブジェクト
+    private readonly object _plotLock = new();
 
     public MainWindow()
     {
@@ -2722,84 +2725,81 @@ public partial class MainWindow : Window
             int successCount = 0;
             var errors = new List<string>();
 
-            // 各カウンターのデータを読み込み
-            foreach (var counterPath in counters)
+            // 2並列でカウンターデータを読み込み
+            progress?.Report("カウンターデータを2並列で読み込み開始...");
+            
+            List<BlgFileAnalyzer.CounterInfo> counterInfos;
+            if (useTimeConstraints)
             {
-                try
+                counterInfos = await analyzer.LoadMultipleCounterDataAsync(counters, startTime, endTime, progress);
+            }
+            else
+            {
+                counterInfos = await analyzer.LoadMultipleCounterDataAsync(counters, progress);
+            }
+
+            // プロット処理は直列化
+            lock (_plotLock)
+            {
+                // 読み込み結果を処理
+                foreach (var counterInfo in counterInfos)
                 {
-                    progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
-                    
-                    // 時間制約がある場合は、時間制約付きの読み込みメソッドを使用
-                    BlgFileAnalyzer.CounterInfo counterInfo;
-                    if (useTimeConstraints)
+                    try
                     {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress);
-                    }
-                    else
-                    {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
-                    }
-                    
-                    if (counterInfo.DataPoints.Count > 0)
-                    {
-                        var dataPoints = new List<PerformanceDataPoint>();
+                        processedCount++;
+                        progress?.Report($"カウンター処理中: {counterInfo.FullPath} ({processedCount}/{counterInfos.Count})");
                         
-                        foreach (var dataPoint in counterInfo.DataPoints)
+                        if (counterInfo.DataPoints.Count > 0)
                         {
-                            // NaN値をスキップ
-                            if (double.IsNaN(dataPoint.Value))
-                                continue;
+                            var dataPoints = new List<PerformanceDataPoint>();
                             
-                            var unit = EstimateUnit(counterPath);
-                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
-                            
-                            dataPoints.Add(new PerformanceDataPoint
+                            foreach (var dataPoint in counterInfo.DataPoints)
                             {
-                                Counter = counterPath,
-                                Value = dataPoint.Value,
-                                Timestamp = dataPoint.Timestamp,
-                                FormattedValue = formattedValue,
-                                Unit = unit
-                            });
+                                // NaN値をスキップ
+                                if (double.IsNaN(dataPoint.Value))
+                                    continue;
+                                
+                                var unit = EstimateUnit(counterInfo.FullPath);
+                                var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                                
+                                dataPoints.Add(new PerformanceDataPoint
+                                {
+                                    Counter = counterInfo.FullPath,
+                                    Value = dataPoint.Value,
+                                    Timestamp = dataPoint.Timestamp,
+                                    FormattedValue = formattedValue,
+                                    Unit = unit
+                                });
+                            }
+                            
+                            if (dataPoints.Count > 0)
+                            {
+                                _counterData[counterInfo.FullPath] = dataPoints;
+                                successCount++;
+                                
+                                // UIスレッドでデータテーブルを更新
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    // グラフとデータテーブルの両方を更新
+                                    AddCounterToChart(counterInfo.FullPath);
+                                });
+                            }
+                            else
+                            {
+                                errors.Add($"{counterInfo.FullPath}: 有効なデータポイントが見つかりませんでした");
+                            }
                         }
-                        
-                        if (dataPoints.Count > 0)
-                        {
-                            _counterData[counterPath] = dataPoints;
-                            successCount++;
-                            
-                            // UIスレッドでデータテーブルを更新
-                            await Dispatcher.InvokeAsync(() =>
-                            {
-                                // グラフとデータテーブルの両方を更新
-                                AddCounterToChart(counterPath);
-                            });
                         }
                         else
                         {
-                            errors.Add($"{counterPath}: 有効なデータポイントが見つかりませんでした");
+                            errors.Add($"{counterInfo.FullPath}: データポイントが見つかりませんでした");
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        errors.Add($"{counterPath}: データポイントが見つかりませんでした");
+                        errors.Add($"{counterInfo.FullPath}: {ex.Message}");
+                        LogError($"カウンター '{counterInfo.FullPath}' の読み込みに失敗: {ex.Message}");
                     }
-                }
-                catch (Exception ex)
-                {
-                    errors.Add($"{counterPath}: {ex.Message}");
-                    LogError($"カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
-                }
-                
-                processedCount++;
-                
-                // 進行状況を操作ログに出力
-                if (processedCount % 10 == 0 || processedCount == counters.Count) // 10個ごと、または最後に出力
-                {
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        AddOperationLog(LogLevel.Info, $"PDH API処理進行: {processedCount}/{counters.Count} - 成功 {successCount}個、エラー {errors.Count}個");
-                    });
                 }
             }
             

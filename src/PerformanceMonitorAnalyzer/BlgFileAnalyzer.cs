@@ -1,6 +1,7 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -481,6 +482,92 @@ public class BlgFileAnalyzer : IDisposable
                 throw;
             }
         });
+    }
+
+    /// <summary>
+    /// 複数のカウンターのデータを2並列で読み込み
+    /// </summary>
+    public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        var counterPathsList = counterPaths.ToList();
+        progress?.Report($"複数カウンターデータを2並列で読み込み開始: {counterPathsList.Count}個のカウンター");
+
+        // 2並列に制限するSemaphore
+        using var semaphore = new SemaphoreSlim(2, 2);
+        var results = new ConcurrentBag<CounterInfo>();
+
+        // 全てのカウンターを並列で処理
+        var tasks = counterPathsList.Select(async counterPath =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                progress?.Report($"カウンター読み込み開始: {counterPath}");
+                var counterInfo = await LoadCounterDataAsync(counterPath, progress);
+                results.Add(counterInfo);
+                progress?.Report($"カウンター読み込み完了: {counterPath}");
+                return counterInfo;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        
+        var resultList = results.ToList();
+        progress?.Report($"複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
+        
+        return resultList;
+    }
+
+    /// <summary>
+    /// 時間制約付きで複数のカウンターのデータを2並列で読み込み
+    /// </summary>
+    public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, DateTime? startTime, DateTime? endTime, IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        var counterPathsList = counterPaths.ToList();
+        progress?.Report($"時間制約付き複数カウンターデータを2並列で読み込み開始: {counterPathsList.Count}個のカウンター");
+
+        // 2並列に制限するSemaphore
+        using var semaphore = new SemaphoreSlim(2, 2);
+        var results = new ConcurrentBag<CounterInfo>();
+
+        // 全てのカウンターを並列で処理
+        var tasks = counterPathsList.Select(async counterPath =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                progress?.Report($"時間制約付きカウンター読み込み開始: {counterPath}");
+                var counterInfo = await LoadCounterDataAsync(counterPath, startTime, endTime, progress);
+                results.Add(counterInfo);
+                progress?.Report($"時間制約付きカウンター読み込み完了: {counterPath}");
+                return counterInfo;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        
+        var resultList = results.ToList();
+        progress?.Report($"時間制約付き複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
+        
+        return resultList;
     }
 
     /// <summary>
