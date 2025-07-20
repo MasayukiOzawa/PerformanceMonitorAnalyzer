@@ -33,6 +33,12 @@
             </MenuItem>
             <MenuItem Header="グラフ(_G)" x:Name="GraphMenu" IsEnabled="False">
                 <MenuItem Header="グラフをクリップボードにコピー(_C)" Click="CopyGraphToClipboard_Click" InputGestureText="Ctrl+C"/>
+                <Separator/>
+                <MenuItem Header="透過率(_T)" x:Name="TransparencyMenu">
+                    <MenuItem Header="0% (不透明)" x:Name="Transparency0MenuItem" Click="SetTransparency_Click" Tag="0" IsChecked="True"/>
+                    <MenuItem Header="40%" x:Name="Transparency40MenuItem" Click="SetTransparency_Click" Tag="40"/>
+                    <MenuItem Header="80%" x:Name="Transparency80MenuItem" Click="SetTransparency_Click" Tag="80"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="バージョン情報(_A)"/>
@@ -224,7 +230,7 @@
                     <!-- ScottPlot グラフコンテナ -->
                     <scottplot:WpfPlot x:Name="PerformanceChart" 
                                       Grid.Row="0"
-                                      Background="White">
+                                      Background="Transparent">
                         <scottplot:WpfPlot.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="グラフをクリップボードにコピー(_C)" 

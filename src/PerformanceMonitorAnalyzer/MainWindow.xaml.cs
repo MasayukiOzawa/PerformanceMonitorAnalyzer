@@ -319,6 +319,9 @@ public partial class MainWindow : Window
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
+    
+    // グラフ透過率管理
+    private int _currentTransparencyPercent = 0; // デフォルト0%（不透明）
 
     public MainWindow()
     {
@@ -334,6 +337,9 @@ public partial class MainWindow : Window
         
         // ログタブの初期化
         InitializeLogTabs();
+        
+        // グラフ透過率の初期化
+        InitializeGraphTransparency();
     }
 
     private void InitializeChart()
@@ -358,6 +364,10 @@ public partial class MainWindow : Window
         
         // 凡例のフォントサイズ設定
         PerformanceChart.Plot.Legend.FontSize = 16;
+        
+        // 初期背景色を白に設定（透過率は後で制御）
+        PerformanceChart.Plot.FigureBackground.Color = System.Drawing.Color.White;
+        PerformanceChart.Plot.DataBackground.Color = System.Drawing.Color.White;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -3509,6 +3519,149 @@ public partial class MainWindow : Window
             AddOperationLog(LogLevel.Error, $"グラフのクリップボードコピーに失敗: {ex.Message}");
             MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}", 
                            "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region グラフ透過率制御機能
+
+    /// <summary>
+    /// 透過率設定メニューのクリックイベント
+    /// </summary>
+    private void SetTransparency_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is MenuItem menuItem && menuItem.Tag is string transparencyStr)
+            {
+                if (int.TryParse(transparencyStr, out int transparencyPercent))
+                {
+                    SetGraphTransparency(transparencyPercent);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"透過率の設定に失敗しました: {ex.Message}");
+            LogError($"SetTransparency_Click failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// グラフの透過率を設定
+    /// </summary>
+    /// <param name="transparencyPercent">透過率（0=不透明、40=40%透過、80=80%透過）</param>
+    private void SetGraphTransparency(int transparencyPercent)
+    {
+        try
+        {
+            _currentTransparencyPercent = transparencyPercent;
+            
+            // 透過率をOpacityに変換 (透過率% → 1.0 - 透過率/100.0)
+            double opacity = transparencyPercent switch
+            {
+                0 => 1.0,   // 0%透過 = 完全不透明
+                40 => 0.6,  // 40%透過 = 60%不透明
+                80 => 0.2,  // 80%透過 = 20%不透明
+                _ => 1.0    // デフォルトは不透明
+            };
+            
+            // グラフ表示領域全体の透過率を設定
+            PerformanceChart.Opacity = opacity;
+            
+            // ScottPlotのグラフ背景の透過率も設定
+            try
+            {
+                // グラフ背景色を透過率に応じて設定
+                var backgroundColor = transparencyPercent switch
+                {
+                    0 => System.Drawing.Color.White,                                    // 完全不透明
+                    40 => System.Drawing.Color.FromArgb(153, 255, 255, 255),           // 40%透過
+                    80 => System.Drawing.Color.FromArgb(51, 255, 255, 255),            // 80%透過
+                    _ => System.Drawing.Color.White
+                };
+                
+                // ScottPlotの背景色を更新
+                PerformanceChart.Plot.FigureBackground.Color = backgroundColor;
+                PerformanceChart.Plot.DataBackground.Color = backgroundColor;
+                
+                // グラフを更新
+                PerformanceChart.Refresh();
+            }
+            catch (Exception plotEx)
+            {
+                LogError($"ScottPlot background transparency update failed: {plotEx.Message}");
+                // ScottPlotの設定に失敗した場合でも、WPFコントロールの透過率は適用
+            }
+            
+            // メニューのチェック状態を更新
+            UpdateTransparencyMenuChecks(transparencyPercent);
+            
+            // ログ出力
+            string transparencyDescription = transparencyPercent switch
+            {
+                0 => "0% (不透明)",
+                40 => "40%",
+                80 => "80%",
+                _ => $"{transparencyPercent}%"
+            };
+            
+            AddOperationLog(LogLevel.Info, $"グラフの透過率を {transparencyDescription} に設定しました");
+            LogInfo($"Graph transparency set to {transparencyPercent}% (opacity: {opacity})");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"透過率の適用に失敗しました: {ex.Message}");
+            LogError($"SetGraphTransparency failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 透過率メニューのチェック状態を更新
+    /// </summary>
+    private void UpdateTransparencyMenuChecks(int selectedTransparency)
+    {
+        try
+        {
+            // すべてのメニューのチェックを外す
+            Transparency0MenuItem.IsChecked = false;
+            Transparency40MenuItem.IsChecked = false;
+            Transparency80MenuItem.IsChecked = false;
+            
+            // 選択された透過率のメニューにチェックを付ける
+            switch (selectedTransparency)
+            {
+                case 0:
+                    Transparency0MenuItem.IsChecked = true;
+                    break;
+                case 40:
+                    Transparency40MenuItem.IsChecked = true;
+                    break;
+                case 80:
+                    Transparency80MenuItem.IsChecked = true;
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"UpdateTransparencyMenuChecks failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// グラフ表示領域の透過率を初期化
+    /// </summary>
+    private void InitializeGraphTransparency()
+    {
+        try
+        {
+            // デフォルトで不透明（0%透過）に設定
+            SetGraphTransparency(0);
+        }
+        catch (Exception ex)
+        {
+            LogError($"InitializeGraphTransparency failed: {ex}");
         }
     }
 
