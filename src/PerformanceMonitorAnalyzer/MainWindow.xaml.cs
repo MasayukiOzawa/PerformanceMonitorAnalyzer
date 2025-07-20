@@ -2743,9 +2743,12 @@ public partial class MainWindow : Window
             await _plotLock.WaitAsync();
             try
             {
-                // 読み込み結果を処理
-                foreach (var counterInfo in counterInfos)
+                // 読み込み結果を順序通りに処理（各カウンターを個別の系列として処理）
+                for (int i = 0; i < counterInfos.Count; i++)
                 {
+                    var counterInfo = counterInfos[i];
+                    var originalCounterPath = counters[i]; // 元の順序を保持
+                    
                     try
                     {
                         processedCount++;
@@ -2776,15 +2779,18 @@ public partial class MainWindow : Window
                             
                             if (dataPoints.Count > 0)
                             {
+                                // カウンターデータを個別に保存（一つのカウンター = 一つの系列）
                                 _counterData[counterInfo.FullPath] = dataPoints;
                                 successCount++;
                                 
-                                // UIスレッドでデータテーブルを更新
+                                // UIスレッドでデータテーブルを更新（カウンターごとに個別処理）
                                 await Dispatcher.InvokeAsync(() =>
                                 {
-                                    // グラフとデータテーブルの両方を更新
+                                    // グラフとデータテーブルの両方を更新（個別系列として）
                                     AddCounterToChart(counterInfo.FullPath);
                                 });
+                                
+                                progress?.Report($"カウンター系列追加完了: {counterInfo.FullPath}");
                             }
                             else
                             {

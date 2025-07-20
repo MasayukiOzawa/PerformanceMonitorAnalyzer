@@ -499,7 +499,8 @@ public class BlgFileAnalyzer : IDisposable
 
         // 2並列に制限するSemaphore
         using var semaphore = new SemaphoreSlim(2, 2);
-        var results = new ConcurrentBag<CounterInfo>();
+        var results = new Dictionary<string, CounterInfo>();
+        var lockObj = new object();
 
         // 全てのカウンターを並列で処理
         var tasks = counterPathsList.Select(async counterPath =>
@@ -509,7 +510,13 @@ public class BlgFileAnalyzer : IDisposable
             {
                 progress?.Report($"カウンター読み込み開始: {counterPath}");
                 var counterInfo = await LoadCounterDataAsync(counterPath, progress);
-                results.Add(counterInfo);
+                
+                // 順序を保持するためにDictionaryを使用
+                lock (lockObj)
+                {
+                    results[counterPath] = counterInfo;
+                }
+                
                 progress?.Report($"カウンター読み込み完了: {counterPath}");
                 return counterInfo;
             }
@@ -521,7 +528,8 @@ public class BlgFileAnalyzer : IDisposable
 
         await Task.WhenAll(tasks);
         
-        var resultList = results.ToList();
+        // 元の順序を保持してリストに変換
+        var resultList = counterPathsList.Select(path => results[path]).ToList();
         progress?.Report($"複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
         
         return resultList;
@@ -542,7 +550,8 @@ public class BlgFileAnalyzer : IDisposable
 
         // 2並列に制限するSemaphore
         using var semaphore = new SemaphoreSlim(2, 2);
-        var results = new ConcurrentBag<CounterInfo>();
+        var results = new Dictionary<string, CounterInfo>();
+        var lockObj = new object();
 
         // 全てのカウンターを並列で処理
         var tasks = counterPathsList.Select(async counterPath =>
@@ -552,7 +561,13 @@ public class BlgFileAnalyzer : IDisposable
             {
                 progress?.Report($"時間制約付きカウンター読み込み開始: {counterPath}");
                 var counterInfo = await LoadCounterDataAsync(counterPath, startTime, endTime, progress);
-                results.Add(counterInfo);
+                
+                // 順序を保持するためにDictionaryを使用
+                lock (lockObj)
+                {
+                    results[counterPath] = counterInfo;
+                }
+                
                 progress?.Report($"時間制約付きカウンター読み込み完了: {counterPath}");
                 return counterInfo;
             }
@@ -564,7 +579,8 @@ public class BlgFileAnalyzer : IDisposable
 
         await Task.WhenAll(tasks);
         
-        var resultList = results.ToList();
+        // 元の順序を保持してリストに変換
+        var resultList = counterPathsList.Select(path => results[path]).ToList();
         progress?.Report($"時間制約付き複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
         
         return resultList;
