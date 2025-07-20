@@ -15,7 +15,6 @@ using Newtonsoft.Json.Linq;
 using System.Text;
 using ScottPlot;
 using ScottPlot.WPF;
-using System.Drawing;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -3476,7 +3475,7 @@ public partial class MainWindow : Window
         try
         {
             // グラフにデータがあるかチェック
-            if (PerformanceChart.Plot.GetPlottables().Count == 0)
+            if (PerformanceChart.Plot.PlottableList.Count == 0)
             {
                 MessageBox.Show("コピーするグラフデータがありません。\nカウンターを選択してグラフを表示してからコピーしてください。", 
                                "グラフコピー", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -3484,14 +3483,21 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // ScottPlotからBitmapを取得
-            using var bitmap = PerformanceChart.Plot.GetBitmap();
+            // WPF コントロールから画像を取得
+            int width = (int)PerformanceChart.ActualWidth;
+            int height = (int)PerformanceChart.ActualHeight;
             
-            // BitmapをBitmapSourceに変換
-            var bitmapSource = ConvertBitmapToBitmapSource(bitmap);
+            if (width <= 0 || height <= 0)
+            {
+                width = 800;
+                height = 600;
+            }
+
+            var renderTargetBitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            renderTargetBitmap.Render(PerformanceChart);
             
             // クリップボードにコピー
-            Clipboard.SetImage(bitmapSource);
+            Clipboard.SetImage(renderTargetBitmap);
             
             AddOperationLog(LogLevel.Info, "グラフをクリップボードにコピーしました");
             
@@ -3503,29 +3509,6 @@ public partial class MainWindow : Window
             AddOperationLog(LogLevel.Error, $"グラフのクリップボードコピーに失敗: {ex.Message}");
             MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}", 
                            "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    /// <summary>
-    /// System.Drawing.BitmapをBitmapSourceに変換
-    /// </summary>
-    /// <param name="bitmap">変換元のBitmap</param>
-    /// <returns>変換されたBitmapSource</returns>
-    private BitmapSource ConvertBitmapToBitmapSource(System.Drawing.Bitmap bitmap)
-    {
-        using (var memory = new MemoryStream())
-        {
-            bitmap.Save(memory, System.Drawing.Imaging.ImageFormat.Png);
-            memory.Position = 0;
-            
-            var bitmapImage = new BitmapImage();
-            bitmapImage.BeginInit();
-            bitmapImage.StreamSource = memory;
-            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-            bitmapImage.EndInit();
-            bitmapImage.Freeze();
-            
-            return bitmapImage;
         }
     }
 
