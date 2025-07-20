@@ -35,6 +35,10 @@
             <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="バージョン情報(_A)"/>
             </MenuItem>
+            <MenuItem Header="テーマ(_T)">
+                <MenuItem Header="🌞 ライトテーマ" x:Name="LightThemeMenuItem" Click="LightTheme_Click" IsCheckable="True" IsChecked="True"/>
+                <MenuItem Header="🌙 ダークテーマ" x:Name="DarkThemeMenuItem" Click="DarkTheme_Click" IsCheckable="True"/>
+            </MenuItem>
         </Menu>
 
         <!-- プログレスバー -->

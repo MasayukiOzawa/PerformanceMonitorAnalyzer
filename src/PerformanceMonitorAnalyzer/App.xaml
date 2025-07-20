@@ -21,6 +21,27 @@
         <SolidColorBrush x:Key="WarningColor" Color="#F57C00"/>
         <SolidColorBrush x:Key="InfoColor" Color="#1976D2"/>
         
+        <!-- Dark Theme Colors -->
+        <SolidColorBrush x:Key="DarkPrimaryColor" Color="#D0BCFF"/>
+        <SolidColorBrush x:Key="DarkPrimaryVariantColor" Color="#B8A9FF"/>
+        <SolidColorBrush x:Key="DarkSecondaryColor" Color="#CCC2DC"/>
+        <SolidColorBrush x:Key="DarkSurfaceColor" Color="#1C1B1F"/>
+        <SolidColorBrush x:Key="DarkBackgroundColor" Color="#121212"/>
+        <SolidColorBrush x:Key="DarkErrorColor" Color="#F2B8B5"/>
+        <SolidColorBrush x:Key="DarkOnPrimaryColor" Color="#381E72"/>
+        <SolidColorBrush x:Key="DarkOnSecondaryColor" Color="#332D41"/>
+        <SolidColorBrush x:Key="DarkOnSurfaceColor" Color="#E6E1E5"/>
+        <SolidColorBrush x:Key="DarkOnBackgroundColor" Color="#E6E1E5"/>
+        <SolidColorBrush x:Key="DarkOnErrorColor" Color="#601410"/>
+        <SolidColorBrush x:Key="DarkOutlineColor" Color="#938F99"/>
+        <SolidColorBrush x:Key="DarkSurfaceVariantColor" Color="#49454F"/>
+        <SolidColorBrush x:Key="DarkOnSurfaceVariantColor" Color="#CAC4D0"/>
+        
+        <!-- Animation Resources -->
+        <Duration x:Key="FastAnimation">0:0:0.2</Duration>
+        <Duration x:Key="MediumAnimation">0:0:0.3</Duration>
+        <Duration x:Key="SlowAnimation">0:0:0.5</Duration>
+        
         <!-- Modern Card Style -->
         <Style x:Key="ModernCard" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource SurfaceColor}"/>
@@ -76,7 +97,7 @@
             </Setter>
         </Style>
         
-        <!-- Modern Button Style -->
+        <!-- Modern Button Style with Animations -->
         <Style x:Key="ModernButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource PrimaryColor}"/>
             <Setter Property="Foreground" Value="{StaticResource OnPrimaryColor}"/>
@@ -85,6 +106,7 @@
             <Setter Property="Margin" Value="4"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -95,16 +117,59 @@
                             <Border.Effect>
                                 <DropShadowEffect x:Name="ButtonShadow" BlurRadius="4" Direction="270" ShadowDepth="1" Color="#40000000"/>
                             </Border.Effect>
+                            <Border.RenderTransform>
+                                <ScaleTransform x:Name="ButtonScale" ScaleX="1" ScaleY="1"/>
+                            </Border.RenderTransform>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource PrimaryVariantColor}"/>
-                                <Setter TargetName="ButtonShadow" Property="BlurRadius" Value="8"/>
-                                <Setter TargetName="ButtonShadow" Property="ShadowDepth" Value="2"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="ButtonBorder"
+                                                          Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                          To="#4A2C86" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonShadow"
+                                                           Storyboard.TargetProperty="BlurRadius"
+                                                           To="8" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonShadow"
+                                                           Storyboard.TargetProperty="ShadowDepth"
+                                                           To="2" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonScale"
+                                                           Storyboard.TargetProperty="ScaleX"
+                                                           To="1.05" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonScale"
+                                                           Storyboard.TargetProperty="ScaleY"
+                                                           To="1.05" Duration="{StaticResource FastAnimation}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="ButtonBorder"
+                                                          Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                          To="#6750A4" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonShadow"
+                                                           Storyboard.TargetProperty="BlurRadius"
+                                                           To="4" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonShadow"
+                                                           Storyboard.TargetProperty="ShadowDepth"
+                                                           To="1" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonScale"
+                                                           Storyboard.TargetProperty="ScaleX"
+                                                           To="1" Duration="{StaticResource FastAnimation}"/>
+                                            <DoubleAnimation Storyboard.TargetName="ButtonScale"
+                                                           Storyboard.TargetProperty="ScaleY"
+                                                           To="1" Duration="{StaticResource FastAnimation}"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource PrimaryVariantColor}"/>
+                                <Setter TargetName="ButtonScale" Property="ScaleX" Value="0.95"/>
+                                <Setter TargetName="ButtonScale" Property="ScaleY" Value="0.95"/>
                                 <Setter TargetName="ButtonShadow" Property="BlurRadius" Value="2"/>
                                 <Setter TargetName="ButtonShadow" Property="ShadowDepth" Value="0"/>
                             </Trigger>

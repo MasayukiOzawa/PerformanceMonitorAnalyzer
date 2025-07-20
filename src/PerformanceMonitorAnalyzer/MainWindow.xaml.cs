@@ -3701,6 +3701,80 @@ public partial class MainWindow : Window
         return _counterScales.GetValueOrDefault(counterPath, 1.0);
     }
 
+    #region テーマ切り替え機能
+
+    /// <summary>
+    /// ライトテーマに切り替え
+    /// </summary>
+    private void LightTheme_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyTheme(false);
+        LightThemeMenuItem.IsChecked = true;
+        DarkThemeMenuItem.IsChecked = false;
+    }
+
+    /// <summary>
+    /// ダークテーマに切り替え
+    /// </summary>
+    private void DarkTheme_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyTheme(true);
+        LightThemeMenuItem.IsChecked = false;
+        DarkThemeMenuItem.IsChecked = true;
+    }
+
+    /// <summary>
+    /// テーマを適用
+    /// </summary>
+    private void ApplyTheme(bool isDark)
+    {
+        var resources = Application.Current.Resources;
+        
+        if (isDark)
+        {
+            // ダークテーマの色を適用
+            resources["PrimaryColor"] = resources["DarkPrimaryColor"];
+            resources["PrimaryVariantColor"] = resources["DarkPrimaryVariantColor"];
+            resources["SecondaryColor"] = resources["DarkSecondaryColor"];
+            resources["SurfaceColor"] = resources["DarkSurfaceColor"];
+            resources["BackgroundColor"] = resources["DarkBackgroundColor"];
+            resources["ErrorColor"] = resources["DarkErrorColor"];
+            resources["OnPrimaryColor"] = resources["DarkOnPrimaryColor"];
+            resources["OnSecondaryColor"] = resources["DarkOnSecondaryColor"];
+            resources["OnSurfaceColor"] = resources["DarkOnSurfaceColor"];
+            resources["OnBackgroundColor"] = resources["DarkOnBackgroundColor"];
+            resources["OnErrorColor"] = resources["DarkOnErrorColor"];
+            resources["OutlineColor"] = resources["DarkOutlineColor"];
+            resources["SurfaceVariantColor"] = resources["DarkSurfaceVariantColor"];
+            resources["OnSurfaceVariantColor"] = resources["DarkOnSurfaceVariantColor"];
+        }
+        else
+        {
+            // ライトテーマの色を復元（元の値）
+            resources["PrimaryColor"] = new SolidColorBrush(Color.FromRgb(0x67, 0x50, 0xA4));
+            resources["PrimaryVariantColor"] = new SolidColorBrush(Color.FromRgb(0x4A, 0x2C, 0x86));
+            resources["SecondaryColor"] = new SolidColorBrush(Color.FromRgb(0x62, 0x5B, 0x71));
+            resources["SurfaceColor"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFB, 0xFE));
+            resources["BackgroundColor"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFB, 0xFE));
+            resources["ErrorColor"] = new SolidColorBrush(Color.FromRgb(0xBA, 0x1A, 0x1A));
+            resources["OnPrimaryColor"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+            resources["OnSecondaryColor"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+            resources["OnSurfaceColor"] = new SolidColorBrush(Color.FromRgb(0x1C, 0x1B, 0x1F));
+            resources["OnBackgroundColor"] = new SolidColorBrush(Color.FromRgb(0x1C, 0x1B, 0x1F));
+            resources["OnErrorColor"] = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
+            resources["OutlineColor"] = new SolidColorBrush(Color.FromRgb(0x79, 0x74, 0x7E));
+            resources["SurfaceVariantColor"] = new SolidColorBrush(Color.FromRgb(0xE7, 0xE0, 0xEC));
+            resources["OnSurfaceVariantColor"] = new SolidColorBrush(Color.FromRgb(0x49, 0x45, 0x4F));
+        }
+        
+        // ウィンドウの背景色を更新
+        this.Background = (SolidColorBrush)resources["BackgroundColor"];
+        
+        AddOperationLog(LogLevel.Info, $"テーマを{(isDark ? "ダーク" : "ライト")}テーマに変更しました。");
+    }
+
+    #endregion
+
     /// <summary>
     /// TreeNodeから全ての子ノードを再帰的に取得
     /// </summary>
