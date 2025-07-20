@@ -154,6 +154,77 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
+    /// データソースのサンプリング間隔を取得
+    /// </summary>
+    public async Task<TimeSpan> GetSamplingIntervalAsync(IProgress<string>? progress = null)
+    {
+        if (string.IsNullOrEmpty(_filePath))
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        progress?.Report("サンプリング間隔を取得中...");
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                uint bufferSize = (uint)Marshal.SizeOf<PdhApi.PDH_TIME_INFO>();
+                uint result = PdhApi.PdhGetDataSourceTimeRange(_filePath, out uint numEntries, out PdhApi.PDH_TIME_INFO timeInfo, ref bufferSize);
+                
+                PdhApi.CheckPdhStatus(result);
+
+                var startTime = PdhApi.DateTimeFromFileTime(timeInfo.StartTime);
+                var endTime = PdhApi.DateTimeFromFileTime(timeInfo.EndTime);
+                
+                // サンプル数が2以上の場合、時間範囲を(サンプル数-1)で割って間隔を計算
+                TimeSpan interval = TimeSpan.Zero;
+                if (numEntries > 1)
+                {
+                    var totalDuration = endTime - startTime;
+                    interval = TimeSpan.FromTicks(totalDuration.Ticks / (numEntries - 1));
+                }
+
+                progress?.Report($"サンプリング間隔: {FormatInterval(interval)} (サンプル数: {numEntries})");
+
+                return interval;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"サンプリング間隔取得エラー: {ex.Message}");
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// 時間間隔を分かりやすい形式にフォーマット
+    /// </summary>
+    private static string FormatInterval(TimeSpan interval)
+    {
+        if (interval.TotalHours >= 1)
+        {
+            return $"{interval.TotalHours:F1}時間";
+        }
+        else if (interval.TotalMinutes >= 1)
+        {
+            return $"{interval.TotalMinutes:F1}分";
+        }
+        else if (interval.TotalSeconds >= 1)
+        {
+            return $"{interval.TotalSeconds:F1}秒";
+        }
+        else if (interval.TotalMilliseconds >= 1)
+        {
+            return $"{interval.TotalMilliseconds:F0}ミリ秒";
+        }
+        else
+        {
+            return "不明";
+        }
+    }
+
+    /// <summary>
     /// 利用可能なマシン名を取得
     /// </summary>
     public async Task<List<string>> GetMachineNamesAsync(IProgress<string>? progress = null)

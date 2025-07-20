@@ -89,6 +89,15 @@
                              TextWrapping="Wrap"
                              Visibility="Collapsed"/>
                     
+                    <!-- データ取得間隔表示 -->
+                    <TextBlock Grid.Row="0" x:Name="SamplingIntervalDisplay" 
+                             Text="" 
+                             Margin="5,45,5,10" 
+                             FontSize="11"
+                             Foreground="DarkGray"
+                             TextWrapping="Wrap"
+                             Visibility="Collapsed"/>
+                    
                     <!-- パターン選択 -->
                     <StackPanel Grid.Row="1" Margin="5,5,5,10">
                         <TextBlock Text="🎯 カウンターパターン:" 
