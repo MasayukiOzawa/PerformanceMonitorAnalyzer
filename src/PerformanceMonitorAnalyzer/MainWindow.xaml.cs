@@ -690,7 +690,9 @@ public partial class MainWindow : Window
             }
             else
             {
-                SamplingIntervalDisplay.Visibility = Visibility.Collapsed;
+                // 取得間隔が0の場合でも情報を表示
+                SamplingIntervalDisplay.Text = "取得間隔: 取得失敗";
+                SamplingIntervalDisplay.Visibility = Visibility.Visible;
             }
 
             // 時間範囲を検出
@@ -792,6 +794,10 @@ public partial class MainWindow : Window
             {
                 _samplingInterval = await analyzer.GetSamplingIntervalAsync(progress);
                 LogError($"Sampling interval extracted from BLG file: {_samplingInterval}");
+                if (_samplingInterval == TimeSpan.Zero)
+                {
+                    LogError("警告: 取得間隔が0です。単一サンプルまたはデータが不足している可能性があります。");
+                }
             }
             catch (Exception ex)
             {

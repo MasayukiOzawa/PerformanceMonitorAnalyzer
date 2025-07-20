@@ -177,15 +177,27 @@ public class BlgFileAnalyzer : IDisposable
                 var startTime = PdhApi.DateTimeFromFileTime(timeInfo.StartTime);
                 var endTime = PdhApi.DateTimeFromFileTime(timeInfo.EndTime);
                 
+                progress?.Report($"デバッグ情報: サンプル数={numEntries}, 開始時刻={startTime:yyyy-MM-dd HH:mm:ss}, 終了時刻={endTime:yyyy-MM-dd HH:mm:ss}");
+                
                 // サンプル数が2以上の場合、時間範囲を(サンプル数-1)で割って間隔を計算
                 TimeSpan interval = TimeSpan.Zero;
                 if (numEntries > 1)
                 {
                     var totalDuration = endTime - startTime;
                     interval = TimeSpan.FromTicks(totalDuration.Ticks / (numEntries - 1));
+                    progress?.Report($"サンプリング間隔計算成功: {FormatInterval(interval)} (総時間: {totalDuration}, サンプル数: {numEntries})");
                 }
-
-                progress?.Report($"サンプリング間隔: {FormatInterval(interval)} (サンプル数: {numEntries})");
+                else if (numEntries == 1)
+                {
+                    progress?.Report($"警告: サンプル数が1のため間隔計算不可 (単一サンプル)");
+                    // 単一サンプルの場合でも最小間隔を返す（例：1秒）
+                    interval = TimeSpan.FromSeconds(1);
+                }
+                else
+                {
+                    progress?.Report($"警告: サンプル数が0のため間隔計算不可");
+                    throw new InvalidOperationException($"BLGファイルにサンプルデータが含まれていません (サンプル数: {numEntries})");
+                }
 
                 return interval;
             }
