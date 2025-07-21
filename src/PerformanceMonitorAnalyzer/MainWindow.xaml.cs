@@ -736,7 +736,6 @@ public partial class MainWindow : Window
         _samplingInterval = TimeSpan.Zero;
         ComputerNameDisplay.Visibility = Visibility.Collapsed;
         SamplingIntervalDisplay.Visibility = Visibility.Collapsed;
-        FileSizeDisplay.Visibility = Visibility.Collapsed;
 
         // ログタブを再初期化
         InitializeLogTabs();
