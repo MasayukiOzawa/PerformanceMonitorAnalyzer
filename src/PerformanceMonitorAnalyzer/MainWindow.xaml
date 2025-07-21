@@ -79,22 +79,27 @@
                     </Grid.RowDefinitions>
 
                     <!-- ファイル名とファイルサイズ表示 -->
-                    <StackPanel Grid.Row="0" Margin="5,5,5,5">
+                    <Grid Grid.Row="0" Margin="5,5,5,5">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        
                         <!-- ファイル名表示 -->
-                        <TextBlock x:Name="FileNameDisplay" 
+                        <TextBlock Grid.Row="0" x:Name="FileNameDisplay" 
                                  Text="ファイルが選択されていません" 
                                  FontWeight="Bold"
                                  Foreground="DarkBlue"
                                  TextWrapping="Wrap"/>
                         
                         <!-- ファイルサイズ表示 -->
-                        <TextBlock x:Name="FileSizeDisplay" 
+                        <TextBlock Grid.Row="1" x:Name="FileSizeDisplay" 
                                  Text="" 
                                  FontWeight="Bold"
                                  Foreground="DarkBlue"
                                  Visibility="Collapsed"
-                                 Margin="0,3,0,0"/>
-                    </StackPanel>
+                                 Margin="0,5,0,0"/>
+                    </Grid>
                     
                     <!-- コンピューター名表示 -->
                     <TextBlock Grid.Row="1" x:Name="ComputerNameDisplay" 
