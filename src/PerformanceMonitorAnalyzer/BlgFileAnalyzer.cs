@@ -485,6 +485,17 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
+    /// CounterInfoのデータポイントを時刻順にソートするヘルパーメソッド
+    /// </summary>
+    private void SortDataPointsByTimestamp(CounterInfo counterInfo)
+    {
+        if (counterInfo?.DataPoints != null && counterInfo.DataPoints.Count > 0)
+        {
+            counterInfo.DataPoints = counterInfo.DataPoints.OrderBy(dp => dp.Timestamp).ToList();
+        }
+    }
+
+    /// <summary>
     /// 複数のカウンターのデータを2並列で読み込み
     /// </summary>
     public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, IProgress<string>? progress = null)
@@ -748,7 +759,9 @@ public class BlgFileAnalyzer : IDisposable
                 }
 
                 counterInfo.DataPoints = dataPoints;
-                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込みました");
+                // データポイントを時刻順にソート（時系列グラフの正確な表示のため）
+                SortDataPointsByTimestamp(counterInfo);
+                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込み、時刻順にソートしました");
 
                 return counterInfo;
             }
@@ -964,9 +977,11 @@ public class BlgFileAnalyzer : IDisposable
                         progress?.Report($"カウンター '{counterPath}': {sampleCount} データポイントを読み込み中...");
                     }
                 }
-
+                
                 counterInfo.DataPoints = dataPoints;
-                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込みました");
+                // データポイントを時刻順にソート（時系列グラフの正確な表示のため）
+                SortDataPointsByTimestamp(counterInfo);
+                progress?.Report($"カウンター '{counterPath}' から {dataPoints.Count} データポイントを読み込み、時刻順にソートしました");
 
                 return counterInfo;
             }
