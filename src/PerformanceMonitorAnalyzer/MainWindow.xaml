@@ -141,7 +141,7 @@
                              Margin="5,0,5,5" 
                              FontWeight="SemiBold"/>
                     
-                    <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto" MaxHeight="300">
                         <TreeView x:Name="CounterTreeView" Margin="5">
                             <TreeView.ItemTemplate>
                                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
