@@ -37,7 +37,7 @@ public class LegendItem : INotifyPropertyChanged
 {
     private bool _isVisible = true;
     private string _currentValue = "";
-    private Color _color = Colors.Blue;
+    private System.Windows.Media.Color _color = Colors.Blue;
     
     public string CounterName { get; set; } = string.Empty;
     public string CounterPath { get; set; } = string.Empty;
@@ -70,7 +70,7 @@ public class LegendItem : INotifyPropertyChanged
         }
     }
     
-    public Color Color
+    public System.Windows.Media.Color Color
     {
         get => _color;
         set
@@ -4478,7 +4478,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 凡例アイテムを追加
     /// </summary>
-    private void AddLegendItem(string counterPath, string counterName, Color color)
+    private void AddLegendItem(string counterPath, string counterName, System.Windows.Media.Color color)
     {
         var existingItem = _legendItems.FirstOrDefault(item => item.CounterPath == counterPath);
         if (existingItem != null)
