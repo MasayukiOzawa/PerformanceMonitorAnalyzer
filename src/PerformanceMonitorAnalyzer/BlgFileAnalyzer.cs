@@ -905,6 +905,419 @@ public class BlgFileAnalyzer : IDisposable
         });
     }
 
+    /// <summary>
+    /// 複数のカウンターデータを並列で読み込み（2並列、安定性重視）
+    /// </summary>
+    public async Task<List<CounterInfo>> LoadMultipleCounterDataParallelAsync(
+        IEnumerable<string> counterPaths, 
+        IProgress<string>? progress = null)
+    {
+        if (_filePath == null)
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        var counterPathsList = counterPaths.ToList();
+        progress?.Report($"並列処理で{counterPathsList.Count}個のカウンターを読み込み開始（2並列）");
+
+        // 結果を順序付きで保存するための配列
+        var results = new CounterInfo[counterPathsList.Count];
+        var lockObject = new object();
+        var completedCount = 0;
+
+        // 並列処理オプションを設定（最大2並列）
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = 2
+        };
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                Parallel.For(0, counterPathsList.Count, parallelOptions, i =>
+                {
+                    var counterPath = counterPathsList[i];
+                    try
+                    {
+                        // 進行状況報告（スレッドセーフ）
+                        lock (lockObject)
+                        {
+                            completedCount++;
+                            progress?.Report($"カウンター読み込み中: {counterPath} ({completedCount}/{counterPathsList.Count})");
+                        }
+
+                        // 各カウンターを個別に読み込み（同期版を使用してスレッドセーフ）
+                        var counterInfo = LoadCounterDataSync(counterPath);
+                        results[i] = counterInfo;
+                    }
+                    catch (Exception ex)
+                    {
+                        // エラーが発生した場合は空のCounterInfoを作成
+                        results[i] = new CounterInfo
+                        {
+                            FullPath = counterPath,
+                            ObjectName = ExtractObjectName(counterPath),
+                            CounterName = ExtractCounterName(counterPath),
+                            InstanceName = ExtractInstanceName(counterPath),
+                            DataPoints = new List<CounterDataPoint>()
+                        };
+
+                        lock (lockObject)
+                        {
+                            progress?.Report($"警告: カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"並列処理中にエラーが発生: {ex.Message}");
+                throw;
+            }
+        });
+
+        // 結果をリストに変換（nullチェック）
+        var resultList = results.Where(r => r != null).ToList();
+        progress?.Report($"並列読み込み完了: {resultList.Count}個のカウンターを処理");
+
+        return resultList;
+    }
+
+    /// <summary>
+    /// 複数のカウンターデータを時間制約付きで並列読み込み（2並列、安定性重視）
+    /// </summary>
+    public async Task<List<CounterInfo>> LoadMultipleCounterDataParallelAsync(
+        IEnumerable<string> counterPaths, 
+        DateTime? startTime, 
+        DateTime? endTime, 
+        IProgress<string>? progress = null)
+    {
+        if (_filePath == null)
+        {
+            throw new InvalidOperationException("BLGファイルが開かれていません。");
+        }
+
+        var counterPathsList = counterPaths.ToList();
+        progress?.Report($"時間制約付き並列処理で{counterPathsList.Count}個のカウンターを読み込み開始（2並列）");
+
+        // 結果を順序付きで保存するための配列
+        var results = new CounterInfo[counterPathsList.Count];
+        var lockObject = new object();
+        var completedCount = 0;
+
+        // 並列処理オプションを設定（最大2並列）
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = 2
+        };
+
+        await Task.Run(() =>
+        {
+            try
+            {
+                Parallel.For(0, counterPathsList.Count, parallelOptions, i =>
+                {
+                    var counterPath = counterPathsList[i];
+                    try
+                    {
+                        // 進行状況報告（スレッドセーフ）
+                        lock (lockObject)
+                        {
+                            completedCount++;
+                            progress?.Report($"カウンター読み込み中: {counterPath} ({completedCount}/{counterPathsList.Count})");
+                        }
+
+                        // 各カウンターを個別に読み込み（同期版を使用してスレッドセーフ）
+                        var counterInfo = LoadCounterDataWithTimeSync(counterPath, startTime, endTime);
+                        results[i] = counterInfo;
+                    }
+                    catch (Exception ex)
+                    {
+                        // エラーが発生した場合は空のCounterInfoを作成
+                        results[i] = new CounterInfo
+                        {
+                            FullPath = counterPath,
+                            ObjectName = ExtractObjectName(counterPath),
+                            CounterName = ExtractCounterName(counterPath),
+                            InstanceName = ExtractInstanceName(counterPath),
+                            DataPoints = new List<CounterDataPoint>()
+                        };
+
+                        lock (lockObject)
+                        {
+                            progress?.Report($"警告: カウンター '{counterPath}' の読み込みに失敗: {ex.Message}");
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"並列処理中にエラーが発生: {ex.Message}");
+                throw;
+            }
+        });
+
+        // 結果をリストに変換（nullチェック）
+        var resultList = results.Where(r => r != null).ToList();
+        progress?.Report($"時間制約付き並列読み込み完了: {resultList.Count}個のカウンターを処理");
+
+        return resultList;
+    }
+
+    /// <summary>
+    /// カウンターデータを同期的に読み込み（スレッドセーフ版）
+    /// </summary>
+    private CounterInfo LoadCounterDataSync(string counterPath)
+    {
+        string fullCounterPath = NormalizeCounterPath(counterPath);
+        
+        IntPtr query = IntPtr.Zero;
+        IntPtr counter = IntPtr.Zero;
+        var counterInfo = new CounterInfo
+        {
+            FullPath = fullCounterPath,
+            ObjectName = ExtractObjectName(fullCounterPath),
+            CounterName = ExtractCounterName(fullCounterPath),
+            InstanceName = ExtractInstanceName(fullCounterPath)
+        };
+
+        // SQLServerカウンターかどうかを判定
+        bool isSqlServerCounter = fullCounterPath.Contains("SQLServer", StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            // BLGファイルを指定してクエリを開く
+            uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
+            if (result != PdhApi.ERROR_SUCCESS)
+            {
+                throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+
+            // カウンターをクエリに追加
+            result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
+            if (result != PdhApi.ERROR_SUCCESS)
+            {
+                var errorMsg = $"カウンター '{fullCounterPath}' をクエリに追加できませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})";
+                
+                // SQLServerカウンターの場合は例外を投げずに空のデータを返す
+                if (isSqlServerCounter)
+                {
+                    counterInfo.DataPoints = new List<CounterDataPoint>();
+                    return counterInfo;
+                }
+                else
+                {
+                    throw new Exception(errorMsg);
+                }
+            }
+
+            // 最初のデータ収集
+            result = PdhApi.PdhCollectQueryData(query);
+            if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA && result != PdhApi.ERROR_SUCCESS)
+            {
+                throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+
+            var dataPoints = new List<CounterDataPoint>();
+            int sampleCount = 0;
+            const int maxSamples = 50000; // 安全のため最大50,000サンプル（メモリ使用量削減）
+
+            // BLGファイル内の全データポイントを反復処理
+            while (sampleCount < maxSamples)
+            {
+                result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
+                
+                if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
+                {
+                    break; // データ終了
+                }
+                
+                PdhApi.CheckPdhStatus(result);
+
+                // フォーマットされた値を取得
+                result = PdhApi.PdhGetFormattedCounterValue(
+                    counter,
+                    PdhApi.PDH_FMT_DOUBLE,
+                    IntPtr.Zero,
+                    out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                double formattedValue;
+                if (result == PdhApi.PDH_CALC_NEGATIVE_DENOMINATOR ||
+                    result == PdhApi.PDH_CALC_NEGATIVE_VALUE ||
+                    result == PdhApi.PDH_CALC_NEGATIVE_TIMEBASE ||
+                    result == PdhApi.PDH_INVALID_DATA)
+                {
+                    formattedValue = double.NaN;
+                }
+                else
+                {
+                    PdhApi.CheckPdhStatus(result);
+                    formattedValue = value.doubleValue;
+                }
+
+                var dataPoint = new CounterDataPoint
+                {
+                    Timestamp = PdhApi.DateTimeFromFileTime(timestamp),
+                    Value = formattedValue,
+                    Status = value.CStatus
+                };
+
+                dataPoints.Add(dataPoint);
+                sampleCount++;
+            }
+
+            counterInfo.DataPoints = dataPoints.OrderBy(dp => dp.Timestamp).ToList();
+            return counterInfo;
+        }
+        finally
+        {
+            if (counter != IntPtr.Zero)
+            {
+                PdhApi.PdhRemoveCounter(counter);
+            }
+            if (query != IntPtr.Zero)
+            {
+                PdhApi.PdhCloseQuery(query);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 時間制約付きカウンターデータを同期的に読み込み（スレッドセーフ版）
+    /// </summary>
+    private CounterInfo LoadCounterDataWithTimeSync(string counterPath, DateTime? startTime, DateTime? endTime)
+    {
+        string fullCounterPath = NormalizeCounterPath(counterPath);
+        
+        IntPtr query = IntPtr.Zero;
+        IntPtr counter = IntPtr.Zero;
+        var counterInfo = new CounterInfo
+        {
+            FullPath = fullCounterPath,
+            ObjectName = ExtractObjectName(fullCounterPath),
+            CounterName = ExtractCounterName(fullCounterPath),
+            InstanceName = ExtractInstanceName(fullCounterPath)
+        };
+
+        // SQLServerカウンターかどうかを判定
+        bool isSqlServerCounter = fullCounterPath.Contains("SQLServer", StringComparison.OrdinalIgnoreCase);
+
+        try
+        {
+            // BLGファイルを指定してクエリを開く
+            uint result = PdhApi.PdhOpenQuery(_filePath, IntPtr.Zero, out query);
+            if (result != PdhApi.ERROR_SUCCESS)
+            {
+                throw new Exception($"クエリを開けませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+
+            // 時間範囲を設定（必要に応じて）
+            if (startTime.HasValue || endTime.HasValue)
+            {
+                var timeInfo = new PdhApi.PDH_TIME_INFO
+                {
+                    StartTime = startTime.HasValue ? PdhApi.FileTimeFromDateTime(startTime.Value) : 0,
+                    EndTime = endTime.HasValue ? PdhApi.FileTimeFromDateTime(endTime.Value) : long.MaxValue,
+                    SampleCount = 0
+                };
+                
+                result = PdhApi.PdhSetQueryTimeRange(query, ref timeInfo);
+                if (result != PdhApi.ERROR_SUCCESS)
+                {
+                    throw new Exception($"時間範囲設定に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+                }
+            }
+
+            // カウンターをクエリに追加
+            result = PdhApi.PdhAddCounter(query, fullCounterPath, IntPtr.Zero, out counter);
+            if (result != PdhApi.ERROR_SUCCESS)
+            {
+                var errorMsg = $"カウンター '{fullCounterPath}' をクエリに追加できませんでした: {PdhApi.GetErrorMessage(result)} (0x{result:X8})";
+                
+                // SQLServerカウンターの場合は例外を投げずに空のデータを返す
+                if (isSqlServerCounter)
+                {
+                    counterInfo.DataPoints = new List<CounterDataPoint>();
+                    return counterInfo;
+                }
+                else
+                {
+                    throw new Exception(errorMsg);
+                }
+            }
+
+            // 最初のデータ収集
+            result = PdhApi.PdhCollectQueryData(query);
+            if (result != PdhApi.PDH_NO_MORE_DATA && result != PdhApi.PDH_NO_DATA && result != PdhApi.ERROR_SUCCESS)
+            {
+                throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
+            }
+
+            var dataPoints = new List<CounterDataPoint>();
+            int sampleCount = 0;
+            const int maxSamples = 50000; // 安全のため最大50,000サンプル（メモリ使用量削減）
+
+            // BLGファイル内の全データポイントを反復処理
+            while (sampleCount < maxSamples)
+            {
+                result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
+                
+                if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
+                {
+                    break; // データ終了
+                }
+                
+                PdhApi.CheckPdhStatus(result);
+
+                // フォーマットされた値を取得
+                result = PdhApi.PdhGetFormattedCounterValue(
+                    counter,
+                    PdhApi.PDH_FMT_DOUBLE,
+                    IntPtr.Zero,
+                    out PdhApi.PDH_FMT_COUNTERVALUE value);
+
+                double formattedValue;
+                if (result == PdhApi.PDH_CALC_NEGATIVE_DENOMINATOR ||
+                    result == PdhApi.PDH_CALC_NEGATIVE_VALUE ||
+                    result == PdhApi.PDH_CALC_NEGATIVE_TIMEBASE ||
+                    result == PdhApi.PDH_INVALID_DATA)
+                {
+                    formattedValue = double.NaN;
+                }
+                else
+                {
+                    PdhApi.CheckPdhStatus(result);
+                    formattedValue = value.doubleValue;
+                }
+
+                var dataPoint = new CounterDataPoint
+                {
+                    Timestamp = PdhApi.DateTimeFromFileTime(timestamp),
+                    Value = formattedValue,
+                    Status = value.CStatus
+                };
+
+                dataPoints.Add(dataPoint);
+                sampleCount++;
+            }
+
+            counterInfo.DataPoints = dataPoints.OrderBy(dp => dp.Timestamp).ToList();
+            return counterInfo;
+        }
+        finally
+        {
+            if (counter != IntPtr.Zero)
+            {
+                PdhApi.PdhRemoveCounter(counter);
+            }
+            if (query != IntPtr.Zero)
+            {
+                PdhApi.PdhCloseQuery(query);
+            }
+        }
+    }
+
     private static string ExtractObjectName(string counterPath)
     {
         // 入力値チェック
