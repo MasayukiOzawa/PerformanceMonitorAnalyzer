@@ -37,7 +37,7 @@ public class LegendItem : INotifyPropertyChanged
 {
     private bool _isVisible = true;
     private string _currentValue = "";
-    private System.Windows.Media.Color _color = Colors.Blue;
+    private System.Windows.Media.Color _color = System.Windows.Media.Colors.Blue;
     
     public string CounterName { get; set; } = string.Empty;
     public string CounterPath { get; set; } = string.Empty;
@@ -85,7 +85,7 @@ public class LegendItem : INotifyPropertyChanged
     }
     
     public Brush ColorBrush => new SolidColorBrush(_color);
-    public Brush BackgroundBrush => _isVisible ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(50, 200, 200, 200));
+    public Brush BackgroundBrush => _isVisible ? Brushes.Transparent : new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 200, 200, 200));
     public Brush TextBrush => _isVisible ? Brushes.Black : Brushes.Gray;
     
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -4373,9 +4373,9 @@ public partial class MainWindow : Window
             LegendColumn.Width = new GridLength(250, GridUnitType.Pixel);
             LegendSplitterColumn.Width = new GridLength(5, GridUnitType.Pixel);
             ToggleLegendButton.Content = "📋 凡例を非表示";
-            ToggleLegendButton.Background = new SolidColorBrush(Color.FromRgb(255, 235, 235));
-            ToggleLegendButton.BorderBrush = new SolidColorBrush(Color.FromRgb(244, 67, 54));
-            ToggleLegendButton.Foreground = new SolidColorBrush(Color.FromRgb(183, 28, 28));
+            ToggleLegendButton.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 235));
+            ToggleLegendButton.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
+            ToggleLegendButton.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(183, 28, 28));
         }
         else
         {
@@ -4384,9 +4384,9 @@ public partial class MainWindow : Window
             LegendColumn.Width = new GridLength(0);
             LegendSplitterColumn.Width = new GridLength(0);
             ToggleLegendButton.Content = "📋 凡例を表示";
-            ToggleLegendButton.Background = new SolidColorBrush(Color.FromRgb(232, 245, 232));
-            ToggleLegendButton.BorderBrush = new SolidColorBrush(Color.FromRgb(76, 175, 80));
-            ToggleLegendButton.Foreground = new SolidColorBrush(Color.FromRgb(46, 125, 50));
+            ToggleLegendButton.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(232, 245, 232));
+            ToggleLegendButton.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
+            ToggleLegendButton.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 125, 50));
         }
     }
     
