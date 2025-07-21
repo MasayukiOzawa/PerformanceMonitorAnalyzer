@@ -70,12 +70,9 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- ファイル名とファイルサイズ表示 -->
@@ -136,42 +133,8 @@
                               ToolTip="選択されたパターンでカウンターを自動選択します"/>
                     </StackPanel>
                     
-                    <TextBlock Grid.Row="4" 
-                             Text="📈 表示したいカウンターをチェック:" 
-                             Margin="5,0,5,5" 
-                             FontWeight="SemiBold"/>
-                    
-                    <ScrollViewer Grid.Row="5" VerticalScrollBarVisibility="Auto" MaxHeight="300">
-                        <TreeView x:Name="CounterTreeView" Margin="5">
-                            <TreeView.ItemTemplate>
-                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding IsChecked}" 
-                                                IsThreeState="{Binding IsThreeState}"
-                                                Checked="CounterCheckBox_Checked"
-                                                Unchecked="CounterCheckBox_Unchecked"
-                                                Indeterminate="CounterCheckBox_Indeterminate"
-                                                Tag="{Binding}"
-                                                Visibility="{Binding CheckBoxVisibility}"
-                                                Margin="0,0,5,0"/>
-                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,3,0"/>
-                                        <TextBlock Text="{Binding DisplayName}" 
-                                                 Margin="0,0,0,0"
-                                                 FontWeight="{Binding FontWeight}"
-                                                 Foreground="{Binding TextColor}"/>
-                                        <TextBlock Text="{Binding CountDisplay}" 
-                                                 Margin="5,0,0,0" 
-                                                 FontSize="10" 
-                                                 Foreground="Gray"
-                                                 Visibility="{Binding CountVisibility}"/>
-                                    </StackPanel>
-                                </HierarchicalDataTemplate>
-                            </TreeView.ItemTemplate>
-                        </TreeView>
-                    </ScrollViewer>
-
                     <!-- 時間範囲選択 -->
-                    <Expander Grid.Row="7" Header="📅 時間範囲選択" IsExpanded="False" Margin="5,5,5,0"
+                    <Expander Grid.Row="4" Header="📅 時間範囲選択" IsExpanded="False" Margin="5,5,5,5"
                              x:Name="TimeRangeExpander" Visibility="Collapsed">
                         <StackPanel Margin="10">
                             <TextBlock Text="時間範囲:" FontWeight="SemiBold" Margin="0,0,0,5"/>
@@ -209,8 +172,8 @@
                     </Expander>
                     
                     <!-- relog.exe情報表示 -->
-                    <Expander Grid.Row="8" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
-                             Margin="5,5,5,0" x:Name="RelogCommandExpander" Visibility="Collapsed">
+                    <Expander Grid.Row="5" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
+                             Margin="5,5,5,5" x:Name="RelogCommandExpander" Visibility="Collapsed">
                         <StackPanel Margin="5">
                             <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
                             <TextBox x:Name="RelogCommandDisplay" 
@@ -224,7 +187,8 @@
                         </StackPanel>
                     </Expander>
                     
-                    <StackPanel Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                    <!-- ボタン群 -->
+                    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
                         <Button Content="🚀 選択されたカウンターを読み込み" 
                                AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"
@@ -236,6 +200,40 @@
                         <Button Content="すべて選択" Click="SelectAll_Click" Margin="0,0,5,0"/>
                         <Button Content="すべて解除" Click="UnselectAll_Click"/>
                     </StackPanel>
+                    
+                    <TextBlock Grid.Row="7" 
+                             Text="📈 表示したいカウンターをチェック:" 
+                             Margin="5,0,5,5" 
+                             FontWeight="SemiBold"/>
+                    
+                    <ScrollViewer Grid.Row="8" VerticalScrollBarVisibility="Auto">
+                        <TreeView x:Name="CounterTreeView" Margin="5">
+                            <TreeView.ItemTemplate>
+                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding IsChecked}" 
+                                                IsThreeState="{Binding IsThreeState}"
+                                                Checked="CounterCheckBox_Checked"
+                                                Unchecked="CounterCheckBox_Unchecked"
+                                                Indeterminate="CounterCheckBox_Indeterminate"
+                                                Tag="{Binding}"
+                                                Visibility="{Binding CheckBoxVisibility}"
+                                                Margin="0,0,5,0"/>
+                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,3,0"/>
+                                        <TextBlock Text="{Binding DisplayName}" 
+                                                 Margin="0,0,0,0"
+                                                 FontWeight="{Binding FontWeight}"
+                                                 Foreground="{Binding TextColor}"/>
+                                        <TextBlock Text="{Binding CountDisplay}" 
+                                                 Margin="5,0,0,0" 
+                                                 FontSize="10" 
+                                                 Foreground="Gray"
+                                                 Visibility="{Binding CountVisibility}"/>
+                                    </StackPanel>
+                                </HierarchicalDataTemplate>
+                            </TreeView.ItemTemplate>
+                        </TreeView>
+                    </ScrollViewer>
                 </Grid>
             </GroupBox>
 
