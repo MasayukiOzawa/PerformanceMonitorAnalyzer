@@ -41,6 +41,7 @@ public class CounterTreeNode : INotifyPropertyChanged
     public string FullPath { get; set; } = string.Empty;
     public ObservableCollection<CounterTreeNode> Children { get; set; } = new();
     public NodeType Type { get; set; } = NodeType.Counter;
+    public bool IsWildCard { get; set; } = false;
     
     public bool IsLeaf => Children.Count == 0;
     public Visibility CheckBoxVisibility => Visibility.Visible; // 全階層でチェックボックス表示
@@ -1064,6 +1065,67 @@ public partial class MainWindow : Window
                 Type = NodeType.Object
             };
             
+            // 複数のインスタンスがある場合、最初に "*" ノードを追加
+            bool hasMultipleInstances = objectGroup.Value.Count > 1 || 
+                                      (objectGroup.Value.Count == 1 && !objectGroup.Value.Keys.First().Equals("(なし)"));
+            
+            if (hasMultipleInstances)
+            {
+                // すべてのカウンター名を収集（重複を除去）
+                var allCounterNames = new HashSet<string>();
+                foreach (var instanceGroup in objectGroup.Value)
+                {
+                    foreach (var counter in instanceGroup.Value)
+                    {
+                        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                        string counterName;
+                        
+                        if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
+                        {
+                            counterName = parts[2];
+                        }
+                        else if (parts.Length >= 2) // \オブジェクト\カウンター の場合
+                        {
+                            counterName = parts[1];
+                        }
+                        else
+                        {
+                            counterName = counter;
+                        }
+                        
+                        allCounterNames.Add(counterName);
+                    }
+                }
+                
+                // "*" インスタンスノードを作成
+                var wildcardInstanceNode = new CounterTreeNode
+                {
+                    DisplayName = "*",
+                    FullPath = "",
+                    Type = NodeType.Instance,
+                    IsWildCard = true
+                };
+                
+                // "*" ノード下に各カウンターを追加
+                foreach (var counterName in allCounterNames.OrderBy(x => x))
+                {
+                    var wildcardCounterNode = new CounterTreeNode
+                    {
+                        DisplayName = counterName,
+                        FullPath = $"WILDCARD:{objectGroup.Key}:*:{counterName}",
+                        Type = NodeType.Counter,
+                        Parent = wildcardInstanceNode,
+                        IsWildCard = true
+                    };
+                    
+                    wildcardInstanceNode.Children.Add(wildcardCounterNode);
+                }
+                
+                wildcardInstanceNode.Parent = objectNode;
+                objectNode.Children.Add(wildcardInstanceNode);
+            }
+            
+            // 通常のインスタンスノードを追加
             foreach (var instanceGroup in objectGroup.Value.OrderBy(x => x.Key))
             {
                 var instanceNode = new CounterTreeNode
@@ -1161,6 +1223,12 @@ public partial class MainWindow : Window
                 {
                     System.Diagnostics.Debug.WriteLine($"Counter {node.FullPath} marked for execution");
                     
+                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択
+                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
+                    {
+                        HandleWildcardCounterSelection(node, true);
+                    }
+                    
                     // relog.exe情報表示を更新
                     UpdateRelogCommandDisplay();
                 }
@@ -1208,6 +1276,12 @@ public partial class MainWindow : Window
                 {
                     RemoveCounterFromChart(node.FullPath);
                     
+                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択解除
+                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
+                    {
+                        HandleWildcardCounterSelection(node, false);
+                    }
+                    
                     // relog.exe情報表示を更新
                     UpdateRelogCommandDisplay();
                 }
@@ -1241,6 +1315,61 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Indeterminate: {ex.Message}");
             LogError($"Error in CounterCheckBox_Indeterminate: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// ワイルドカードカウンターの選択/選択解除時に対応するすべてのインスタンスのカウンターを処理
+    /// </summary>
+    private void HandleWildcardCounterSelection(CounterTreeNode wildcardNode, bool isChecked)
+    {
+        try
+        {
+            // WILDCARD:ObjectName:*:CounterName 形式からパースする
+            var parts = wildcardNode.FullPath.Split(':');
+            if (parts.Length != 4 || parts[0] != "WILDCARD")
+            {
+                LogError($"Invalid wildcard counter path: {wildcardNode.FullPath}");
+                return;
+            }
+
+            var objectName = parts[1];
+            var counterName = parts[3];
+            
+            System.Diagnostics.Debug.WriteLine($"HandleWildcardCounterSelection: {objectName}.*.{counterName} = {isChecked}");
+
+            // 対応するオブジェクトノードを検索
+            var objectNode = _counterTreeNodes.FirstOrDefault(o => o.DisplayName == objectName);
+            if (objectNode == null)
+            {
+                LogError($"Object node not found: {objectName}");
+                return;
+            }
+
+            // すべてのインスタンス（"*"以外）のカウンターを選択/選択解除
+            int matchedCount = 0;
+            foreach (var instanceNode in objectNode.Children)
+            {
+                // "*" ノード自体は除外
+                if (instanceNode.IsWildCard) continue;
+
+                // 対応するカウンター名のノードを検索
+                var targetCounterNode = instanceNode.Children.FirstOrDefault(c => c.DisplayName == counterName);
+                if (targetCounterNode != null)
+                {
+                    // 無限ループを防ぐため、イベントハンドラーを一時的に無効化
+                    targetCounterNode.IsChecked = isChecked;
+                    matchedCount++;
+                    
+                    System.Diagnostics.Debug.WriteLine($"  {(isChecked ? "Selected" : "Unselected")}: {targetCounterNode.FullPath}");
+                }
+            }
+
+            LogError($"Wildcard selection: {objectName}.*.{counterName} -> {matchedCount} counters {(isChecked ? "selected" : "unselected")}");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Error in HandleWildcardCounterSelection: {ex}");
         }
     }
 
