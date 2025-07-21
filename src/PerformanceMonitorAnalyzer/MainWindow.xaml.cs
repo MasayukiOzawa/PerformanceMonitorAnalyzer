@@ -4665,8 +4665,8 @@ public partial class MainWindow : Window
                     // PerformanceChartを自動サイズに戻す
                     PerformanceChart.Width = double.NaN;
                     PerformanceChart.Height = double.NaN;
-                    PerformanceChart.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    PerformanceChart.VerticalAlignment = VerticalAlignment.Stretch;
+                    PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
+                    PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Stretch;
                     
                     LogInfo("グラフサイズを自動サイズに変更しました");
                 }
@@ -4677,8 +4677,8 @@ public partial class MainWindow : Window
                     PerformanceChart.Height = dialog.GraphHeight;
                     
                     // HorizontalAlignmentとVerticalAlignmentを設定して固定サイズにする
-                    PerformanceChart.HorizontalAlignment = HorizontalAlignment.Left;
-                    PerformanceChart.VerticalAlignment = VerticalAlignment.Top;
+                    PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+                    PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Top;
                     
                     LogInfo($"グラフサイズを変更しました: {dialog.GraphWidth:F0}×{dialog.GraphHeight:F0}");
                 }
