@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -30,6 +31,72 @@ public class CounterStatisticsItem
 }
 
 /// <summary>
+/// 凡例アイテム用のデータクラス
+/// </summary>
+public class LegendItem : INotifyPropertyChanged
+{
+    private bool _isVisible = true;
+    private string _currentValue = "";
+    private System.Windows.Media.Color _color = System.Windows.Media.Colors.Blue;
+    
+    public string CounterName { get; set; } = string.Empty;
+    public string CounterPath { get; set; } = string.Empty;
+    
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (_isVisible != value)
+            {
+                _isVisible = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BackgroundBrush));
+                OnPropertyChanged(nameof(TextBrush));
+            }
+        }
+    }
+    
+    public string CurrentValue
+    {
+        get => _currentValue;
+        set
+        {
+            if (_currentValue != value)
+            {
+                _currentValue = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+    
+    public System.Windows.Media.Color Color
+    {
+        get => _color;
+        set
+        {
+            if (_color != value)
+            {
+                _color = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ColorBrush));
+            }
+        }
+    }
+    
+    public Brush ColorBrush => new SolidColorBrush(_color);
+    public Brush BackgroundBrush => _isVisible ? Brushes.Transparent : new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 200, 200, 200));
+    public Brush TextBrush => _isVisible ? Brushes.Black : Brushes.Gray;
+    
+    public event PropertyChangedEventHandler? PropertyChanged;
+    
+    protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+/// <summary>
 /// TreeViewで使用する階層構造のノードクラス
 /// </summary>
 public class CounterTreeNode : INotifyPropertyChanged
@@ -41,6 +108,7 @@ public class CounterTreeNode : INotifyPropertyChanged
     public string FullPath { get; set; } = string.Empty;
     public ObservableCollection<CounterTreeNode> Children { get; set; } = new();
     public NodeType Type { get; set; } = NodeType.Counter;
+    public bool IsWildCard { get; set; } = false;
     
     public bool IsLeaf => Children.Count == 0;
     public Visibility CheckBoxVisibility => Visibility.Visible; // 全階層でチェックボックス表示
@@ -55,7 +123,9 @@ public class CounterTreeNode : INotifyPropertyChanged
     public string TextColor => Type switch
     {
         NodeType.Object => "DarkBlue",
+        NodeType.Instance when IsWildCard => "Purple", // ワイルドカードインスタンスは紫色
         NodeType.Instance => "DarkGreen", 
+        NodeType.Counter when IsWildCard => "Purple", // ワイルドカードカウンターは紫色
         _ => "Black"
     };
     
@@ -182,10 +252,11 @@ public class CounterTreeNode : INotifyPropertyChanged
     
     /// <summary>
     /// 選択されているリーフ（カウンター）ノードを取得
+    /// ワイルドカードカウンターは除外し、実際のカウンターのみを返す
     /// </summary>
     public IEnumerable<CounterTreeNode> GetSelectedCounters()
     {
-        if (IsLeaf && IsChecked == true)
+        if (IsLeaf && IsChecked == true && !IsWildCard)
         {
             yield return this;
         }
@@ -328,6 +399,11 @@ public partial class MainWindow : Window
     // パターン管理機能
     private CounterPatternManager? _patternManager;
     
+    // 凡例管理用のプロパティ
+    private readonly ObservableCollection<LegendItem> _legendItems = new();
+    private readonly Dictionary<string, bool> _seriesVisibility = new();
+    
+    
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
@@ -337,6 +413,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // 凡例の初期化
+        InitializeLegend();
         
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
@@ -377,8 +456,8 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 16;
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
         
-        // 凡例のフォントサイズ設定
-        PerformanceChart.Plot.Legend.FontSize = 16;
+        // 凡例を無効化（独立した凡例コンポーネントを使用）
+        PerformanceChart.Plot.Legend.IsVisible = false;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -732,6 +811,10 @@ public partial class MainWindow : Window
         _counterTreeNodes.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
+        
+        // 凡例をクリア
+        ClearLegendItems();
+        
         _actualComputerName = null;
         _samplingInterval = TimeSpan.Zero;
         ComputerNameDisplay.Visibility = Visibility.Collapsed;
@@ -1070,6 +1153,9 @@ public partial class MainWindow : Window
         // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
         _counterTreeNodes.Clear();
         
+        // 凡例をクリア（新しいファイル読み込み時）
+        ClearLegendItems();
+        
         foreach (var objectGroup in objectGroups.OrderBy(x => x.Key))
         {
             var objectNode = new CounterTreeNode
@@ -1079,6 +1165,67 @@ public partial class MainWindow : Window
                 Type = NodeType.Object
             };
             
+            // 複数のインスタンスがある場合、最初に "*" ノードを追加
+            bool hasMultipleInstances = objectGroup.Value.Count > 1 || 
+                                      (objectGroup.Value.Count == 1 && !objectGroup.Value.Keys.First().Equals("(なし)"));
+            
+            if (hasMultipleInstances)
+            {
+                // すべてのカウンター名を収集（重複を除去）
+                var allCounterNames = new HashSet<string>();
+                foreach (var instanceGroup in objectGroup.Value)
+                {
+                    foreach (var counter in instanceGroup.Value)
+                    {
+                        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                        string counterName;
+                        
+                        if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
+                        {
+                            counterName = parts[2];
+                        }
+                        else if (parts.Length >= 2) // \オブジェクト\カウンター の場合
+                        {
+                            counterName = parts[1];
+                        }
+                        else
+                        {
+                            counterName = counter;
+                        }
+                        
+                        allCounterNames.Add(counterName);
+                    }
+                }
+                
+                // "*" インスタンスノードを作成
+                var wildcardInstanceNode = new CounterTreeNode
+                {
+                    DisplayName = "*",
+                    FullPath = "",
+                    Type = NodeType.Instance,
+                    IsWildCard = true
+                };
+                
+                // "*" ノード下に各カウンターを追加
+                foreach (var counterName in allCounterNames.OrderBy(x => x))
+                {
+                    var wildcardCounterNode = new CounterTreeNode
+                    {
+                        DisplayName = counterName,
+                        FullPath = $"WILDCARD:{objectGroup.Key}:*:{counterName}",
+                        Type = NodeType.Counter,
+                        Parent = wildcardInstanceNode,
+                        IsWildCard = true
+                    };
+                    
+                    wildcardInstanceNode.Children.Add(wildcardCounterNode);
+                }
+                
+                wildcardInstanceNode.Parent = objectNode;
+                objectNode.Children.Add(wildcardInstanceNode);
+            }
+            
+            // 通常のインスタンスノードを追加
             foreach (var instanceGroup in objectGroup.Value.OrderBy(x => x.Key))
             {
                 var instanceNode = new CounterTreeNode
@@ -1176,6 +1323,12 @@ public partial class MainWindow : Window
                 {
                     System.Diagnostics.Debug.WriteLine($"Counter {node.FullPath} marked for execution");
                     
+                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択
+                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
+                    {
+                        HandleWildcardCounterSelection(node, true);
+                    }
+                    
                     // relog.exe情報表示を更新
                     UpdateRelogCommandDisplay();
                 }
@@ -1223,6 +1376,12 @@ public partial class MainWindow : Window
                 {
                     RemoveCounterFromChart(node.FullPath);
                     
+                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択解除
+                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
+                    {
+                        HandleWildcardCounterSelection(node, false);
+                    }
+                    
                     // relog.exe情報表示を更新
                     UpdateRelogCommandDisplay();
                 }
@@ -1256,6 +1415,61 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Indeterminate: {ex.Message}");
             LogError($"Error in CounterCheckBox_Indeterminate: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// ワイルドカードカウンターの選択/選択解除時に対応するすべてのインスタンスのカウンターを処理
+    /// </summary>
+    private void HandleWildcardCounterSelection(CounterTreeNode wildcardNode, bool isChecked)
+    {
+        try
+        {
+            // WILDCARD:ObjectName:*:CounterName 形式からパースする
+            var parts = wildcardNode.FullPath.Split(':');
+            if (parts.Length != 4 || parts[0] != "WILDCARD")
+            {
+                LogError($"Invalid wildcard counter path: {wildcardNode.FullPath}");
+                return;
+            }
+
+            var objectName = parts[1];
+            var counterName = parts[3];
+            
+            System.Diagnostics.Debug.WriteLine($"HandleWildcardCounterSelection: {objectName}.*.{counterName} = {isChecked}");
+
+            // 対応するオブジェクトノードを検索
+            var objectNode = _counterTreeNodes.FirstOrDefault(o => o.DisplayName == objectName);
+            if (objectNode == null)
+            {
+                LogError($"Object node not found: {objectName}");
+                return;
+            }
+
+            // すべてのインスタンス（"*"以外）のカウンターを選択/選択解除
+            int matchedCount = 0;
+            foreach (var instanceNode in objectNode.Children)
+            {
+                // "*" ノード自体は除外
+                if (instanceNode.IsWildCard) continue;
+
+                // 対応するカウンター名のノードを検索
+                var targetCounterNode = instanceNode.Children.FirstOrDefault(c => c.DisplayName == counterName);
+                if (targetCounterNode != null)
+                {
+                    // 無限ループを防ぐため、イベントハンドラーを一時的に無効化
+                    targetCounterNode.IsChecked = isChecked;
+                    matchedCount++;
+                    
+                    System.Diagnostics.Debug.WriteLine($"  {(isChecked ? "Selected" : "Unselected")}: {targetCounterNode.FullPath}");
+                }
+            }
+
+            LogError($"Wildcard selection: {objectName}.*.{counterName} -> {matchedCount} counters {(isChecked ? "selected" : "unselected")}");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Error in HandleWildcardCounterSelection: {ex}");
         }
     }
 
@@ -1329,15 +1543,24 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
+        // 色を取得
+        var colorIndex = _chartSeries.Count;
+        var scottPlotColor = GetNextColor(colorIndex);
+        var mediaColor = ConvertToMediaColor(scottPlotColor);
+        
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Color = scottPlotColor; // 色を設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
+        
+        // 凡例アイテムを追加
+        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -1351,6 +1574,9 @@ public partial class MainWindow : Window
         UpdateChartXAxisRange();
         
         PerformanceChart.Refresh();
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1391,15 +1617,24 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
+        // 色を取得
+        var colorIndex = _chartSeries.Count;
+        var scottPlotColor = GetNextColor(colorIndex);
+        var mediaColor = ConvertToMediaColor(scottPlotColor);
+        
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Color = scottPlotColor; // 色を設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
+        
+        // 凡例アイテムを追加
+        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -1419,6 +1654,9 @@ public partial class MainWindow : Window
         
         // グラフが表示されたらメッセージを非表示
         UpdateChartVisibility();
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     private void RemoveCounterFromChart(string counter)
@@ -1460,6 +1698,9 @@ public partial class MainWindow : Window
         
         // スケール設定も削除
         _counterScales.Remove(counter);
+        
+        // 凡例アイテムを削除
+        RemoveLegendItem(counter);
         
         // データテーブルタブを削除
         RemoveCounterTab(counter);
@@ -1513,10 +1754,16 @@ public partial class MainWindow : Window
             _chartSeries.Clear();
             _areaChartSeries.Clear();
             
+            // 凡例をクリア
+            ClearLegendItems();
+            
             // グラフの基本設定を再初期化
             PerformanceChart.Plot.XLabel("時間");
             PerformanceChart.Plot.YLabel("値");
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+            
+            // 凡例を無効化（独立した凡例コンポーネントを使用）
+            PerformanceChart.Plot.Legend.IsVisible = false;
             
             // 選択されているカウンターを取得
             var selectedCounters = GetSelectedCounters();
@@ -1551,6 +1798,9 @@ public partial class MainWindow : Window
             PerformanceChart.Refresh();
             UpdateChartVisibility();
             
+            // 凡例の現在値を更新
+            UpdateLegendCurrentValues();
+            
             System.Diagnostics.Debug.WriteLine($"Chart refreshed with {selectedCounters.Count} counters");
         }
         catch (Exception ex)
@@ -1580,14 +1830,27 @@ public partial class MainWindow : Window
             var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
             var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
             
+            // 色を取得
+            var colorIndex = _chartSeries.Count;
+            var scottPlotColor = GetNextColor(colorIndex);
+            var mediaColor = ConvertToMediaColor(scottPlotColor);
+            
             var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
             scatter.LegendText = GetCounterDisplayName(counter);
             scatter.LineWidth = 2;
             scatter.MarkerSize = 0;
+            scatter.LineStyle.Color = scottPlotColor; // 色を設定
             
             _chartSeries[counter] = scatter;
+            
+            // 凡例アイテムを追加
+            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+            
             System.Diagnostics.Debug.WriteLine($"Added line series for: {counter}");
         }
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1660,15 +1923,23 @@ public partial class MainWindow : Window
             // FillYプロットを作成（ベースラインから現在の値まで）
             var fillY = PerformanceChart.Plot.Add.FillY(xValues, baseline, topValues);
             fillY.LegendText = GetCounterDisplayName(counter);
-            fillY.FillStyle.Color = GetNextColor(_areaChartSeries.Count);
+            var scottPlotColor = GetNextColor(_areaChartSeries.Count);
+            var mediaColor = ConvertToMediaColor(scottPlotColor);
+            fillY.FillStyle.Color = scottPlotColor;
             
             _areaChartSeries[counter] = fillY;
+            
+            // 凡例アイテムを追加
+            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
             
             // 次のカウンター用にベースラインを更新
             baseline = topValues;
             
             System.Diagnostics.Debug.WriteLine($"Added stacked area series for: {counter}");
         }
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1724,6 +1995,19 @@ public partial class MainWindow : Window
         };
         
         return colors[index % colors.Length];
+    }
+    
+    /// <summary>
+    /// ScottPlot.ColorをSystem.Windows.Media.Colorに変換
+    /// </summary>
+    private System.Windows.Media.Color ConvertToMediaColor(ScottPlot.Color scottPlotColor)
+    {
+        return System.Windows.Media.Color.FromArgb(
+            scottPlotColor.A,
+            scottPlotColor.R,
+            scottPlotColor.G,
+            scottPlotColor.B
+        );
     }
     
     private void UpdateChartVisibility()
@@ -4064,6 +4348,196 @@ public partial class MainWindow : Window
             return $"{bytes / (1024.0 * 1024.0):F1} MB";
         
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
+    }
+
+    /// <summary>
+    /// 凡例の初期化
+    /// </summary>
+    private void InitializeLegend()
+    {
+        LegendItemsControl.ItemsSource = _legendItems;
+    }
+    
+
+    
+    /// <summary>
+    /// すべてのシリーズを表示
+    /// </summary>
+    private void ShowAllSeries_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var item in _legendItems)
+        {
+            item.IsVisible = true;
+            _seriesVisibility[item.CounterPath] = true;
+        }
+        UpdateChartSeriesVisibility();
+    }
+    
+    /// <summary>
+    /// すべてのシリーズを非表示
+    /// </summary>
+    private void HideAllSeries_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var item in _legendItems)
+        {
+            item.IsVisible = false;
+            _seriesVisibility[item.CounterPath] = false;
+        }
+        UpdateChartSeriesVisibility();
+    }
+    
+    /// <summary>
+    /// 凡例アイテムのチェック状態変更
+    /// </summary>
+    private void LegendItem_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
+        {
+            _seriesVisibility[counterPath] = true;
+            UpdateChartSeriesVisibility();
+        }
+    }
+    
+    /// <summary>
+    /// 凡例アイテムのチェック状態変更
+    /// </summary>
+    private void LegendItem_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
+        {
+            _seriesVisibility[counterPath] = false;
+            UpdateChartSeriesVisibility();
+        }
+    }
+    
+    /// <summary>
+    /// グラフシリーズの表示/非表示を更新
+    /// </summary>
+    private void UpdateChartSeriesVisibility()
+    {
+        try
+        {
+            // 折れ線グラフの場合
+            foreach (var kvp in _chartSeries)
+            {
+                var counterPath = kvp.Key;
+                var series = kvp.Value;
+                var isVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+                
+                series.IsVisible = isVisible;
+            }
+            
+            // 積み重ね面グラフの場合
+            foreach (var kvp in _areaChartSeries)
+            {
+                var counterPath = kvp.Key;
+                var series = kvp.Value;
+                var isVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+                
+                series.IsVisible = isVisible;
+            }
+            
+            PerformanceChart.Refresh();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"シリーズ表示更新エラー: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 凡例アイテムを追加
+    /// </summary>
+    private void AddLegendItem(string counterPath, string counterName, System.Windows.Media.Color color)
+    {
+        var existingItem = _legendItems.FirstOrDefault(item => item.CounterPath == counterPath);
+        if (existingItem != null)
+        {
+            // 既存のアイテムを更新
+            existingItem.Color = color;
+            existingItem.IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+            return;
+        }
+        
+        var legendItem = new LegendItem
+        {
+            CounterPath = counterPath,
+            CounterName = counterName,
+            Color = color,
+            IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true),
+            CurrentValue = "-"
+        };
+        
+        _legendItems.Add(legendItem);
+    }
+    
+    /// <summary>
+    /// 凡例アイテムを削除
+    /// </summary>
+    private void RemoveLegendItem(string counterPath)
+    {
+        var item = _legendItems.FirstOrDefault(item => item.CounterPath == counterPath);
+        if (item != null)
+        {
+            _legendItems.Remove(item);
+        }
+    }
+    
+    /// <summary>
+    /// すべての凡例アイテムをクリア
+    /// </summary>
+    private void ClearLegendItems()
+    {
+        _legendItems.Clear();
+        _seriesVisibility.Clear();
+    }
+    
+    /// <summary>
+    /// 凡例アイテムの現在値を更新
+    /// </summary>
+    private void UpdateLegendCurrentValues()
+    {
+        try
+        {
+            foreach (var item in _legendItems)
+            {
+                if (_counterData.TryGetValue(item.CounterPath, out var dataPoints) && dataPoints.Count > 0)
+                {
+                    var latestValue = dataPoints.Last().Value;
+                    var scale = _counterScales.GetValueOrDefault(item.CounterPath, 1.0);
+                    var scaledValue = latestValue * scale;
+                    
+                    // 値をフォーマット
+                    item.CurrentValue = FormatCounterValue(scaledValue);
+                }
+                else
+                {
+                    item.CurrentValue = "-";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"凡例の現在値更新エラー: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// カウンター値をフォーマット
+    /// </summary>
+    private string FormatCounterValue(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return "-";
+            
+        if (Math.Abs(value) >= 1000000)
+            return $"{value / 1000000:F2}M";
+        if (Math.Abs(value) >= 1000)
+            return $"{value / 1000:F2}K";
+        if (Math.Abs(value) >= 1)
+            return $"{value:F2}";
+        
+        return $"{value:F4}";
     }
 
     #endregion
