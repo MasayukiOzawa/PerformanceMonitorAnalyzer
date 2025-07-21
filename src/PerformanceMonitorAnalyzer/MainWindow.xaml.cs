@@ -56,7 +56,9 @@ public class CounterTreeNode : INotifyPropertyChanged
     public string TextColor => Type switch
     {
         NodeType.Object => "DarkBlue",
+        NodeType.Instance when IsWildCard => "Purple", // ワイルドカードインスタンスは紫色
         NodeType.Instance => "DarkGreen", 
+        NodeType.Counter when IsWildCard => "Purple", // ワイルドカードカウンターは紫色
         _ => "Black"
     };
     
@@ -183,10 +185,11 @@ public class CounterTreeNode : INotifyPropertyChanged
     
     /// <summary>
     /// 選択されているリーフ（カウンター）ノードを取得
+    /// ワイルドカードカウンターは除外し、実際のカウンターのみを返す
     /// </summary>
     public IEnumerable<CounterTreeNode> GetSelectedCounters()
     {
-        if (IsLeaf && IsChecked == true)
+        if (IsLeaf && IsChecked == true && !IsWildCard)
         {
             yield return this;
         }
