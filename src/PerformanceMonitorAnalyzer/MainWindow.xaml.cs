@@ -423,6 +423,9 @@ public partial class MainWindow : Window
         // ウィンドウサイズ監視の初期化
         InitializeWindowSizeTracking();
         
+        // グラフサイズ監視の初期化
+        InitializeGraphSizeTracking();
+        
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
         
@@ -4541,6 +4544,148 @@ public partial class MainWindow : Window
             return $"{value:F2}";
         
         return $"{value:F4}";
+    }
+
+    #endregion
+
+    #region グラフサイズ関連
+
+    /// <summary>
+    /// グラフサイズ監視の初期化
+    /// </summary>
+    private void InitializeGraphSizeTracking()
+    {
+        // 初期グラフサイズの表示
+        UpdateGraphSizeDisplay();
+        
+        // PerformanceChartのサイズ変更イベントの監視
+        if (PerformanceChart != null)
+        {
+            PerformanceChart.SizeChanged += PerformanceChart_SizeChanged;
+        }
+    }
+
+    /// <summary>
+    /// PerformanceChartサイズ変更イベントハンドラー
+    /// </summary>
+    private void PerformanceChart_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateGraphSizeDisplay();
+    }
+
+    /// <summary>
+    /// グラフサイズ表示の更新
+    /// </summary>
+    private void UpdateGraphSizeDisplay()
+    {
+        try
+        {
+            if (GraphSizeText != null && PerformanceChart != null)
+            {
+                var width = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : PerformanceChart.Width;
+                var height = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : PerformanceChart.Height;
+                
+                // NaNやInfinityをチェック
+                if (double.IsNaN(width) || double.IsInfinity(width) || width <= 0)
+                    width = 800; // デフォルト値
+                if (double.IsNaN(height) || double.IsInfinity(height) || height <= 0)
+                    height = 400; // デフォルト値
+                
+                GraphSizeText.Text = $"グラフサイズ: {width:F0}×{height:F0}";
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフサイズ表示の更新中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// グラフサイズ手動設定クリックイベント
+    /// </summary>
+    private void GraphSizeText_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        ShowGraphSizeSettingDialog();
+    }
+
+    /// <summary>
+    /// グラフサイズ設定ダイアログの表示
+    /// </summary>
+    private void ShowGraphSizeSettingDialog()
+    {
+        try
+        {
+            // グラフサイズ表示テキストが存在するかチェック
+            if (GraphSizeText == null)
+            {
+                LogError("GraphSizeText が初期化されていません");
+                MessageBox.Show(
+                    "グラフサイズ表示コンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            if (PerformanceChart == null)
+            {
+                LogError("PerformanceChart が初期化されていません");
+                MessageBox.Show(
+                    "グラフコンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            var currentWidth = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : PerformanceChart.Width;
+            var currentHeight = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : PerformanceChart.Height;
+            
+            // NaNやInfinityをチェック
+            if (double.IsNaN(currentWidth) || double.IsInfinity(currentWidth) || currentWidth <= 0)
+                currentWidth = 800; // デフォルト値
+            if (double.IsNaN(currentHeight) || double.IsInfinity(currentHeight) || currentHeight <= 0)
+                currentHeight = 400; // デフォルト値
+
+            var dialog = new GraphSizeSettingDialog(currentWidth, currentHeight)
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+
+            if (dialog.ShowDialog() == true && dialog.IsApplied)
+            {
+                // グラフエリアのサイズを変更
+                // グラフエリアが含まれる列の幅を調整
+                var graphColumn = Grid.GetColumn(PerformanceChart.Parent as FrameworkElement ?? PerformanceChart);
+                var mainGrid = this.Content as Grid;
+                
+                if (mainGrid != null && mainGrid.ColumnDefinitions.Count > graphColumn)
+                {
+                    // グラフエリアの最小/最大幅を設定
+                    var graphGroupBox = PerformanceChart.Parent as GroupBox;
+                    if (graphGroupBox != null)
+                    {
+                        graphGroupBox.Width = dialog.GraphWidth + 40; // パディング考慮
+                        graphGroupBox.Height = dialog.GraphHeight + 80; // ヘッダーとパディング考慮
+                    }
+                }
+                
+                LogInfo($"グラフサイズを変更しました: {dialog.GraphWidth:F0}×{dialog.GraphHeight:F0}");
+                
+                // 表示を更新
+                UpdateGraphSizeDisplay();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフサイズ設定ダイアログの表示中にエラーが発生しました: {ex.Message}");
+            MessageBox.Show(
+                $"グラフサイズ設定中にエラーが発生しました。\n\n{ex.Message}",
+                "エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     #endregion
