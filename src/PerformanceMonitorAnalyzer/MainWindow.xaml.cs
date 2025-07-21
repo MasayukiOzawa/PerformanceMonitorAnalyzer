@@ -2727,7 +2727,7 @@ public partial class MainWindow : Window
             var errors = new List<string>();
 
             // 2並列でカウンターデータを読み込み
-            progress?.Report("カウンターデータを2並列で読み込み開始...");
+            progress?.Report("カウンターデータを並列で読み込み開始...");
             
             List<BlgFileAnalyzer.CounterInfo> counterInfos;
             if (useTimeConstraints)

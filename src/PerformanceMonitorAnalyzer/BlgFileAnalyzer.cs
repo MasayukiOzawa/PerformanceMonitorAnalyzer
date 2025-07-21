@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Collections.Concurrent;
+using System.Threading.Tasks;
 
 namespace PerformanceMonitorAnalyzer;
 
@@ -496,7 +497,7 @@ public class BlgFileAnalyzer : IDisposable
     }
 
     /// <summary>
-    /// 複数のカウンターのデータを2並列で読み込み
+    /// 複数のカウンターのデータを並列で読み込み
     /// </summary>
     public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, IProgress<string>? progress = null)
     {
@@ -506,48 +507,60 @@ public class BlgFileAnalyzer : IDisposable
         }
 
         var counterPathsList = counterPaths.ToList();
-        progress?.Report($"複数カウンターデータを2並列で読み込み開始: {counterPathsList.Count}個のカウンター");
+        progress?.Report($"複数カウンターデータを並列で読み込み開始: {counterPathsList.Count}個のカウンター");
 
-        // 2並列に制限するSemaphore
-        using var semaphore = new SemaphoreSlim(2, 2);
-        var results = new Dictionary<string, CounterInfo>();
+        // 結果を順序通りに格納するための配列
+        var results = new CounterInfo[counterPathsList.Count];
         var lockObj = new object();
 
-        // 全てのカウンターを並列で処理
-        var tasks = counterPathsList.Select(async counterPath =>
+        // Parallel.ForEachを使用して並列処理（最大2並列）
+        await Task.Run(() =>
         {
-            await semaphore.WaitAsync();
-            try
+            var parallelOptions = new ParallelOptions
             {
-                progress?.Report($"カウンター読み込み開始: {counterPath}");
-                var counterInfo = await LoadCounterDataAsync(counterPath, progress);
-                
-                // 順序を保持するためにDictionaryを使用
-                lock (lockObj)
-                {
-                    results[counterPath] = counterInfo;
-                }
-                
-                progress?.Report($"カウンター読み込み完了: {counterPath}");
-                return counterInfo;
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
+                MaxDegreeOfParallelism = 2
+            };
 
-        await Task.WhenAll(tasks);
+            Parallel.ForEach(counterPathsList.Select((path, index) => new { Path = path, Index = index }), 
+                             parallelOptions, 
+                             item =>
+            {
+                try
+                {
+                    progress?.Report($"カウンター読み込み開始: {item.Path}");
+                    
+                    // 同期版のLoadCounterDataを呼び出し（内部でTask.Runを使用）
+                    var counterInfo = LoadCounterDataAsync(item.Path, progress).GetAwaiter().GetResult();
+                    
+                    // スレッドセーフに結果を格納
+                    lock (lockObj)
+                    {
+                        results[item.Index] = counterInfo;
+                    }
+                    
+                    progress?.Report($"カウンター読み込み完了: {item.Path}");
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report($"カウンター読み込みエラー: {item.Path} - {ex.Message}");
+                    // エラーの場合は空のCounterInfoを格納
+                    lock (lockObj)
+                    {
+                        results[item.Index] = new CounterInfo { FullPath = item.Path };
+                    }
+                }
+            });
+        });
         
-        // 元の順序を保持してリストに変換
-        var resultList = counterPathsList.Select(path => results[path]).ToList();
-        progress?.Report($"複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
+        // nullチェックしてリストに変換
+        var resultList = results.Where(r => r != null).ToList();
+        progress?.Report($"複数カウンターデータの並列読み込み完了: {resultList.Count}個のカウンター");
         
         return resultList;
     }
 
     /// <summary>
-    /// 時間制約付きで複数のカウンターのデータを2並列で読み込み
+    /// 時間制約付きで複数のカウンターのデータを並列で読み込み
     /// </summary>
     public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, DateTime? startTime, DateTime? endTime, IProgress<string>? progress = null)
     {
@@ -557,42 +570,54 @@ public class BlgFileAnalyzer : IDisposable
         }
 
         var counterPathsList = counterPaths.ToList();
-        progress?.Report($"時間制約付き複数カウンターデータを2並列で読み込み開始: {counterPathsList.Count}個のカウンター");
+        progress?.Report($"時間制約付き複数カウンターデータを並列で読み込み開始: {counterPathsList.Count}個のカウンター");
 
-        // 2並列に制限するSemaphore
-        using var semaphore = new SemaphoreSlim(2, 2);
-        var results = new Dictionary<string, CounterInfo>();
+        // 結果を順序通りに格納するための配列
+        var results = new CounterInfo[counterPathsList.Count];
         var lockObj = new object();
 
-        // 全てのカウンターを並列で処理
-        var tasks = counterPathsList.Select(async counterPath =>
+        // Parallel.ForEachを使用して並列処理（最大2並列）
+        await Task.Run(() =>
         {
-            await semaphore.WaitAsync();
-            try
+            var parallelOptions = new ParallelOptions
             {
-                progress?.Report($"時間制約付きカウンター読み込み開始: {counterPath}");
-                var counterInfo = await LoadCounterDataAsync(counterPath, startTime, endTime, progress);
-                
-                // 順序を保持するためにDictionaryを使用
-                lock (lockObj)
-                {
-                    results[counterPath] = counterInfo;
-                }
-                
-                progress?.Report($"時間制約付きカウンター読み込み完了: {counterPath}");
-                return counterInfo;
-            }
-            finally
-            {
-                semaphore.Release();
-            }
-        });
+                MaxDegreeOfParallelism = 2
+            };
 
-        await Task.WhenAll(tasks);
+            Parallel.ForEach(counterPathsList.Select((path, index) => new { Path = path, Index = index }), 
+                             parallelOptions, 
+                             item =>
+            {
+                try
+                {
+                    progress?.Report($"時間制約付きカウンター読み込み開始: {item.Path}");
+                    
+                    // 同期版のLoadCounterDataを呼び出し（内部でTask.Runを使用）
+                    var counterInfo = LoadCounterDataAsync(item.Path, startTime, endTime, progress).GetAwaiter().GetResult();
+                    
+                    // スレッドセーフに結果を格納
+                    lock (lockObj)
+                    {
+                        results[item.Index] = counterInfo;
+                    }
+                    
+                    progress?.Report($"時間制約付きカウンター読み込み完了: {item.Path}");
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report($"時間制約付きカウンター読み込みエラー: {item.Path} - {ex.Message}");
+                    // エラーの場合は空のCounterInfoを格納
+                    lock (lockObj)
+                    {
+                        results[item.Index] = new CounterInfo { FullPath = item.Path };
+                    }
+                }
+            });
+        });
         
-        // 元の順序を保持してリストに変換
-        var resultList = counterPathsList.Select(path => results[path]).ToList();
-        progress?.Report($"時間制約付き複数カウンターデータの2並列読み込み完了: {resultList.Count}個のカウンター");
+        // nullチェックしてリストに変換
+        var resultList = results.Where(r => r != null).ToList();
+        progress?.Report($"時間制約付き複数カウンターデータの並列読み込み完了: {resultList.Count}個のカウンター");
         
         return resultList;
     }
