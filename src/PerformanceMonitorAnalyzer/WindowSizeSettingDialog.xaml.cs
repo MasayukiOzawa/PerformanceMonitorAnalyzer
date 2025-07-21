@@ -57,10 +57,6 @@ namespace PerformanceMonitorAnalyzer
         {
             InitializeComponent();
             this.Loaded += WindowSizeSettingDialog_Loaded;
-            
-            // テキストボックスの変更イベント
-            WidthTextBox.TextChanged += SizeTextBox_TextChanged;
-            HeightTextBox.TextChanged += SizeTextBox_TextChanged;
         }
 
         #endregion
@@ -72,6 +68,10 @@ namespace PerformanceMonitorAnalyzer
         /// </summary>
         private void WindowSizeSettingDialog_Loaded(object sender, RoutedEventArgs e)
         {
+            // テキストボックスの変更イベントを設定（Loaded後に安全に設定）
+            WidthTextBox.TextChanged += SizeTextBox_TextChanged;
+            HeightTextBox.TextChanged += SizeTextBox_TextChanged;
+            
             // 現在の値を表示
             CurrentSizeText.Text = $"{CurrentWidth:F0}×{CurrentHeight:F0}";
             CurrentStateText.Text = CurrentWindowState switch
@@ -204,8 +204,18 @@ namespace PerformanceMonitorAnalyzer
         /// </summary>
         private void UpdateSizeSettingVisibility()
         {
-            bool isNormalState = NormalStateRadio.IsChecked == true;
-            SizeSettingGroup.IsEnabled = isNormalState;
+            try
+            {
+                if (NormalStateRadio != null && SizeSettingGroup != null)
+                {
+                    bool isNormalState = NormalStateRadio.IsChecked == true;
+                    SizeSettingGroup.IsEnabled = isNormalState;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"UpdateSizeSettingVisibility エラー: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -215,6 +225,11 @@ namespace PerformanceMonitorAnalyzer
         {
             try
             {
+                if (PreviewText == null || WidthTextBox == null || HeightTextBox == null)
+                {
+                    return;
+                }
+
                 var selectedState = GetSelectedWindowState();
                 string stateText = selectedState switch
                 {
@@ -237,9 +252,13 @@ namespace PerformanceMonitorAnalyzer
                     PreviewText.Text = $"新しいサイズ: 無効な値 ({stateText})";
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                PreviewText.Text = "新しいサイズ: プレビュー取得エラー";
+                if (PreviewText != null)
+                {
+                    PreviewText.Text = "新しいサイズ: プレビュー取得エラー";
+                }
+                System.Diagnostics.Debug.WriteLine($"UpdatePreview エラー: {ex.Message}");
             }
         }
 
@@ -248,11 +267,18 @@ namespace PerformanceMonitorAnalyzer
         /// </summary>
         private WindowState GetSelectedWindowState()
         {
-            if (MaximizedStateRadio.IsChecked == true)
-                return WindowState.Maximized;
-            if (MinimizedStateRadio.IsChecked == true)
-                return WindowState.Minimized;
-            return WindowState.Normal;
+            try
+            {
+                if (MaximizedStateRadio?.IsChecked == true)
+                    return WindowState.Maximized;
+                if (MinimizedStateRadio?.IsChecked == true)
+                    return WindowState.Minimized;
+                return WindowState.Normal;
+            }
+            catch
+            {
+                return WindowState.Normal;
+            }
         }
 
         /// <summary>

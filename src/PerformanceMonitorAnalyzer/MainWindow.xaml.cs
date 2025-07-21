@@ -4621,6 +4621,18 @@ public partial class MainWindow : Window
     {
         try
         {
+            // ウィンドウサイズ表示テキストが存在するかチェック
+            if (WindowSizeText == null)
+            {
+                LogError("WindowSizeText が初期化されていません");
+                MessageBox.Show(
+                    "ウィンドウサイズ表示コンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
             var dialog = new WindowSizeSettingDialog
             {
                 Owner = this,
