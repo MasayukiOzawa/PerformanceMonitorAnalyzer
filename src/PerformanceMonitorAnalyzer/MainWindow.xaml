@@ -12,7 +12,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="5"/>
-            <RowDefinition Height="550" MinHeight="100" MaxHeight="750"/>
+            <RowDefinition Height="400" MinHeight="100" MaxHeight="750"/>
         </Grid.RowDefinitions>
 
         <!-- メニューバー -->
