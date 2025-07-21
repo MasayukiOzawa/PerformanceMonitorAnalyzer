@@ -501,6 +501,7 @@ public class BlgFileAnalyzer : IDisposable
     /// 指定されたカウンターのデータを読み込み
     /// PerformanceCounters リポジトリの PCReaderEnumerator パターンを使用
     /// SQLServerカウンター等の特殊ケースに対応
+    /// 注意: 各カウンターは最大100,000サンプルまで読み込まれます。それを超える場合は切り捨てられます。
     /// </summary>
     public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
     {
@@ -907,6 +908,7 @@ public class BlgFileAnalyzer : IDisposable
 
     /// <summary>
     /// 複数のカウンターデータを並列で読み込み（2並列、安定性重視）
+    /// 注意: 各カウンターは最大100,000サンプルまで読み込まれます。それを超える場合は切り捨てられ、警告が表示されます。
     /// </summary>
     public async Task<List<CounterInfo>> LoadMultipleCounterDataParallelAsync(
         IEnumerable<string> counterPaths, 
@@ -950,6 +952,15 @@ public class BlgFileAnalyzer : IDisposable
                         // 各カウンターを個別に読み込み（同期版を使用してスレッドセーフ）
                         var counterInfo = LoadCounterDataSync(counterPath);
                         results[i] = counterInfo;
+
+                        // データ切り捨て警告（サンプル数が制限に達した場合）
+                        if (counterInfo.DataPoints.Count >= 100000)
+                        {
+                            lock (lockObject)
+                            {
+                                progress?.Report($"警告: カウンター '{counterPath}' は最大サンプル数 100,000 に達したため、データが切り捨てられました。");
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1031,6 +1042,15 @@ public class BlgFileAnalyzer : IDisposable
                         // 各カウンターを個別に読み込み（同期版を使用してスレッドセーフ）
                         var counterInfo = LoadCounterDataWithTimeSync(counterPath, startTime, endTime);
                         results[i] = counterInfo;
+
+                        // データ切り捨て警告（サンプル数が制限に達した場合）
+                        if (counterInfo.DataPoints.Count >= 100000)
+                        {
+                            lock (lockObject)
+                            {
+                                progress?.Report($"警告: カウンター '{counterPath}' は最大サンプル数 100,000 に達したため、データが切り捨てられました。");
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1121,7 +1141,7 @@ public class BlgFileAnalyzer : IDisposable
 
             var dataPoints = new List<CounterDataPoint>();
             int sampleCount = 0;
-            const int maxSamples = 50000; // 安全のため最大50,000サンプル（メモリ使用量削減）
+            const int maxSamples = 100000; // 安全のため最大100,000サンプル（単一カウンターメソッドと統一）
 
             // BLGファイル内の全データポイントを反復処理
             while (sampleCount < maxSamples)
@@ -1256,7 +1276,7 @@ public class BlgFileAnalyzer : IDisposable
 
             var dataPoints = new List<CounterDataPoint>();
             int sampleCount = 0;
-            const int maxSamples = 50000; // 安全のため最大50,000サンプル（メモリ使用量削減）
+            const int maxSamples = 100000; // 安全のため最大100,000サンプル（単一カウンターメソッドと統一）
 
             // BLGファイル内の全データポイントを反復処理
             while (sampleCount < maxSamples)
