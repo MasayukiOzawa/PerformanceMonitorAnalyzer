@@ -1,7 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
 namespace PerformanceMonitorAnalyzer;
@@ -496,131 +495,7 @@ public class BlgFileAnalyzer : IDisposable
         }
     }
 
-    /// <summary>
-    /// 複数のカウンターのデータを並列で読み込み
-    /// </summary>
-    public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, IProgress<string>? progress = null)
-    {
-        if (string.IsNullOrEmpty(_filePath))
-        {
-            throw new InvalidOperationException("BLGファイルが開かれていません。");
-        }
 
-        var counterPathsList = counterPaths.ToList();
-        progress?.Report($"複数カウンターデータを並列で読み込み開始: {counterPathsList.Count}個のカウンター");
-
-        // 結果を順序通りに格納するための配列
-        var results = new CounterInfo[counterPathsList.Count];
-        var lockObj = new object();
-
-        // Parallel.ForEachを使用して並列処理（最大2並列）
-        await Task.Run(() =>
-        {
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = 2
-            };
-
-            Parallel.ForEach(counterPathsList.Select((path, index) => new { Path = path, Index = index }), 
-                             parallelOptions, 
-                             item =>
-            {
-                try
-                {
-                    progress?.Report($"カウンター読み込み開始: {item.Path}");
-                    
-                    // 同期版のLoadCounterDataを呼び出し（内部でTask.Runを使用）
-                    var counterInfo = LoadCounterDataAsync(item.Path, progress).GetAwaiter().GetResult();
-                    
-                    // スレッドセーフに結果を格納
-                    lock (lockObj)
-                    {
-                        results[item.Index] = counterInfo;
-                    }
-                    
-                    progress?.Report($"カウンター読み込み完了: {item.Path}");
-                }
-                catch (Exception ex)
-                {
-                    progress?.Report($"カウンター読み込みエラー: {item.Path} - {ex.Message}");
-                    // エラーの場合は空のCounterInfoを格納
-                    lock (lockObj)
-                    {
-                        results[item.Index] = new CounterInfo { FullPath = item.Path };
-                    }
-                }
-            });
-        });
-        
-        // nullチェックしてリストに変換
-        var resultList = results.Where(r => r != null).ToList();
-        progress?.Report($"複数カウンターデータの並列読み込み完了: {resultList.Count}個のカウンター");
-        
-        return resultList;
-    }
-
-    /// <summary>
-    /// 時間制約付きで複数のカウンターのデータを並列で読み込み
-    /// </summary>
-    public async Task<List<CounterInfo>> LoadMultipleCounterDataAsync(IEnumerable<string> counterPaths, DateTime? startTime, DateTime? endTime, IProgress<string>? progress = null)
-    {
-        if (string.IsNullOrEmpty(_filePath))
-        {
-            throw new InvalidOperationException("BLGファイルが開かれていません。");
-        }
-
-        var counterPathsList = counterPaths.ToList();
-        progress?.Report($"時間制約付き複数カウンターデータを並列で読み込み開始: {counterPathsList.Count}個のカウンター");
-
-        // 結果を順序通りに格納するための配列
-        var results = new CounterInfo[counterPathsList.Count];
-        var lockObj = new object();
-
-        // Parallel.ForEachを使用して並列処理（最大2並列）
-        await Task.Run(() =>
-        {
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = 2
-            };
-
-            Parallel.ForEach(counterPathsList.Select((path, index) => new { Path = path, Index = index }), 
-                             parallelOptions, 
-                             item =>
-            {
-                try
-                {
-                    progress?.Report($"時間制約付きカウンター読み込み開始: {item.Path}");
-                    
-                    // 同期版のLoadCounterDataを呼び出し（内部でTask.Runを使用）
-                    var counterInfo = LoadCounterDataAsync(item.Path, startTime, endTime, progress).GetAwaiter().GetResult();
-                    
-                    // スレッドセーフに結果を格納
-                    lock (lockObj)
-                    {
-                        results[item.Index] = counterInfo;
-                    }
-                    
-                    progress?.Report($"時間制約付きカウンター読み込み完了: {item.Path}");
-                }
-                catch (Exception ex)
-                {
-                    progress?.Report($"時間制約付きカウンター読み込みエラー: {item.Path} - {ex.Message}");
-                    // エラーの場合は空のCounterInfoを格納
-                    lock (lockObj)
-                    {
-                        results[item.Index] = new CounterInfo { FullPath = item.Path };
-                    }
-                }
-            });
-        });
-        
-        // nullチェックしてリストに変換
-        var resultList = results.Where(r => r != null).ToList();
-        progress?.Report($"時間制約付き複数カウンターデータの並列読み込み完了: {resultList.Count}個のカウンター");
-        
-        return resultList;
-    }
 
     /// <summary>
     /// 指定されたカウンターのデータを読み込み
