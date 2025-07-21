@@ -81,19 +81,8 @@ namespace PerformanceMonitorAnalyzer
                 _ => "通常"
             };
 
-            // 現在の状態に基づいてラジオボタンを設定
-            switch (CurrentWindowState)
-            {
-                case WindowState.Maximized:
-                    MaximizedStateRadio.IsChecked = true;
-                    break;
-                case WindowState.Minimized:
-                    MinimizedStateRadio.IsChecked = true;
-                    break;
-                default:
-                    NormalStateRadio.IsChecked = true;
-                    break;
-            }
+            // 常に「通常」をデフォルトで選択
+            NormalStateRadio.IsChecked = true;
 
             // 現在の値をテキストボックスに設定
             WidthTextBox.Text = CurrentWidth.ToString("F0");
