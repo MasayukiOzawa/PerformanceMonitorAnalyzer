@@ -83,10 +83,19 @@
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"/>
                     
+                    <!-- ファイルサイズ表示 -->
+                    <TextBlock Grid.Row="0" x:Name="FileSizeDisplay" 
+                             Text="" 
+                             Margin="5,25,5,5" 
+                             FontWeight="Bold"
+                             Foreground="DarkBlue"
+                             TextWrapping="Wrap"
+                             Visibility="Collapsed"/>
+                    
                     <!-- コンピューター名表示 -->
                     <TextBlock Grid.Row="0" x:Name="ComputerNameDisplay" 
                              Text="" 
-                             Margin="5,25,5,10" 
+                             Margin="5,45,5,10" 
                              FontWeight="Bold"
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"
@@ -95,7 +104,7 @@
                     <!-- データ取得間隔表示 -->
                     <TextBlock Grid.Row="0" x:Name="SamplingIntervalDisplay" 
                              Text="" 
-                             Margin="5,45,5,10" 
+                             Margin="5,65,5,10" 
                              FontWeight="Bold"
                              Foreground="DarkBlue"
                              TextWrapping="Wrap"

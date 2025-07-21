@@ -706,8 +706,23 @@ public partial class MainWindow : Window
     {
         _currentBlgFile = fileName;
         
-        // ファイル名を表示
-        FileNameDisplay.Text = $"読み込みファイル: {Path.GetFileName(fileName)}";
+        // ファイル名をフルパスで表示
+        FileNameDisplay.Text = $"読み込みファイル: {fileName}";
+        
+        // ファイルサイズを表示
+        try
+        {
+            var fileInfo = new FileInfo(fileName);
+            var fileSizeText = FormatFileSize(fileInfo.Length);
+            FileSizeDisplay.Text = $"ファイルサイズ: {fileSizeText}";
+            FileSizeDisplay.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            FileSizeDisplay.Text = "ファイルサイズ: 取得できません";
+            FileSizeDisplay.Visibility = Visibility.Visible;
+            LogError($"ファイルサイズの取得に失敗: {ex.Message}");
+        }
         
         // プログレスバーを表示
         ProgressGrid.Visibility = Visibility.Visible;
@@ -721,6 +736,7 @@ public partial class MainWindow : Window
         _samplingInterval = TimeSpan.Zero;
         ComputerNameDisplay.Visibility = Visibility.Collapsed;
         SamplingIntervalDisplay.Visibility = Visibility.Collapsed;
+        FileSizeDisplay.Visibility = Visibility.Collapsed;
 
         // ログタブを再初期化
         InitializeLogTabs();
@@ -4026,6 +4042,29 @@ public partial class MainWindow : Window
             MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}", 
                            "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    #endregion
+
+    #region ヘルパーメソッド（ファイル情報）
+
+    /// <summary>
+    /// ファイルサイズを読みやすい形式にフォーマット
+    /// </summary>
+    /// <param name="bytes">バイト数</param>
+    /// <returns>フォーマットされたファイルサイズ文字列</returns>
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:F1} KB";
+        
+        if (bytes < 1024 * 1024 * 1024)
+            return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
     }
 
     #endregion
