@@ -4582,16 +4582,20 @@ public partial class MainWindow : Window
         {
             if (GraphSizeText != null && PerformanceChart != null)
             {
-                var width = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : PerformanceChart.Width;
-                var height = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : PerformanceChart.Height;
-                
-                // NaNやInfinityをチェック
-                if (double.IsNaN(width) || double.IsInfinity(width) || width <= 0)
-                    width = 800; // デフォルト値
-                if (double.IsNaN(height) || double.IsInfinity(height) || height <= 0)
-                    height = 400; // デフォルト値
-                
-                GraphSizeText.Text = $"グラフサイズ: {width:F0}×{height:F0}";
+                // 固定サイズが設定されているかチェック
+                if (!double.IsNaN(PerformanceChart.Width) && !double.IsNaN(PerformanceChart.Height))
+                {
+                    // 固定サイズの場合
+                    GraphSizeText.Text = $"グラフサイズ: {PerformanceChart.Width:F0}×{PerformanceChart.Height:F0} (固定)";
+                }
+                else
+                {
+                    // 自動サイズの場合はActualWidthとActualHeightを表示
+                    var width = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : 800;
+                    var height = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : 400;
+                    
+                    GraphSizeText.Text = $"グラフサイズ: {width:F0}×{height:F0} (自動)";
+                }
             }
         }
         catch (Exception ex)
@@ -4655,23 +4659,29 @@ public partial class MainWindow : Window
 
             if (dialog.ShowDialog() == true && dialog.IsApplied)
             {
-                // グラフエリアのサイズを変更
-                // グラフエリアが含まれる列の幅を調整
-                var graphColumn = Grid.GetColumn(PerformanceChart.Parent as FrameworkElement ?? PerformanceChart);
-                var mainGrid = this.Content as Grid;
-                
-                if (mainGrid != null && mainGrid.ColumnDefinitions.Count > graphColumn)
+                // 自動サイズの場合（NaN値）
+                if (double.IsNaN(dialog.GraphWidth) && double.IsNaN(dialog.GraphHeight))
                 {
-                    // グラフエリアの最小/最大幅を設定
-                    var graphGroupBox = PerformanceChart.Parent as GroupBox;
-                    if (graphGroupBox != null)
-                    {
-                        graphGroupBox.Width = dialog.GraphWidth + 40; // パディング考慮
-                        graphGroupBox.Height = dialog.GraphHeight + 80; // ヘッダーとパディング考慮
-                    }
+                    // PerformanceChartを自動サイズに戻す
+                    PerformanceChart.Width = double.NaN;
+                    PerformanceChart.Height = double.NaN;
+                    PerformanceChart.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    PerformanceChart.VerticalAlignment = VerticalAlignment.Stretch;
+                    
+                    LogInfo("グラフサイズを自動サイズに変更しました");
                 }
-                
-                LogInfo($"グラフサイズを変更しました: {dialog.GraphWidth:F0}×{dialog.GraphHeight:F0}");
+                else
+                {
+                    // PerformanceChart自体のサイズを直接変更
+                    PerformanceChart.Width = dialog.GraphWidth;
+                    PerformanceChart.Height = dialog.GraphHeight;
+                    
+                    // HorizontalAlignmentとVerticalAlignmentを設定して固定サイズにする
+                    PerformanceChart.HorizontalAlignment = HorizontalAlignment.Left;
+                    PerformanceChart.VerticalAlignment = VerticalAlignment.Top;
+                    
+                    LogInfo($"グラフサイズを変更しました: {dialog.GraphWidth:F0}×{dialog.GraphHeight:F0}");
+                }
                 
                 // 表示を更新
                 UpdateGraphSizeDisplay();

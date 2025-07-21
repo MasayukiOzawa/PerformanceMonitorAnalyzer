@@ -93,6 +93,28 @@ namespace PerformanceMonitorAnalyzer
         }
 
         /// <summary>
+        /// 自動サイズボタンのクリックイベント
+        /// </summary>
+        private void AutoSize_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (WidthTextBox != null && HeightTextBox != null)
+                {
+                    // 自動サイズの場合は特別な値を設定
+                    WidthTextBox.Text = "自動";
+                    HeightTextBox.Text = "自動";
+                    UpdatePreview();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"自動サイズの設定中にエラーが発生しました。\n\n{ex.Message}", "エラー", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
         /// プリセットサイズボタンのクリックイベント
         /// </summary>
         private void PresetSize_Click(object sender, RoutedEventArgs e)
@@ -131,6 +153,14 @@ namespace PerformanceMonitorAnalyzer
             {
                 if (PreviewText == null || WidthTextBox == null || HeightTextBox == null)
                     return;
+
+                // 自動サイズの場合
+                if (WidthTextBox.Text == "自動" && HeightTextBox.Text == "自動")
+                {
+                    PreviewText.Text = "新しいサイズ: 自動 (親コンテナに合わせて調整)";
+                    PreviewText.Foreground = System.Windows.Media.Brushes.DarkGreen;
+                    return;
+                }
 
                 if (int.TryParse(WidthTextBox.Text, out int width) && 
                     int.TryParse(HeightTextBox.Text, out int height))
@@ -172,6 +202,16 @@ namespace PerformanceMonitorAnalyzer
                 if (WidthTextBox == null || HeightTextBox == null)
                 {
                     DialogResult = false;
+                    return;
+                }
+
+                // 自動サイズの場合
+                if (WidthTextBox.Text == "自動" && HeightTextBox.Text == "自動")
+                {
+                    GraphWidth = double.NaN; // 自動サイズを示すためにNaNを使用
+                    GraphHeight = double.NaN;
+                    IsApplied = true;
+                    DialogResult = true;
                     return;
                 }
 
