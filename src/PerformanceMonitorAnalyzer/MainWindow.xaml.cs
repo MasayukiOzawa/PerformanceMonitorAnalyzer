@@ -341,6 +341,9 @@ public partial class MainWindow : Window
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
         
+        // ウィンドウサイズ監視の初期化
+        InitializeWindowSizeTracking();
+        
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
         
@@ -4064,6 +4067,120 @@ public partial class MainWindow : Window
             return $"{bytes / (1024.0 * 1024.0):F1} MB";
         
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
+    }
+
+    #endregion
+
+    #region ウィンドウサイズ管理機能
+
+    /// <summary>
+    /// ウィンドウサイズ監視の初期化
+    /// </summary>
+    private void InitializeWindowSizeTracking()
+    {
+        // 初期ウィンドウサイズの表示
+        UpdateWindowSizeDisplay();
+        
+        // ウィンドウサイズ変更イベントの監視
+        this.SizeChanged += MainWindow_SizeChanged;
+        
+        // ウィンドウステート変更イベントの監視
+        this.StateChanged += MainWindow_StateChanged;
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ変更イベントハンドラー
+    /// </summary>
+    private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateWindowSizeDisplay();
+    }
+
+    /// <summary>
+    /// ウィンドウステート変更イベントハンドラー
+    /// </summary>
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        UpdateWindowSizeDisplay();
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ表示の更新
+    /// </summary>
+    private void UpdateWindowSizeDisplay()
+    {
+        try
+        {
+            if (WindowSizeText != null)
+            {
+                var width = this.ActualWidth > 0 ? this.ActualWidth : this.Width;
+                var height = this.ActualHeight > 0 ? this.ActualHeight : this.Height;
+                
+                string stateText = this.WindowState switch
+                {
+                    WindowState.Maximized => " (最大化)",
+                    WindowState.Minimized => " (最小化)",
+                    _ => ""
+                };
+                
+                WindowSizeText.Text = $"ウィンドウサイズ: {width:F0}×{height:F0}{stateText}";
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"ウィンドウサイズ表示の更新中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ手動設定クリックイベント
+    /// </summary>
+    private void WindowSizeText_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        ShowWindowSizeSettingDialog();
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ設定ダイアログの表示
+    /// </summary>
+    private void ShowWindowSizeSettingDialog()
+    {
+        try
+        {
+            var dialog = new WindowSizeSettingDialog
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CurrentWidth = this.ActualWidth > 0 ? this.ActualWidth : this.Width,
+                CurrentHeight = this.ActualHeight > 0 ? this.ActualHeight : this.Height,
+                CurrentWindowState = this.WindowState
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                // ウィンドウステートを適用
+                this.WindowState = dialog.SelectedWindowState;
+                
+                // サイズが指定されている場合は適用
+                if (dialog.SelectedWindowState == WindowState.Normal && 
+                    dialog.NewWidth.HasValue && dialog.NewHeight.HasValue)
+                {
+                    this.Width = dialog.NewWidth.Value;
+                    this.Height = dialog.NewHeight.Value;
+                }
+                
+                LogInfo($"ウィンドウサイズを変更しました: {dialog.NewWidth}×{dialog.NewHeight} ({dialog.SelectedWindowState})");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"ウィンドウサイズ設定ダイアログの表示中にエラーが発生しました: {ex.Message}");
+            MessageBox.Show(
+                $"ウィンドウサイズ設定中にエラーが発生しました。\n\n{ex.Message}",
+                "エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     #endregion

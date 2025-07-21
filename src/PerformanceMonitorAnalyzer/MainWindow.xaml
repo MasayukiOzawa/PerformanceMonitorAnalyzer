@@ -13,6 +13,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="5"/>
             <RowDefinition Height="400" MinHeight="100" MaxHeight="750"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- メニューバー -->
@@ -548,5 +549,38 @@
                 </TabControl>
             </GroupBox>
         </Grid>
+        
+        <!-- ステータスバー -->
+        <StatusBar Grid.Row="5" Background="LightGray" BorderBrush="Gray" BorderThickness="0,1,0,0">
+            <StatusBar.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                </ItemsPanelTemplate>
+            </StatusBar.ItemsPanel>
+            
+            <!-- 左側: ステータステキスト -->
+            <StatusBarItem Grid.Column="0">
+                <TextBlock x:Name="StatusText" Text="準備完了" FontSize="11" Margin="5,2"/>
+            </StatusBarItem>
+            
+            <!-- 中央: セパレーター -->
+            <Separator Grid.Column="1" Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="5,2"/>
+            
+            <!-- 右側: ウィンドウサイズ表示 -->
+            <StatusBarItem Grid.Column="2">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="WindowSizeText" Text="ウィンドウサイズ: 1200×800" FontSize="11" Margin="5,2"
+                              MouseLeftButtonDown="WindowSizeText_MouseLeftButtonDown"
+                              Cursor="Hand"
+                              ToolTip="クリックしてウィンドウサイズを手動設定"/>
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
     </Grid>
 </Window>
