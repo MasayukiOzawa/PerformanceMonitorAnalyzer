@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -27,6 +28,72 @@ public class CounterStatisticsItem
     public string Average { get; set; } = string.Empty;
     public string Maximum { get; set; } = string.Empty;
     public string Minimum { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 凡例アイテム用のデータクラス
+/// </summary>
+public class LegendItem : INotifyPropertyChanged
+{
+    private bool _isVisible = true;
+    private string _currentValue = "";
+    private Color _color = Colors.Blue;
+    
+    public string CounterName { get; set; } = string.Empty;
+    public string CounterPath { get; set; } = string.Empty;
+    
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set
+        {
+            if (_isVisible != value)
+            {
+                _isVisible = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BackgroundBrush));
+                OnPropertyChanged(nameof(TextBrush));
+            }
+        }
+    }
+    
+    public string CurrentValue
+    {
+        get => _currentValue;
+        set
+        {
+            if (_currentValue != value)
+            {
+                _currentValue = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+    
+    public Color Color
+    {
+        get => _color;
+        set
+        {
+            if (_color != value)
+            {
+                _color = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ColorBrush));
+            }
+        }
+    }
+    
+    public Brush ColorBrush => new SolidColorBrush(_color);
+    public Brush BackgroundBrush => _isVisible ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(50, 200, 200, 200));
+    public Brush TextBrush => _isVisible ? Brushes.Black : Brushes.Gray;
+    
+    public event PropertyChangedEventHandler? PropertyChanged;
+    
+    protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
 
 /// <summary>
@@ -332,6 +399,12 @@ public partial class MainWindow : Window
     // パターン管理機能
     private CounterPatternManager? _patternManager;
     
+    // 凡例管理用のプロパティ
+    private readonly ObservableCollection<LegendItem> _legendItems = new();
+    private bool _isLegendVisible = false;
+    private readonly Dictionary<string, bool> _seriesVisibility = new();
+    
+    
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
@@ -341,6 +414,9 @@ public partial class MainWindow : Window
         InitializeComponent();
         InitializeChart();
         CounterTreeView.ItemsSource = _counterTreeNodes;
+        
+        // 凡例の初期化
+        InitializeLegend();
         
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
@@ -381,8 +457,8 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 16;
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
         
-        // 凡例のフォントサイズ設定
-        PerformanceChart.Plot.Legend.FontSize = 16;
+        // 凡例を無効化（独立した凡例コンポーネントを使用）
+        PerformanceChart.Plot.Legend.IsVisible = false;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -736,6 +812,10 @@ public partial class MainWindow : Window
         _counterTreeNodes.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
+        
+        // 凡例をクリア
+        ClearLegendItems();
+        
         _actualComputerName = null;
         _samplingInterval = TimeSpan.Zero;
         ComputerNameDisplay.Visibility = Visibility.Collapsed;
@@ -1073,6 +1153,9 @@ public partial class MainWindow : Window
         
         // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
         _counterTreeNodes.Clear();
+        
+        // 凡例をクリア（新しいファイル読み込み時）
+        ClearLegendItems();
         
         foreach (var objectGroup in objectGroups.OrderBy(x => x.Key))
         {
@@ -1461,15 +1544,24 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
+        // 色を取得
+        var colorIndex = _chartSeries.Count;
+        var scottPlotColor = GetNextColor(colorIndex);
+        var mediaColor = ConvertToMediaColor(scottPlotColor);
+        
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Color = scottPlotColor; // 色を設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
+        
+        // 凡例アイテムを追加
+        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -1483,6 +1575,9 @@ public partial class MainWindow : Window
         UpdateChartXAxisRange();
         
         PerformanceChart.Refresh();
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1523,15 +1618,24 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
         System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
         
+        // 色を取得
+        var colorIndex = _chartSeries.Count;
+        var scottPlotColor = GetNextColor(colorIndex);
+        var mediaColor = ConvertToMediaColor(scottPlotColor);
+        
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Color = scottPlotColor; // 色を設定
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
+        
+        // 凡例アイテムを追加
+        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -1551,6 +1655,9 @@ public partial class MainWindow : Window
         
         // グラフが表示されたらメッセージを非表示
         UpdateChartVisibility();
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     private void RemoveCounterFromChart(string counter)
@@ -1592,6 +1699,9 @@ public partial class MainWindow : Window
         
         // スケール設定も削除
         _counterScales.Remove(counter);
+        
+        // 凡例アイテムを削除
+        RemoveLegendItem(counter);
         
         // データテーブルタブを削除
         RemoveCounterTab(counter);
@@ -1645,10 +1755,16 @@ public partial class MainWindow : Window
             _chartSeries.Clear();
             _areaChartSeries.Clear();
             
+            // 凡例をクリア
+            ClearLegendItems();
+            
             // グラフの基本設定を再初期化
             PerformanceChart.Plot.XLabel("時間");
             PerformanceChart.Plot.YLabel("値");
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+            
+            // 凡例を無効化（独立した凡例コンポーネントを使用）
+            PerformanceChart.Plot.Legend.IsVisible = false;
             
             // 選択されているカウンターを取得
             var selectedCounters = GetSelectedCounters();
@@ -1683,6 +1799,9 @@ public partial class MainWindow : Window
             PerformanceChart.Refresh();
             UpdateChartVisibility();
             
+            // 凡例の現在値を更新
+            UpdateLegendCurrentValues();
+            
             System.Diagnostics.Debug.WriteLine($"Chart refreshed with {selectedCounters.Count} counters");
         }
         catch (Exception ex)
@@ -1712,14 +1831,27 @@ public partial class MainWindow : Window
             var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
             var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
             
+            // 色を取得
+            var colorIndex = _chartSeries.Count;
+            var scottPlotColor = GetNextColor(colorIndex);
+            var mediaColor = ConvertToMediaColor(scottPlotColor);
+            
             var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
             scatter.LegendText = GetCounterDisplayName(counter);
             scatter.LineWidth = 2;
             scatter.MarkerSize = 0;
+            scatter.LineStyle.Color = scottPlotColor; // 色を設定
             
             _chartSeries[counter] = scatter;
+            
+            // 凡例アイテムを追加
+            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+            
             System.Diagnostics.Debug.WriteLine($"Added line series for: {counter}");
         }
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1792,15 +1924,23 @@ public partial class MainWindow : Window
             // FillYプロットを作成（ベースラインから現在の値まで）
             var fillY = PerformanceChart.Plot.Add.FillY(xValues, baseline, topValues);
             fillY.LegendText = GetCounterDisplayName(counter);
-            fillY.FillStyle.Color = GetNextColor(_areaChartSeries.Count);
+            var scottPlotColor = GetNextColor(_areaChartSeries.Count);
+            var mediaColor = ConvertToMediaColor(scottPlotColor);
+            fillY.FillStyle.Color = scottPlotColor;
             
             _areaChartSeries[counter] = fillY;
+            
+            // 凡例アイテムを追加
+            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
             
             // 次のカウンター用にベースラインを更新
             baseline = topValues;
             
             System.Diagnostics.Debug.WriteLine($"Added stacked area series for: {counter}");
         }
+        
+        // 凡例の現在値を更新
+        UpdateLegendCurrentValues();
     }
 
     /// <summary>
@@ -1856,6 +1996,19 @@ public partial class MainWindow : Window
         };
         
         return colors[index % colors.Length];
+    }
+    
+    /// <summary>
+    /// ScottPlot.ColorをSystem.Windows.Media.Colorに変換
+    /// </summary>
+    private System.Windows.Media.Color ConvertToMediaColor(ScottPlot.Color scottPlotColor)
+    {
+        return System.Windows.Media.Color.FromArgb(
+            scottPlotColor.A,
+            scottPlotColor.R,
+            scottPlotColor.G,
+            scottPlotColor.B
+        );
     }
     
     private void UpdateChartVisibility()
@@ -4196,6 +4349,225 @@ public partial class MainWindow : Window
             return $"{bytes / (1024.0 * 1024.0):F1} MB";
         
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
+    }
+
+    /// <summary>
+    /// 凡例の初期化
+    /// </summary>
+    private void InitializeLegend()
+    {
+        LegendItemsControl.ItemsSource = _legendItems;
+    }
+    
+    /// <summary>
+    /// 凡例の表示/非表示を切り替え
+    /// </summary>
+    private void ToggleLegend_Click(object sender, RoutedEventArgs e)
+    {
+        _isLegendVisible = !_isLegendVisible;
+        
+        if (_isLegendVisible)
+        {
+            LegendGroupBox.Visibility = Visibility.Visible;
+            LegendGridSplitter.Visibility = Visibility.Visible;
+            LegendColumn.Width = new GridLength(250, GridUnitType.Pixel);
+            LegendSplitterColumn.Width = new GridLength(5, GridUnitType.Pixel);
+            ToggleLegendButton.Content = "📋 凡例を非表示";
+            ToggleLegendButton.Background = new SolidColorBrush(Color.FromRgb(255, 235, 235));
+            ToggleLegendButton.BorderBrush = new SolidColorBrush(Color.FromRgb(244, 67, 54));
+            ToggleLegendButton.Foreground = new SolidColorBrush(Color.FromRgb(183, 28, 28));
+        }
+        else
+        {
+            LegendGroupBox.Visibility = Visibility.Collapsed;
+            LegendGridSplitter.Visibility = Visibility.Collapsed;
+            LegendColumn.Width = new GridLength(0);
+            LegendSplitterColumn.Width = new GridLength(0);
+            ToggleLegendButton.Content = "📋 凡例を表示";
+            ToggleLegendButton.Background = new SolidColorBrush(Color.FromRgb(232, 245, 232));
+            ToggleLegendButton.BorderBrush = new SolidColorBrush(Color.FromRgb(76, 175, 80));
+            ToggleLegendButton.Foreground = new SolidColorBrush(Color.FromRgb(46, 125, 50));
+        }
+    }
+    
+    /// <summary>
+    /// すべてのシリーズを表示
+    /// </summary>
+    private void ShowAllSeries_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var item in _legendItems)
+        {
+            item.IsVisible = true;
+            _seriesVisibility[item.CounterPath] = true;
+        }
+        UpdateChartSeriesVisibility();
+    }
+    
+    /// <summary>
+    /// すべてのシリーズを非表示
+    /// </summary>
+    private void HideAllSeries_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var item in _legendItems)
+        {
+            item.IsVisible = false;
+            _seriesVisibility[item.CounterPath] = false;
+        }
+        UpdateChartSeriesVisibility();
+    }
+    
+    /// <summary>
+    /// 凡例アイテムのチェック状態変更
+    /// </summary>
+    private void LegendItem_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
+        {
+            _seriesVisibility[counterPath] = true;
+            UpdateChartSeriesVisibility();
+        }
+    }
+    
+    /// <summary>
+    /// 凡例アイテムのチェック状態変更
+    /// </summary>
+    private void LegendItem_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
+        {
+            _seriesVisibility[counterPath] = false;
+            UpdateChartSeriesVisibility();
+        }
+    }
+    
+    /// <summary>
+    /// グラフシリーズの表示/非表示を更新
+    /// </summary>
+    private void UpdateChartSeriesVisibility()
+    {
+        try
+        {
+            // 折れ線グラフの場合
+            foreach (var kvp in _chartSeries)
+            {
+                var counterPath = kvp.Key;
+                var series = kvp.Value;
+                var isVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+                
+                series.IsVisible = isVisible;
+            }
+            
+            // 積み重ね面グラフの場合
+            foreach (var kvp in _areaChartSeries)
+            {
+                var counterPath = kvp.Key;
+                var series = kvp.Value;
+                var isVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+                
+                series.IsVisible = isVisible;
+            }
+            
+            PerformanceChart.Refresh();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"シリーズ表示更新エラー: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 凡例アイテムを追加
+    /// </summary>
+    private void AddLegendItem(string counterPath, string counterName, Color color)
+    {
+        var existingItem = _legendItems.FirstOrDefault(item => item.CounterPath == counterPath);
+        if (existingItem != null)
+        {
+            // 既存のアイテムを更新
+            existingItem.Color = color;
+            existingItem.IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+            return;
+        }
+        
+        var legendItem = new LegendItem
+        {
+            CounterPath = counterPath,
+            CounterName = counterName,
+            Color = color,
+            IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true),
+            CurrentValue = "-"
+        };
+        
+        _legendItems.Add(legendItem);
+    }
+    
+    /// <summary>
+    /// 凡例アイテムを削除
+    /// </summary>
+    private void RemoveLegendItem(string counterPath)
+    {
+        var item = _legendItems.FirstOrDefault(item => item.CounterPath == counterPath);
+        if (item != null)
+        {
+            _legendItems.Remove(item);
+        }
+    }
+    
+    /// <summary>
+    /// すべての凡例アイテムをクリア
+    /// </summary>
+    private void ClearLegendItems()
+    {
+        _legendItems.Clear();
+        _seriesVisibility.Clear();
+    }
+    
+    /// <summary>
+    /// 凡例アイテムの現在値を更新
+    /// </summary>
+    private void UpdateLegendCurrentValues()
+    {
+        try
+        {
+            foreach (var item in _legendItems)
+            {
+                if (_counterData.TryGetValue(item.CounterPath, out var dataPoints) && dataPoints.Count > 0)
+                {
+                    var latestValue = dataPoints.Last().Value;
+                    var scale = _counterScales.GetValueOrDefault(item.CounterPath, 1.0);
+                    var scaledValue = latestValue * scale;
+                    
+                    // 値をフォーマット
+                    item.CurrentValue = FormatCounterValue(scaledValue);
+                }
+                else
+                {
+                    item.CurrentValue = "-";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"凡例の現在値更新エラー: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// カウンター値をフォーマット
+    /// </summary>
+    private string FormatCounterValue(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            return "-";
+            
+        if (Math.Abs(value) >= 1000000)
+            return $"{value / 1000000:F2}M";
+        if (Math.Abs(value) >= 1000)
+            return $"{value / 1000:F2}K";
+        if (Math.Abs(value) >= 1)
+            return $"{value:F2}";
+        
+        return $"{value:F4}";
     }
 
     #endregion

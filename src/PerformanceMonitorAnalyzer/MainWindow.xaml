@@ -247,45 +247,189 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     
-                    <!-- グラフタイプ選択 -->
+                    <!-- グラフタイプ選択と凡例制御 -->
                     <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Margin="5,5,5,0">
-                        <StackPanel Orientation="Horizontal" Margin="10,8">
-                            <TextBlock Text="📊 グラフタイプ:" 
-                                     VerticalAlignment="Center" 
-                                     FontWeight="SemiBold" 
-                                     Margin="0,0,15,0"/>
-                            <RadioButton x:Name="LineChartRadio" 
-                                       Content="折れ線グラフ" 
-                                       IsChecked="True" 
-                                       GroupName="ChartType"
-                                       Checked="ChartType_Changed"
-                                       Margin="0,0,20,0"
-                                       VerticalAlignment="Center"/>
-                            <RadioButton x:Name="StackedAreaChartRadio" 
-                                       Content="積み重ね面グラフ" 
-                                       GroupName="ChartType"
-                                       Checked="ChartType_Changed"
-                                       VerticalAlignment="Center"/>
-                        </StackPanel>
+                        <Grid Margin="10,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- グラフタイプ選択 -->
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="📊 グラフタイプ:" 
+                                         VerticalAlignment="Center" 
+                                         FontWeight="SemiBold" 
+                                         Margin="0,0,15,0"/>
+                                <RadioButton x:Name="LineChartRadio" 
+                                           Content="折れ線グラフ" 
+                                           IsChecked="True" 
+                                           GroupName="ChartType"
+                                           Checked="ChartType_Changed"
+                                           Margin="0,0,20,0"
+                                           VerticalAlignment="Center"/>
+                                <RadioButton x:Name="StackedAreaChartRadio" 
+                                           Content="積み重ね面グラフ" 
+                                           GroupName="ChartType"
+                                           Checked="ChartType_Changed"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            
+                            <!-- 凡例制御ボタン -->
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="ToggleLegendButton" 
+                                       Content="📋 凡例を表示"
+                                       Click="ToggleLegend_Click"
+                                       Padding="8,4"
+                                       Background="#E8F5E8" 
+                                       BorderBrush="#4CAF50"
+                                       Foreground="#2E7D32"
+                                       ToolTip="凡例の表示/非表示を切り替えます"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                     
-                    <!-- ScottPlot グラフコンテナ -->
-                    <scottplot:WpfPlot x:Name="PerformanceChart" 
-                                      Grid.Row="1"
-                                      Background="White">
-                        <scottplot:WpfPlot.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="グラフをクリップボードにコピー(_C)" 
-                                         Click="CopyGraphToClipboard_Click"
-                                         InputGestureText="Ctrl+C"
-                                         x:Name="ContextMenuCopyGraph">
-                                    <MenuItem.Icon>
-                                        <TextBlock Text="📋"/>
-                                    </MenuItem.Icon>
-                                </MenuItem>
-                            </ContextMenu>
-                        </scottplot:WpfPlot.ContextMenu>
-                    </scottplot:WpfPlot>
+                    <!-- グラフと凡例の表示エリア -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="5" x:Name="LegendSplitterColumn"/>
+                            <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- ScottPlot グラフコンテナ -->
+                        <scottplot:WpfPlot x:Name="PerformanceChart" 
+                                          Grid.Column="0"
+                                          Background="White">
+                            <scottplot:WpfPlot.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="グラフをクリップボードにコピー(_C)" 
+                                             Click="CopyGraphToClipboard_Click"
+                                             InputGestureText="Ctrl+C"
+                                             x:Name="ContextMenuCopyGraph">
+                                        <MenuItem.Icon>
+                                            <TextBlock Text="📋"/>
+                                        </MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </scottplot:WpfPlot.ContextMenu>
+                        </scottplot:WpfPlot>
+                        
+                        <!-- グリッドスプリッター -->
+                        <GridSplitter Grid.Column="1" 
+                                      x:Name="LegendGridSplitter"
+                                      Width="5" 
+                                      HorizontalAlignment="Stretch" 
+                                      VerticalAlignment="Stretch"
+                                      Background="#E0E0E0"
+                                      BorderBrush="#CCCCCC"
+                                      BorderThickness="1,0,1,0"
+                                      Cursor="SizeWE"
+                                      ShowsPreview="False"
+                                      ToolTip="ドラッグして凡例領域の幅を調整"
+                                      Visibility="Collapsed">
+                            <GridSplitter.Style>
+                                <Style TargetType="GridSplitter">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#D0D0D0"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </GridSplitter.Style>
+                        </GridSplitter>
+                        
+                        <!-- 凡例表示エリア -->
+                        <GroupBox Grid.Column="2" 
+                                  x:Name="LegendGroupBox"
+                                  Header="📋 凡例"
+                                  Visibility="Collapsed"
+                                  Background="White">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- 凡例操作ボタン -->
+                                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5" HorizontalAlignment="Right">
+                                    <Button x:Name="ShowAllSeriesButton" 
+                                           Content="すべて表示"
+                                           Click="ShowAllSeries_Click"
+                                           Padding="6,2"
+                                           Margin="0,0,5,0"
+                                           FontSize="10"
+                                           ToolTip="すべてのシリーズを表示します"/>
+                                    <Button x:Name="HideAllSeriesButton" 
+                                           Content="すべて非表示"
+                                           Click="HideAllSeries_Click"
+                                           Padding="6,2"
+                                           FontSize="10"
+                                           ToolTip="すべてのシリーズを非表示にします"/>
+                                </StackPanel>
+                                
+                                <!-- 凡例リスト -->
+                                <ScrollViewer Grid.Row="1" 
+                                              VerticalScrollBarVisibility="Auto" 
+                                              HorizontalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="LegendItemsControl" Margin="5">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="#E0E0E0" 
+                                                        BorderThickness="0,0,0,1" 
+                                                        Padding="5"
+                                                        Background="{Binding BackgroundBrush}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="20"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        
+                                                        <!-- 表示/非表示チェックボックス -->
+                                                        <CheckBox Grid.Column="0"
+                                                                  IsChecked="{Binding IsVisible}"
+                                                                  Checked="LegendItem_Checked"
+                                                                  Unchecked="LegendItem_Unchecked"
+                                                                  Tag="{Binding CounterPath}"
+                                                                  VerticalAlignment="Center"
+                                                                  ToolTip="シリーズの表示/非表示を切り替えます"/>
+                                                        
+                                                        <!-- 色見本 -->
+                                                        <Rectangle Grid.Column="1"
+                                                                   Width="16" Height="3"
+                                                                   Fill="{Binding ColorBrush}"
+                                                                   Margin="5,0"
+                                                                   VerticalAlignment="Center"/>
+                                                        
+                                                        <!-- カウンター名 -->
+                                                        <TextBlock Grid.Column="2"
+                                                                   Text="{Binding CounterName}"
+                                                                   TextWrapping="Wrap"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="11"
+                                                                   Foreground="{Binding TextBrush}"
+                                                                   ToolTip="{Binding CounterPath}"/>
+                                                        
+                                                        <!-- 現在値 -->
+                                                        <TextBlock Grid.Column="3"
+                                                                   Text="{Binding CurrentValue}"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="10"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="DarkBlue"
+                                                                   Margin="5,0,0,0"
+                                                                   ToolTip="最新の値"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </GroupBox>
+                    </Grid>
                     
                     <!-- データなしの場合のメッセージ -->
                     <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
