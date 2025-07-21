@@ -275,17 +275,7 @@
                                            VerticalAlignment="Center"/>
                             </StackPanel>
                             
-                            <!-- 凡例制御ボタン -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button x:Name="ToggleLegendButton" 
-                                       Content="📋 凡例を表示"
-                                       Click="ToggleLegend_Click"
-                                       Padding="8,4"
-                                       Background="#E8F5E8" 
-                                       BorderBrush="#4CAF50"
-                                       Foreground="#2E7D32"
-                                       ToolTip="凡例の表示/非表示を切り替えます"/>
-                            </StackPanel>
+
                         </Grid>
                     </Border>
                     
@@ -327,7 +317,7 @@
                                       Cursor="SizeWE"
                                       ShowsPreview="False"
                                       ToolTip="ドラッグして凡例領域の幅を調整"
-                                      Visibility="Collapsed">
+                                      Visibility="Visible">
                             <GridSplitter.Style>
                                 <Style TargetType="GridSplitter">
                                     <Style.Triggers>
@@ -343,7 +333,7 @@
                         <GroupBox Grid.Column="2" 
                                   x:Name="LegendGroupBox"
                                   Header="📋 凡例"
-                                  Visibility="Collapsed"
+                                  Visibility="Visible"
                                   Background="White">
                             <Grid>
                                 <Grid.RowDefinitions>

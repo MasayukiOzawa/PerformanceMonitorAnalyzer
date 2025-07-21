@@ -401,7 +401,6 @@ public partial class MainWindow : Window
     
     // 凡例管理用のプロパティ
     private readonly ObservableCollection<LegendItem> _legendItems = new();
-    private bool _isLegendVisible = false;
     private readonly Dictionary<string, bool> _seriesVisibility = new();
     
     
@@ -4359,36 +4358,7 @@ public partial class MainWindow : Window
         LegendItemsControl.ItemsSource = _legendItems;
     }
     
-    /// <summary>
-    /// 凡例の表示/非表示を切り替え
-    /// </summary>
-    private void ToggleLegend_Click(object sender, RoutedEventArgs e)
-    {
-        _isLegendVisible = !_isLegendVisible;
-        
-        if (_isLegendVisible)
-        {
-            LegendGroupBox.Visibility = Visibility.Visible;
-            LegendGridSplitter.Visibility = Visibility.Visible;
-            LegendColumn.Width = new GridLength(250, GridUnitType.Pixel);
-            LegendSplitterColumn.Width = new GridLength(5, GridUnitType.Pixel);
-            ToggleLegendButton.Content = "📋 凡例を非表示";
-            ToggleLegendButton.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 235, 235));
-            ToggleLegendButton.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(244, 67, 54));
-            ToggleLegendButton.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(183, 28, 28));
-        }
-        else
-        {
-            LegendGroupBox.Visibility = Visibility.Collapsed;
-            LegendGridSplitter.Visibility = Visibility.Collapsed;
-            LegendColumn.Width = new GridLength(0);
-            LegendSplitterColumn.Width = new GridLength(0);
-            ToggleLegendButton.Content = "📋 凡例を表示";
-            ToggleLegendButton.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(232, 245, 232));
-            ToggleLegendButton.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(76, 175, 80));
-            ToggleLegendButton.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(46, 125, 50));
-        }
-    }
+
     
     /// <summary>
     /// すべてのシリーズを表示
