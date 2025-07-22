@@ -288,23 +288,45 @@
                             <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
                         </Grid.ColumnDefinitions>
                         
-                        <!-- ScottPlot グラフコンテナ -->
-                        <scottplot:WpfPlot x:Name="PerformanceChart" 
-                                          Grid.Column="0"
-                                          Background="White">
-                            <scottplot:WpfPlot.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="グラフをクリップボードにコピー(_C)" 
-                                             Click="CopyGraphToClipboard_Click"
-                                             InputGestureText="Ctrl+C"
-                                             x:Name="ContextMenuCopyGraph">
-                                        <MenuItem.Icon>
-                                            <TextBlock Text="📋"/>
-                                        </MenuItem.Icon>
-                                    </MenuItem>
-                                </ContextMenu>
-                            </scottplot:WpfPlot.ContextMenu>
-                        </scottplot:WpfPlot>
+                        <!-- ScottPlot グラフコンテナ（リサイズハンドル付き） -->
+                        <Border Grid.Column="0" x:Name="GraphContainer" Background="Transparent">
+                            <Grid>
+                                <scottplot:WpfPlot x:Name="PerformanceChart" 
+                                                  Background="White">
+                                    <scottplot:WpfPlot.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="グラフをクリップボードにコピー(_C)" 
+                                                     Click="CopyGraphToClipboard_Click"
+                                                     InputGestureText="Ctrl+C"
+                                                     x:Name="ContextMenuCopyGraph">
+                                                <MenuItem.Icon>
+                                                    <TextBlock Text="📋"/>
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </scottplot:WpfPlot.ContextMenu>
+                                </scottplot:WpfPlot>
+                                
+                                <!-- リサイズハンドル（右下角） -->
+                                <Border x:Name="ResizeHandle" 
+                                        Width="15" Height="15"
+                                        HorizontalAlignment="Right" 
+                                        VerticalAlignment="Bottom"
+                                        Background="LightGray" 
+                                        BorderBrush="Gray" 
+                                        BorderThickness="1"
+                                        Cursor="SizeNWSE"
+                                        Opacity="0.7"
+                                        ToolTip="ドラッグしてグラフサイズを変更"
+                                        Visibility="Collapsed">
+                                    <TextBlock Text="⤡" 
+                                               HorizontalAlignment="Center" 
+                                               VerticalAlignment="Center" 
+                                               FontSize="10" 
+                                               Foreground="DarkGray"/>
+                                </Border>
+                            </Grid>
+                        </Border>
                         
                         <!-- グリッドスプリッター -->
                         <GridSplitter Grid.Column="1" 

@@ -403,6 +403,11 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<LegendItem> _legendItems = new();
     private readonly Dictionary<string, bool> _seriesVisibility = new();
     
+    // グラフリサイズハンドル関連
+    private bool _isResizing = false;
+    private Point _resizeStartPoint;
+    private Size _resizeStartSize;
+    
     
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
@@ -4563,6 +4568,40 @@ public partial class MainWindow : Window
         {
             PerformanceChart.SizeChanged += PerformanceChart_SizeChanged;
         }
+        
+        // リサイズハンドルの初期化
+        InitializeResizeHandle();
+    }
+
+    /// <summary>
+    /// リサイズハンドルの初期化
+    /// </summary>
+    private void InitializeResizeHandle()
+    {
+        try
+        {
+            if (ResizeHandle != null)
+            {
+                // マウスイベントの設定
+                ResizeHandle.MouseDown += ResizeHandle_MouseDown;
+                ResizeHandle.MouseMove += ResizeHandle_MouseMove;
+                ResizeHandle.MouseUp += ResizeHandle_MouseUp;
+                ResizeHandle.MouseLeave += ResizeHandle_MouseLeave;
+                
+                // マウスエンター/リーブイベントでハンドルの表示/非表示
+                if (GraphContainer != null)
+                {
+                    GraphContainer.MouseEnter += GraphContainer_MouseEnter;
+                    GraphContainer.MouseLeave += GraphContainer_MouseLeave;
+                }
+                
+                LogInfo("グラフリサイズハンドルを初期化しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズハンドルの初期化中にエラーが発生しました: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -4603,6 +4642,147 @@ public partial class MainWindow : Window
             LogError($"グラフサイズ表示の更新中にエラーが発生しました: {ex.Message}");
         }
     }
+
+    #region グラフリサイズハンドル機能
+
+    /// <summary>
+    /// グラフコンテナーへのマウス進入イベント
+    /// </summary>
+    private void GraphContainer_MouseEnter(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            // 固定サイズのグラフの場合のみハンドルを表示
+            if (ResizeHandle != null && !double.IsNaN(PerformanceChart.Width) && !double.IsNaN(PerformanceChart.Height))
+            {
+                ResizeHandle.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフコンテナーマウス進入処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// グラフコンテナーからのマウス退出イベント
+    /// </summary>
+    private void GraphContainer_MouseLeave(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (ResizeHandle != null && !_isResizing)
+            {
+                ResizeHandle.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフコンテナーマウス退出処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウスダウンイベント
+    /// </summary>
+    private void ResizeHandle_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && ResizeHandle != null)
+            {
+                _isResizing = true;
+                _resizeStartPoint = e.GetPosition(GraphContainer);
+                _resizeStartSize = new Size(PerformanceChart.Width, PerformanceChart.Height);
+                
+                ResizeHandle.CaptureMouse();
+                LogInfo("グラフリサイズを開始しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ開始処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウス移動イベント
+    /// </summary>
+    private void ResizeHandle_MouseMove(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (_isResizing && e.LeftButton == MouseButtonState.Pressed && GraphContainer != null)
+            {
+                Point currentPoint = e.GetPosition(GraphContainer);
+                
+                double deltaX = currentPoint.X - _resizeStartPoint.X;
+                double deltaY = currentPoint.Y - _resizeStartPoint.Y;
+                
+                double newWidth = Math.Max(200, _resizeStartSize.Width + deltaX);
+                double newHeight = Math.Max(150, _resizeStartSize.Height + deltaY);
+                
+                // 最大サイズの制限
+                double maxWidth = GraphContainer.ActualWidth - 20;
+                double maxHeight = GraphContainer.ActualHeight - 20;
+                
+                if (maxWidth > 0) newWidth = Math.Min(newWidth, maxWidth);
+                if (maxHeight > 0) newHeight = Math.Min(newHeight, maxHeight);
+                
+                // サイズを設定
+                PerformanceChart.Width = newWidth;
+                PerformanceChart.Height = newHeight;
+                PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+                PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Top;
+                
+                UpdateGraphSizeDisplay();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウスアップイベント
+    /// </summary>
+    private void ResizeHandle_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (_isResizing && ResizeHandle != null)
+            {
+                _isResizing = false;
+                ResizeHandle.ReleaseMouseCapture();
+                LogInfo($"グラフリサイズを完了しました: {PerformanceChart.Width:F0}×{PerformanceChart.Height:F0}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ完了処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルからのマウス退出イベント
+    /// </summary>
+    private void ResizeHandle_MouseLeave(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (!_isResizing && ResizeHandle != null)
+            {
+                ResizeHandle.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズハンドルマウス退出処理中にエラー: {ex.Message}");
+        }
+    }
+
+    #endregion
 
     /// <summary>
     /// グラフサイズ手動設定クリックイベント
@@ -4656,6 +4836,29 @@ public partial class MainWindow : Window
                 Owner = this,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner
             };
+
+            // グラフ表示領域のサイズを取得して最大化サイズとして設定
+            try
+            {
+                // PerformanceChartの親となるGridの実際のサイズを取得
+                var parentGrid = PerformanceChart.Parent as Grid;
+                if (parentGrid != null)
+                {
+                    double maxWidth = parentGrid.ActualWidth;
+                    double maxHeight = parentGrid.ActualHeight;
+                    
+                    // マージンを考慮して少し小さめにする
+                    if (maxWidth > 50) maxWidth -= 20;
+                    if (maxHeight > 50) maxHeight -= 20;
+                    
+                    dialog.MaximizeSize = new Size(maxWidth, maxHeight);
+                    LogInfo($"グラフ最大化サイズを設定しました: {maxWidth:F0}×{maxHeight:F0}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"最大化サイズの取得に失敗しました: {ex.Message}");
+            }
 
             if (dialog.ShowDialog() == true && dialog.IsApplied)
             {

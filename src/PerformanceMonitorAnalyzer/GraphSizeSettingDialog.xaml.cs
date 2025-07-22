@@ -25,6 +25,11 @@ namespace PerformanceMonitorAnalyzer
         public bool IsApplied { get; private set; }
 
         /// <summary>
+        /// 最大化サイズ（親領域のサイズ）
+        /// </summary>
+        public Size MaximizeSize { get; set; }
+
+        /// <summary>
         /// コンストラクタ
         /// </summary>
         /// <param name="currentWidth">現在のグラフ幅</param>
@@ -89,6 +94,40 @@ namespace PerformanceMonitorAnalyzer
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"プレビュー更新エラー: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 最大化ボタンのクリックイベント
+        /// </summary>
+        private void MaximizeSize_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (WidthTextBox != null && HeightTextBox != null)
+                {
+                    // 最大化サイズが設定されている場合はそれを使用
+                    if (MaximizeSize.Width > 0 && MaximizeSize.Height > 0)
+                    {
+                        int maxWidth = (int)Math.Floor(MaximizeSize.Width);
+                        int maxHeight = (int)Math.Floor(MaximizeSize.Height);
+                        
+                        WidthTextBox.Text = maxWidth.ToString();
+                        HeightTextBox.Text = maxHeight.ToString();
+                    }
+                    else
+                    {
+                        // デフォルトの最大化サイズ
+                        WidthTextBox.Text = "1400";
+                        HeightTextBox.Text = "700";
+                    }
+                    UpdatePreview();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"最大化サイズの設定中にエラーが発生しました。\n\n{ex.Message}", "エラー", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
