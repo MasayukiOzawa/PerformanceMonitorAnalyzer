@@ -403,6 +403,11 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<LegendItem> _legendItems = new();
     private readonly Dictionary<string, bool> _seriesVisibility = new();
     
+    // グラフリサイズハンドル関連
+    private bool _isResizing = false;
+    private Point _resizeStartPoint;
+    private Size _resizeStartSize;
+    
     
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
@@ -419,6 +424,12 @@ public partial class MainWindow : Window
         
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
+        
+        // ウィンドウサイズ監視の初期化
+        InitializeWindowSizeTracking();
+        
+        // グラフサイズ監視の初期化
+        InitializeGraphSizeTracking();
         
         // パターン管理機能の初期化
         _ = InitializePatternManagerAsync();
@@ -4538,6 +4549,482 @@ public partial class MainWindow : Window
             return $"{value:F2}";
         
         return $"{value:F4}";
+    }
+
+    #endregion
+
+    #region グラフサイズ関連
+
+    /// <summary>
+    /// グラフサイズ監視の初期化
+    /// </summary>
+    private void InitializeGraphSizeTracking()
+    {
+        // 初期グラフサイズの表示
+        UpdateGraphSizeDisplay();
+        
+        // PerformanceChartのサイズ変更イベントの監視
+        if (PerformanceChart != null)
+        {
+            PerformanceChart.SizeChanged += PerformanceChart_SizeChanged;
+        }
+        
+        // リサイズハンドルの初期化
+        InitializeResizeHandle();
+    }
+
+    /// <summary>
+    /// リサイズハンドルの初期化
+    /// </summary>
+    private void InitializeResizeHandle()
+    {
+        try
+        {
+            if (ResizeHandle != null)
+            {
+                // マウスイベントの設定
+                ResizeHandle.MouseDown += ResizeHandle_MouseDown;
+                ResizeHandle.MouseMove += ResizeHandle_MouseMove;
+                ResizeHandle.MouseUp += ResizeHandle_MouseUp;
+                ResizeHandle.MouseLeave += ResizeHandle_MouseLeave;
+                
+                // マウスエンター/リーブイベントでハンドルの表示/非表示
+                if (GraphContainer != null)
+                {
+                    GraphContainer.MouseEnter += GraphContainer_MouseEnter;
+                    GraphContainer.MouseLeave += GraphContainer_MouseLeave;
+                }
+                
+                LogInfo("グラフリサイズハンドルを初期化しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズハンドルの初期化中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// PerformanceChartサイズ変更イベントハンドラー
+    /// </summary>
+    private void PerformanceChart_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateGraphSizeDisplay();
+    }
+
+    /// <summary>
+    /// グラフサイズ表示の更新
+    /// </summary>
+    private void UpdateGraphSizeDisplay()
+    {
+        try
+        {
+            if (GraphSizeText != null && PerformanceChart != null)
+            {
+                // 固定サイズが設定されているかチェック
+                if (!double.IsNaN(PerformanceChart.Width) && !double.IsNaN(PerformanceChart.Height))
+                {
+                    // 固定サイズの場合
+                    GraphSizeText.Text = $"グラフサイズ: {PerformanceChart.Width:F0}×{PerformanceChart.Height:F0} (固定)";
+                }
+                else
+                {
+                    // 自動サイズの場合はActualWidthとActualHeightを表示
+                    var width = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : 800;
+                    var height = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : 400;
+                    
+                    GraphSizeText.Text = $"グラフサイズ: {width:F0}×{height:F0} (自動)";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフサイズ表示の更新中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    #region グラフリサイズハンドル機能
+
+    /// <summary>
+    /// グラフコンテナーへのマウス進入イベント
+    /// </summary>
+    private void GraphContainer_MouseEnter(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            // 固定サイズのグラフの場合のみハンドルを表示
+            if (ResizeHandle != null && !double.IsNaN(PerformanceChart.Width) && !double.IsNaN(PerformanceChart.Height))
+            {
+                ResizeHandle.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフコンテナーマウス進入処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// グラフコンテナーからのマウス退出イベント
+    /// </summary>
+    private void GraphContainer_MouseLeave(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (ResizeHandle != null && !_isResizing)
+            {
+                ResizeHandle.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフコンテナーマウス退出処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウスダウンイベント
+    /// </summary>
+    private void ResizeHandle_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (e.LeftButton == MouseButtonState.Pressed && ResizeHandle != null)
+            {
+                _isResizing = true;
+                _resizeStartPoint = e.GetPosition(GraphContainer);
+                _resizeStartSize = new Size(PerformanceChart.Width, PerformanceChart.Height);
+                
+                ResizeHandle.CaptureMouse();
+                LogInfo("グラフリサイズを開始しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ開始処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウス移動イベント
+    /// </summary>
+    private void ResizeHandle_MouseMove(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (_isResizing && e.LeftButton == MouseButtonState.Pressed && GraphContainer != null)
+            {
+                Point currentPoint = e.GetPosition(GraphContainer);
+                
+                double deltaX = currentPoint.X - _resizeStartPoint.X;
+                double deltaY = currentPoint.Y - _resizeStartPoint.Y;
+                
+                double newWidth = Math.Max(200, _resizeStartSize.Width + deltaX);
+                double newHeight = Math.Max(150, _resizeStartSize.Height + deltaY);
+                
+                // 最大サイズの制限
+                double maxWidth = GraphContainer.ActualWidth - 20;
+                double maxHeight = GraphContainer.ActualHeight - 20;
+                
+                if (maxWidth > 0) newWidth = Math.Min(newWidth, maxWidth);
+                if (maxHeight > 0) newHeight = Math.Min(newHeight, maxHeight);
+                
+                // サイズを設定
+                PerformanceChart.Width = newWidth;
+                PerformanceChart.Height = newHeight;
+                PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+                PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Top;
+                
+                UpdateGraphSizeDisplay();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルのマウスアップイベント
+    /// </summary>
+    private void ResizeHandle_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (_isResizing && ResizeHandle != null)
+            {
+                _isResizing = false;
+                ResizeHandle.ReleaseMouseCapture();
+                LogInfo($"グラフリサイズを完了しました: {PerformanceChart.Width:F0}×{PerformanceChart.Height:F0}");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズ完了処理中にエラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// リサイズハンドルからのマウス退出イベント
+    /// </summary>
+    private void ResizeHandle_MouseLeave(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (!_isResizing && ResizeHandle != null)
+            {
+                ResizeHandle.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"リサイズハンドルマウス退出処理中にエラー: {ex.Message}");
+        }
+    }
+
+    #endregion
+
+    /// <summary>
+    /// グラフサイズ手動設定クリックイベント
+    /// </summary>
+    private void GraphSizeText_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        ShowGraphSizeSettingDialog();
+    }
+
+    /// <summary>
+    /// グラフサイズ設定ダイアログの表示
+    /// </summary>
+    private void ShowGraphSizeSettingDialog()
+    {
+        try
+        {
+            // グラフサイズ表示テキストが存在するかチェック
+            if (GraphSizeText == null)
+            {
+                LogError("GraphSizeText が初期化されていません");
+                MessageBox.Show(
+                    "グラフサイズ表示コンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            if (PerformanceChart == null)
+            {
+                LogError("PerformanceChart が初期化されていません");
+                MessageBox.Show(
+                    "グラフコンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            var currentWidth = PerformanceChart.ActualWidth > 0 ? PerformanceChart.ActualWidth : PerformanceChart.Width;
+            var currentHeight = PerformanceChart.ActualHeight > 0 ? PerformanceChart.ActualHeight : PerformanceChart.Height;
+            
+            // NaNやInfinityをチェック
+            if (double.IsNaN(currentWidth) || double.IsInfinity(currentWidth) || currentWidth <= 0)
+                currentWidth = 800; // デフォルト値
+            if (double.IsNaN(currentHeight) || double.IsInfinity(currentHeight) || currentHeight <= 0)
+                currentHeight = 400; // デフォルト値
+
+            var dialog = new GraphSizeSettingDialog(currentWidth, currentHeight)
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner
+            };
+
+            // グラフ表示領域のサイズを取得して最大化サイズとして設定
+            try
+            {
+                // PerformanceChartの親となるGridの実際のサイズを取得
+                var parentGrid = PerformanceChart.Parent as Grid;
+                if (parentGrid != null)
+                {
+                    double maxWidth = parentGrid.ActualWidth;
+                    double maxHeight = parentGrid.ActualHeight;
+                    
+                    // マージンを考慮して少し小さめにする
+                    if (maxWidth > 50) maxWidth -= 20;
+                    if (maxHeight > 50) maxHeight -= 20;
+                    
+                    dialog.MaximizeSize = new Size(maxWidth, maxHeight);
+                    LogInfo($"グラフ最大化サイズを設定しました: {maxWidth:F0}×{maxHeight:F0}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"最大化サイズの取得に失敗しました: {ex.Message}");
+            }
+
+            if (dialog.ShowDialog() == true && dialog.IsApplied)
+            {
+                // 自動サイズの場合（NaN値）
+                if (double.IsNaN(dialog.GraphWidth) && double.IsNaN(dialog.GraphHeight))
+                {
+                    // PerformanceChartを自動サイズに戻す
+                    PerformanceChart.Width = double.NaN;
+                    PerformanceChart.Height = double.NaN;
+                    PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch;
+                    PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Stretch;
+                    
+                    LogInfo("グラフサイズを自動サイズに変更しました");
+                }
+                else
+                {
+                    // PerformanceChart自体のサイズを直接変更
+                    PerformanceChart.Width = dialog.GraphWidth;
+                    PerformanceChart.Height = dialog.GraphHeight;
+                    
+                    // HorizontalAlignmentとVerticalAlignmentを設定して固定サイズにする
+                    PerformanceChart.HorizontalAlignment = System.Windows.HorizontalAlignment.Left;
+                    PerformanceChart.VerticalAlignment = System.Windows.VerticalAlignment.Top;
+                    
+                    LogInfo($"グラフサイズを変更しました: {dialog.GraphWidth:F0}×{dialog.GraphHeight:F0}");
+                }
+                
+                // 表示を更新
+                UpdateGraphSizeDisplay();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフサイズ設定ダイアログの表示中にエラーが発生しました: {ex.Message}");
+            MessageBox.Show(
+                $"グラフサイズ設定中にエラーが発生しました。\n\n{ex.Message}",
+                "エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    #endregion
+
+    #region ウィンドウサイズ管理機能
+
+    /// <summary>
+    /// ウィンドウサイズ監視の初期化
+    /// </summary>
+    private void InitializeWindowSizeTracking()
+    {
+        // 初期ウィンドウサイズの表示
+        UpdateWindowSizeDisplay();
+        
+        // ウィンドウサイズ変更イベントの監視
+        this.SizeChanged += MainWindow_SizeChanged;
+        
+        // ウィンドウステート変更イベントの監視
+        this.StateChanged += MainWindow_StateChanged;
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ変更イベントハンドラー
+    /// </summary>
+    private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateWindowSizeDisplay();
+    }
+
+    /// <summary>
+    /// ウィンドウステート変更イベントハンドラー
+    /// </summary>
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        UpdateWindowSizeDisplay();
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ表示の更新
+    /// </summary>
+    private void UpdateWindowSizeDisplay()
+    {
+        try
+        {
+            if (WindowSizeText != null)
+            {
+                var width = this.ActualWidth > 0 ? this.ActualWidth : this.Width;
+                var height = this.ActualHeight > 0 ? this.ActualHeight : this.Height;
+                
+                string stateText = this.WindowState switch
+                {
+                    WindowState.Maximized => " (最大化)",
+                    WindowState.Minimized => " (最小化)",
+                    _ => ""
+                };
+                
+                WindowSizeText.Text = $"ウィンドウサイズ: {width:F0}×{height:F0}{stateText}";
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"ウィンドウサイズ表示の更新中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ手動設定クリックイベント
+    /// </summary>
+    private void WindowSizeText_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        ShowWindowSizeSettingDialog();
+    }
+
+    /// <summary>
+    /// ウィンドウサイズ設定ダイアログの表示
+    /// </summary>
+    private void ShowWindowSizeSettingDialog()
+    {
+        try
+        {
+            // ウィンドウサイズ表示テキストが存在するかチェック
+            if (WindowSizeText == null)
+            {
+                LogError("WindowSizeText が初期化されていません");
+                MessageBox.Show(
+                    "ウィンドウサイズ表示コンポーネントが初期化されていません。",
+                    "エラー",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            var dialog = new WindowSizeSettingDialog
+            {
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CurrentWidth = this.ActualWidth > 0 ? this.ActualWidth : this.Width,
+                CurrentHeight = this.ActualHeight > 0 ? this.ActualHeight : this.Height,
+                CurrentWindowState = this.WindowState
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                // ウィンドウステートを適用
+                this.WindowState = dialog.SelectedWindowState;
+                
+                // サイズが指定されている場合は適用
+                if (dialog.SelectedWindowState == WindowState.Normal && 
+                    dialog.NewWidth.HasValue && dialog.NewHeight.HasValue)
+                {
+                    this.Width = dialog.NewWidth.Value;
+                    this.Height = dialog.NewHeight.Value;
+                }
+                
+                LogInfo($"ウィンドウサイズを変更しました: {dialog.NewWidth}×{dialog.NewHeight} ({dialog.SelectedWindowState})");
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"ウィンドウサイズ設定ダイアログの表示中にエラーが発生しました: {ex.Message}");
+            MessageBox.Show(
+                $"ウィンドウサイズ設定中にエラーが発生しました。\n\n{ex.Message}",
+                "エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     #endregion
