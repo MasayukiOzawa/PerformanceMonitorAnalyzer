@@ -1552,7 +1552,7 @@ public partial class MainWindow : Window
         var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
         
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
         var colorIndex = _chartSeries.Count;
@@ -1620,13 +1620,13 @@ public partial class MainWindow : Window
         
         // カウンターのスケール設定を取得（デフォルトは1.0）
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
-        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        System.Diagnostics.Debug.WriteLine($"Applying display scale {scale} to counter: {counter}");
         
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
         var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
         
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
         var colorIndex = _chartSeries.Count;
@@ -2343,22 +2343,22 @@ public partial class MainWindow : Window
             };
         }
 
-        // スケールを適用（PDHカウンターのスケール処理を模倣）
-        var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
-        var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        // 統計情報は元の値で計算（スケールは適用しない）
+        // これにより、実際のデータ値の統計が表示される
+        var values = dataPoints.Select(dp => dp.Value).ToArray();
         
         // PDH_STATISTICSの計算ロジックを模倣
         // PDHでは内部的に以下の統計を計算します
-        var count = (uint)scaledValues.Length;
-        var sum = scaledValues.Sum();
+        var count = (uint)values.Length;
+        var sum = values.Sum();
         var mean = sum / count;
         
         // PDHの統計計算アルゴリズムに従った実装
-        var min = scaledValues.Min();
-        var max = scaledValues.Max();
+        var min = values.Min();
+        var max = values.Max();
         
         // 標準偏差の計算（PDH風）
-        var variance = scaledValues.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
+        var variance = values.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
         var standardDeviation = Math.Sqrt(variance);
 
         return new CounterStatistics
@@ -3419,7 +3419,7 @@ public partial class MainWindow : Window
                         RefreshCounterInChart(counterName);
                     }), System.Windows.Threading.DispatcherPriority.Normal);
                     
-                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale}");
+                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (グラフ表示位置のみ変更、実際のデータ値は保持)");
                 }
             }
         };
@@ -3485,7 +3485,7 @@ public partial class MainWindow : Window
                 // 積み重ね面グラフの場合は全体を再描画
                 if (_currentChartType == ChartType.StackedAreaChart)
                 {
-                    System.Diagnostics.Debug.WriteLine("Stacked area chart requires full redraw for scale change");
+                    System.Diagnostics.Debug.WriteLine("Stacked area chart requires full redraw for display scale change");
                     RefreshChartWithCurrentType();
                 }
                 else
@@ -4515,11 +4515,11 @@ public partial class MainWindow : Window
                 if (_counterData.TryGetValue(item.CounterPath, out var dataPoints) && dataPoints.Count > 0)
                 {
                     var latestValue = dataPoints.Last().Value;
-                    var scale = _counterScales.GetValueOrDefault(item.CounterPath, 1.0);
-                    var scaledValue = latestValue * scale;
+                    // 凡例では元の値を表示（スケールは適用しない）
+                    // スケールはグラフの表示位置のみに影響する
                     
                     // 値をフォーマット
-                    item.CurrentValue = FormatCounterValue(scaledValue);
+                    item.CurrentValue = FormatCounterValue(latestValue);
                 }
                 else
                 {
