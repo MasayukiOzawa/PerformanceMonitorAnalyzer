@@ -600,10 +600,10 @@
                     </Grid.RowDefinitions>
                     
                     <!-- 説明テキスト -->
-                    <TextBlock Grid.Row="0" Text="各カウンターのグラフ表示位置を調整:"
+                    <TextBlock Grid.Row="0" Text="Y軸固定範囲（0-100）内でのグラフ表示位置を調整:"
                              FontSize="11" Foreground="DarkGray" 
                              Margin="5,5,5,5" TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="1" Text="※実際のデータ値は変更されません"
+                    <TextBlock Grid.Row="1" Text="※データは自動的にY軸100に収まるようにスケール調整され、実際のデータ値は変更されません"
                              FontSize="10" Foreground="DarkOrange" FontStyle="Italic"
                              Margin="5,0,5,10" TextWrapping="Wrap"/>
                     
