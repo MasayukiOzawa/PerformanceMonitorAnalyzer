@@ -510,7 +510,7 @@ public partial class MainWindow : Window
         try
         {
             var instructions = PerformanceChart.Plot.Add.Text(
-                "グラフ操作: マウスホイール=ズーム | Shift+ホイール=左右スクロール | Ctrl+ホイール=上下スクロール | 中ボタンドラッグ=移動",
+                "グラフ操作: マウスホイール=ズーム | Shift+ホイール=左右スクロール | Ctrl+ホイール=上下スクロール | 左クリックドラッグ=移動",
                 10, 10);
             instructions.LabelFontSize = 12;
             instructions.LabelFontColor = ScottPlot.Colors.DarkBlue;
@@ -700,10 +700,8 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 中ボタンまたはCtrl+左ボタンで軸ドラッグを開始
-            if (e.MiddleButton == System.Windows.Input.MouseButtonState.Pressed || 
-                (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed && 
-                 Keyboard.IsKeyDown(Key.LeftCtrl)))
+            // 左ボタンで軸ドラッグを開始
+            if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
             {
                 _isAxisDragging = true;
                 _axisDragStartPoint = e.GetPosition(PerformanceChart);
@@ -726,7 +724,7 @@ public partial class MainWindow : Window
                 // カーソルを変更（上下左右移動可能を示す）
                 PerformanceChart.Cursor = Cursors.SizeAll;
                 
-                LogInfo("軸ドラッグを開始しました（上下左右移動可能）");
+                LogInfo("軸ドラッグを開始しました（左クリックドラッグで上下左右移動）");
                 e.Handled = true;
             }
         }
