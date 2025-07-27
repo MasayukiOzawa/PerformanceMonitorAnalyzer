@@ -418,10 +418,11 @@ public partial class MainWindow : Window
     private const double MIN_ZOOM_RANGE = 1.0; // 最小ズーム範囲
     private const double MAX_ZOOM_RANGE = 1000.0; // 最大ズーム範囲
     
-    // Y軸ドラッグ機能関連
-    private bool _isYAxisDragging = false;
+    // 軸ドラッグ機能関連
+    private bool _isAxisDragging = false;
     private double _yAxisDragStartValue = 0.0;
-    private Point _yAxisDragStartPoint;
+    private double _xAxisDragStartValue = 0.0;
+    private Point _axisDragStartPoint;
     
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
@@ -467,15 +468,19 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
+        // FPS表示を無効化
+        PerformanceChart.Configuration.Quality = ScottPlot.Control.QualityMode.HighQuality;
+        PerformanceChart.Configuration.DpiStretch = false;
+        
         // マウスホイールイベントハンドラーを追加（Y軸ズーム機能）
         PerformanceChart.MouseWheel += PerformanceChart_MouseWheel;
         
-        // マウスイベントハンドラーを追加（Y軸ドラッグ機能）
+        // マウスイベントハンドラーを追加（軸ドラッグ機能）
         PerformanceChart.MouseDown += PerformanceChart_MouseDown;
         PerformanceChart.MouseMove += PerformanceChart_MouseMove;
         PerformanceChart.MouseUp += PerformanceChart_MouseUp;
         
-        // ユーザーのドラッグ操作後にもY軸の範囲を管理
+        // ユーザーのドラッグ操作後にも軸の範囲を管理
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
         {
             EnsureYAxisRange();
@@ -587,26 +592,39 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウスダウンイベント（Y軸ドラッグ開始）
+    /// マウスダウンイベント（軸ドラッグ開始）
     /// </summary>
     private void PerformanceChart_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         try
         {
-            // 中ボタンまたはCtrl+左ボタンでY軸ドラッグを開始
+            // 中ボタンまたはCtrl+左ボタンで軸ドラッグを開始
             if (e.MiddleButton == System.Windows.Input.MouseButtonState.Pressed || 
                 (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed && 
                  Keyboard.IsKeyDown(Key.LeftCtrl)))
             {
-                _isYAxisDragging = true;
-                _yAxisDragStartPoint = e.GetPosition(PerformanceChart);
+                _isAxisDragging = true;
+                _axisDragStartPoint = e.GetPosition(PerformanceChart);
                 _yAxisDragStartValue = (_yAxisMin + _yAxisMax) / 2.0;
+                
+                // X軸の中央値を計算（時間範囲の中央）
+                if (_timeRangeDetected)
+                {
+                    var (startTime, endTime) = GetSelectedTimeRange();
+                    _xAxisDragStartValue = (startTime.ToOADate() + endTime.ToOADate()) / 2.0;
+                }
+                else
+                {
+                    _xAxisDragStartValue = PerformanceChart.Plot.Axes.Bottom.Min + 
+                                         (PerformanceChart.Plot.Axes.Bottom.Max - PerformanceChart.Plot.Axes.Bottom.Min) / 2.0;
+                }
+                
                 PerformanceChart.CaptureMouse();
                 
-                // カーソルを変更
-                PerformanceChart.Cursor = Cursors.SizeNS;
+                // カーソルを変更（上下左右移動可能を示す）
+                PerformanceChart.Cursor = Cursors.SizeAll;
                 
-                LogInfo("Y軸ドラッグを開始しました");
+                LogInfo("軸ドラッグを開始しました（上下左右移動可能）");
                 e.Handled = true;
             }
         }
@@ -617,36 +635,52 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウス移動イベント（Y軸ドラッグ中）
+    /// マウス移動イベント（軸ドラッグ中）
     /// </summary>
     private void PerformanceChart_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         try
         {
-            if (_isYAxisDragging)
+            if (_isAxisDragging)
             {
                 Point currentPoint = e.GetPosition(PerformanceChart);
-                double deltaY = currentPoint.Y - _yAxisDragStartPoint.Y;
+                double deltaX = currentPoint.X - _axisDragStartPoint.X;
+                double deltaY = currentPoint.Y - _axisDragStartPoint.Y;
                 
                 // Y軸の移動量を計算（画面座標と軸座標の変換）
-                double currentRange = _yAxisMax - _yAxisMin;
+                double currentYRange = _yAxisMax - _yAxisMin;
                 double chartHeight = PerformanceChart.ActualHeight;
                 
                 if (chartHeight > 0)
                 {
-                    // 移動量をY軸座標系に変換
-                    double axisDelta = (deltaY / chartHeight) * currentRange;
+                    // Y軸移動量をY軸座標系に変換
+                    double yAxisDelta = (deltaY / chartHeight) * currentYRange;
                     
                     // Y軸範囲を更新
-                    _yAxisMin += axisDelta;
-                    _yAxisMax += axisDelta;
-                    
-                    EnsureYAxisRange();
-                    PerformanceChart.Refresh();
-                    
-                    // ドラッグ開始点を更新
-                    _yAxisDragStartPoint = currentPoint;
+                    _yAxisMin += yAxisDelta;
+                    _yAxisMax += yAxisDelta;
                 }
+                
+                // X軸の移動量を計算
+                double chartWidth = PerformanceChart.ActualWidth;
+                if (chartWidth > 0)
+                {
+                    double currentXRange = PerformanceChart.Plot.Axes.Bottom.Max - PerformanceChart.Plot.Axes.Bottom.Min;
+                    double xAxisDelta = (deltaX / chartWidth) * currentXRange;
+                    
+                    // X軸範囲を更新（左右移動）
+                    double newXMin = PerformanceChart.Plot.Axes.Bottom.Min - xAxisDelta;
+                    double newXMax = PerformanceChart.Plot.Axes.Bottom.Max - xAxisDelta;
+                    
+                    PerformanceChart.Plot.Axes.Bottom.Min = newXMin;
+                    PerformanceChart.Plot.Axes.Bottom.Max = newXMax;
+                }
+                
+                EnsureYAxisRange();
+                PerformanceChart.Refresh();
+                
+                // ドラッグ開始点を更新
+                _axisDragStartPoint = currentPoint;
                 
                 e.Handled = true;
             }
@@ -658,21 +692,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウスアップイベント（Y軸ドラッグ終了）
+    /// マウスアップイベント（軸ドラッグ終了）
     /// </summary>
     private void PerformanceChart_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         try
         {
-            if (_isYAxisDragging)
+            if (_isAxisDragging)
             {
-                _isYAxisDragging = false;
+                _isAxisDragging = false;
                 PerformanceChart.ReleaseMouseCapture();
                 
                 // カーソルを元に戻す
                 PerformanceChart.Cursor = Cursors.Arrow;
                 
-                LogInfo($"Y軸ドラッグを終了しました: {_yAxisMin:F1} - {_yAxisMax:F1}");
+                LogInfo($"軸ドラッグを終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}, X軸範囲も更新");
                 e.Handled = true;
             }
         }
