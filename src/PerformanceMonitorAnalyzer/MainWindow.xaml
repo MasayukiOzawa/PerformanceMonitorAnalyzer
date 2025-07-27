@@ -467,6 +467,13 @@
                                  Foreground="DarkGreen"
                                  FontWeight="Bold"
                                  Margin="5"/>
+                        <TextBlock HorizontalAlignment="Center" FontSize="11" Foreground="DarkBlue" Margin="5">
+                            <Run Text="🔧 Y軸操作: "/>
+                            <Run Text="マウスホイール" FontWeight="Bold"/>
+                            <Run Text="でズーム、"/>
+                            <Run Text="中ボタンドラッグ" FontWeight="Bold"/>
+                            <Run Text="で範囲移動"/>
+                        </TextBlock>
                     </StackPanel>
                     
                     <!-- グラフ操作ボタン -->
@@ -480,7 +487,16 @@
                                Foreground="#F57C00"
                                Padding="10,5"
                                Margin="5"
-                               ToolTip="時間範囲とズーム倍率を初期状態にリセットします"/>
+                               ToolTip="時間範囲とY軸ズーム倍率を初期状態にリセットします (Ctrl+R)"/>
+                        <Button x:Name="ResetYAxisButton" 
+                               Content="📏 Y軸をリセット" 
+                               Click="ResetYAxis_Click"
+                               Background="#F3E5F5" 
+                               BorderBrush="#7B1FA2"
+                               Foreground="#7B1FA2"
+                               Padding="10,5"
+                               Margin="5"
+                               ToolTip="Y軸の範囲を0-100にリセットします (F5)"/>
                         <Button x:Name="CopyGraphButton" 
                                Content="📋 グラフをクリップボードにコピー" 
                                Click="CopyGraphToClipboard_Click"

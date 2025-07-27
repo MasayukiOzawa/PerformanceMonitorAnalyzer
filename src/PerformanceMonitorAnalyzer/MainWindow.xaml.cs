@@ -411,6 +411,17 @@ public partial class MainWindow : Window
     private Point _resizeStartPoint;
     private Size _resizeStartSize;
     
+    // Y軸ズーム機能関連
+    private double _yAxisMin = 0.0;
+    private double _yAxisMax = 100.0;
+    private const double ZOOM_FACTOR = 0.1; // ズーム時の変化率
+    private const double MIN_ZOOM_RANGE = 1.0; // 最小ズーム範囲
+    private const double MAX_ZOOM_RANGE = 1000.0; // 最大ズーム範囲
+    
+    // Y軸ドラッグ機能関連
+    private bool _isYAxisDragging = false;
+    private double _yAxisDragStartValue = 0.0;
+    private Point _yAxisDragStartPoint;
     
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
@@ -452,14 +463,22 @@ public partial class MainWindow : Window
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
-        // Y軸を固定範囲0-100に設定
-        PerformanceChart.Plot.Axes.Left.Min = 0;
-        PerformanceChart.Plot.Axes.Left.Max = 100;
+        // Y軸を初期範囲0-100に設定
+        PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
+        PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
-        // ユーザーのドラッグ操作後にもY軸の範囲を固定
+        // マウスホイールイベントハンドラーを追加（Y軸ズーム機能）
+        PerformanceChart.MouseWheel += PerformanceChart_MouseWheel;
+        
+        // マウスイベントハンドラーを追加（Y軸ドラッグ機能）
+        PerformanceChart.MouseDown += PerformanceChart_MouseDown;
+        PerformanceChart.MouseMove += PerformanceChart_MouseMove;
+        PerformanceChart.MouseUp += PerformanceChart_MouseUp;
+        
+        // ユーザーのドラッグ操作後にもY軸の範囲を管理
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
         {
-            EnsureYAxisFixedRange();
+            EnsureYAxisRange();
         };
         
         // グラフ領域のフォントサイズを16に設定
@@ -479,23 +498,187 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Y軸を固定範囲0-100に設定する
+    /// Y軸の範囲を現在の設定に合わせて調整する
     /// </summary>
-    private void EnsureYAxisFixedRange()
+    private void EnsureYAxisRange()
     {
         try
         {
-            // Y軸を常に0-100の固定範囲に設定
-            if (PerformanceChart.Plot.Axes.Left.Min != 0 || PerformanceChart.Plot.Axes.Left.Max != 100)
+            // Y軸を現在の設定範囲に合わせて調整
+            if (Math.Abs(PerformanceChart.Plot.Axes.Left.Min - _yAxisMin) > 0.01 || 
+                Math.Abs(PerformanceChart.Plot.Axes.Left.Max - _yAxisMax) > 0.01)
             {
-                PerformanceChart.Plot.Axes.Left.Min = 0;
-                PerformanceChart.Plot.Axes.Left.Max = 100;
-                System.Diagnostics.Debug.WriteLine("Y軸を固定範囲0-100に設定しました");
+                PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
+                PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
+                System.Diagnostics.Debug.WriteLine($"Y軸範囲を設定しました: {_yAxisMin:F1} - {_yAxisMax:F1}");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Y軸範囲設定エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// マウスホイールによるY軸ズーム機能
+    /// </summary>
+    private void PerformanceChart_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        try
+        {
+            // マウス位置を取得
+            var mousePosition = e.GetPosition(PerformanceChart);
+            var plotArea = PerformanceChart.Plot.RenderManager.LastRender.FigureRect;
+            
+            // マウスがプロット領域内にあるかチェック
+            if (mousePosition.X < plotArea.Left || mousePosition.X > plotArea.Right ||
+                mousePosition.Y < plotArea.Top || mousePosition.Y > plotArea.Bottom)
+            {
+                return; // プロット領域外では何もしない
+            }
+
+            double currentRange = _yAxisMax - _yAxisMin;
+            double centerY = (_yAxisMin + _yAxisMax) / 2.0;
+            
+            // ズームイン/アウトの計算
+            double zoomChange = currentRange * ZOOM_FACTOR;
+            
+            if (e.Delta > 0)
+            {
+                // ズームイン（範囲を狭める）
+                double newRange = Math.Max(MIN_ZOOM_RANGE, currentRange - zoomChange);
+                double halfRange = newRange / 2.0;
+                _yAxisMin = centerY - halfRange;
+                _yAxisMax = centerY + halfRange;
+                LogInfo($"Y軸ズームイン: {_yAxisMin:F1} - {_yAxisMax:F1}");
+            }
+            else
+            {
+                // ズームアウト（範囲を広げる）
+                double newRange = Math.Min(MAX_ZOOM_RANGE, currentRange + zoomChange);
+                double halfRange = newRange / 2.0;
+                _yAxisMin = centerY - halfRange;
+                _yAxisMax = centerY + halfRange;
+                LogInfo($"Y軸ズームアウト: {_yAxisMin:F1} - {_yAxisMax:F1}");
+            }
+            
+            // Y軸の範囲を更新
+            EnsureYAxisRange();
+            PerformanceChart.Refresh();
+            
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            LogError($"マウスホイールズーム処理エラー: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Y軸の範囲をリセットする
+    /// </summary>
+    private void ResetYAxisRange()
+    {
+        _yAxisMin = 0.0;
+        _yAxisMax = 100.0;
+        EnsureYAxisRange();
+        PerformanceChart.Refresh();
+        LogInfo("Y軸範囲をリセットしました: 0 - 100");
+    }
+
+    /// <summary>
+    /// マウスダウンイベント（Y軸ドラッグ開始）
+    /// </summary>
+    private void PerformanceChart_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        try
+        {
+            // 中ボタンまたはCtrl+左ボタンでY軸ドラッグを開始
+            if (e.MiddleButton == System.Windows.Input.MouseButtonState.Pressed || 
+                (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed && 
+                 Keyboard.IsKeyDown(Key.LeftCtrl)))
+            {
+                _isYAxisDragging = true;
+                _yAxisDragStartPoint = e.GetPosition(PerformanceChart);
+                _yAxisDragStartValue = (_yAxisMin + _yAxisMax) / 2.0;
+                PerformanceChart.CaptureMouse();
+                
+                // カーソルを変更
+                PerformanceChart.Cursor = Cursors.SizeNS;
+                
+                LogInfo("Y軸ドラッグを開始しました");
+                e.Handled = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"マウスダウン処理エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// マウス移動イベント（Y軸ドラッグ中）
+    /// </summary>
+    private void PerformanceChart_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        try
+        {
+            if (_isYAxisDragging)
+            {
+                Point currentPoint = e.GetPosition(PerformanceChart);
+                double deltaY = currentPoint.Y - _yAxisDragStartPoint.Y;
+                
+                // Y軸の移動量を計算（画面座標と軸座標の変換）
+                double currentRange = _yAxisMax - _yAxisMin;
+                double chartHeight = PerformanceChart.ActualHeight;
+                
+                if (chartHeight > 0)
+                {
+                    // 移動量をY軸座標系に変換
+                    double axisDelta = (deltaY / chartHeight) * currentRange;
+                    
+                    // Y軸範囲を更新
+                    _yAxisMin += axisDelta;
+                    _yAxisMax += axisDelta;
+                    
+                    EnsureYAxisRange();
+                    PerformanceChart.Refresh();
+                    
+                    // ドラッグ開始点を更新
+                    _yAxisDragStartPoint = currentPoint;
+                }
+                
+                e.Handled = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"マウス移動処理エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// マウスアップイベント（Y軸ドラッグ終了）
+    /// </summary>
+    private void PerformanceChart_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (_isYAxisDragging)
+            {
+                _isYAxisDragging = false;
+                PerformanceChart.ReleaseMouseCapture();
+                
+                // カーソルを元に戻す
+                PerformanceChart.Cursor = Cursors.Arrow;
+                
+                LogInfo($"Y軸ドラッグを終了しました: {_yAxisMin:F1} - {_yAxisMax:F1}");
+                e.Handled = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"マウスアップ処理エラー: {ex.Message}");
         }
     }
 
@@ -1628,7 +1811,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
         // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
-        EnsureYAxisFixedRange();
+        EnsureYAxisRange();
         
         // X軸の範囲を選択された時間範囲に設定
         UpdateChartXAxisRange();
@@ -1706,7 +1889,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
         // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
-        EnsureYAxisFixedRange();
+        EnsureYAxisRange();
         
         // X軸の範囲を選択された時間範囲に設定
         UpdateChartXAxisRange();
@@ -1852,7 +2035,7 @@ public partial class MainWindow : Window
             }
             
             // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
-            EnsureYAxisFixedRange();
+            EnsureYAxisRange();
             
             // X軸の範囲を選択された時間範囲に設定
             UpdateChartXAxisRange();
@@ -4314,6 +4497,20 @@ public partial class MainWindow : Window
                 e.Handled = true;
             }
         }
+        
+        // F5 でY軸リセット
+        if (e.Key == Key.F5 && GraphMenu.IsEnabled)
+        {
+            ResetYAxisRange();
+            e.Handled = true;
+        }
+        
+        // Ctrl+R でズーム全体リセット
+        if (e.Key == Key.R && Keyboard.Modifiers == ModifierKeys.Control && GraphMenu.IsEnabled)
+        {
+            ResetZoom_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
     }
 
     /// <summary>
@@ -4338,8 +4535,8 @@ public partial class MainWindow : Window
             // スライダーテキストを更新
             UpdateTimeSliderTexts();
             
-            // Y軸を固定範囲に設定（ズームリセット時も0-100を維持）
-            EnsureYAxisFixedRange();
+            // Y軸範囲もリセット
+            ResetYAxisRange();
             
             // X軸範囲を更新（全体範囲に戻す）
             UpdateChartXAxisRange();
@@ -4354,6 +4551,26 @@ public partial class MainWindow : Window
         {
             LogError($"ズームリセットエラー: {ex.Message}");
             AddOperationLog(LogLevel.Error, $"ズームリセット中にエラーが発生しました: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Y軸リセットボタンのクリックイベント
+    /// </summary>
+    private void ResetYAxis_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // Y軸範囲のみリセット
+            ResetYAxisRange();
+            
+            AddOperationLog(LogLevel.Info, "Y軸範囲をリセットしました。");
+            System.Diagnostics.Debug.WriteLine("Y軸リセット: Y軸範囲を0-100に戻しました");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Y軸リセットエラー: {ex.Message}");
+            AddOperationLog(LogLevel.Error, $"Y軸リセット中にエラーが発生しました: {ex.Message}");
         }
     }
 
