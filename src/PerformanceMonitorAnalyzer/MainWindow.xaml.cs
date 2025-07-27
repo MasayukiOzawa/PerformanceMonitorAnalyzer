@@ -753,7 +753,7 @@ public partial class MainWindow : Window
                 {
                     // フリー移動モード開始
                     _lastMousePosition = e.GetPosition(PerformanceChart);
-                    PerformanceChart.Cursor = Cursors.SizeAll;
+                    PerformanceChart.Cursor = Cursors.Hand;
                     LogInfo("フリー移動モードを開始しました（マウス移動でグラフ移動）");
                 }
                 else
