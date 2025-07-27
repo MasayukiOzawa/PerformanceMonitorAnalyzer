@@ -762,6 +762,14 @@ public partial class MainWindow : Window
                 
                 PerformanceChart.CaptureMouse();
                 
+                // マウスキャプチャーが成功したかチェック
+                if (!PerformanceChart.IsMouseCaptured)
+                {
+                    LogInfo("マウスキャプチャーに失敗しました");
+                    _isAxisDragging = false;
+                    return;
+                }
+                
                 // カーソルを変更（上下左右移動可能を示す）
                 PerformanceChart.Cursor = Cursors.SizeAll;
                 
@@ -782,15 +790,19 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 左クリックドラッグ中のみグラフを移動
-            // 実際の左ボタン状態とドラッグフラグを両方チェック
-            if (!_isAxisDragging || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+            // 左ボタンが押されていない場合は即座にドラッグを終了
+            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
             {
-                // ドラッグ中でない場合、または左ボタンが押されていない場合はドラッグを終了
-                if (_isAxisDragging && e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                if (_isAxisDragging)
                 {
                     StopAxisDragging();
                 }
+                return;
+            }
+            
+            // ドラッグフラグがfalseの場合は何もしない
+            if (!_isAxisDragging)
+            {
                 return;
             }
 
@@ -848,9 +860,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_isAxisDragging && e.ChangedButton == System.Windows.Input.MouseButton.Left)
+            // 左ボタンが離された時は確実にドラッグを終了
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && _isAxisDragging)
             {
                 StopAxisDragging();
+                LogInfo("左クリックアップによりドラッグを終了しました");
                 e.Handled = true;
             }
         }
@@ -883,13 +897,23 @@ public partial class MainWindow : Window
     /// </summary>
     private void StopAxisDragging()
     {
+        if (!_isAxisDragging)
+        {
+            return; // 既に停止済み
+        }
+        
         _isAxisDragging = false;
-        PerformanceChart.ReleaseMouseCapture();
+        
+        // マウスキャプチャーを確実に解除
+        if (PerformanceChart.IsMouseCaptured)
+        {
+            PerformanceChart.ReleaseMouseCapture();
+        }
         
         // カーソルを元に戻す
         PerformanceChart.Cursor = Cursors.Arrow;
         
-        LogInfo($"軸ドラッグを終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}, X軸範囲も更新");
+        LogInfo($"軸ドラッグを確実に終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}");
     }
 
     /// <summary>

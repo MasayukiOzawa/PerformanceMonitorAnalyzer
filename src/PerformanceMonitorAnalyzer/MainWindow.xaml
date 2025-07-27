@@ -478,7 +478,7 @@
                     
                     <!-- グラフ操作ボタン -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
-                               x:Name="GraphControlPanel" Visibility="Collapsed">
+                               x:Name="GraphControlPanel" Visibility="Visible">
                         <Button x:Name="ResetZoomButton" 
                                Content="🔄 ズームをリセット" 
                                Click="ResetZoom_Click"
