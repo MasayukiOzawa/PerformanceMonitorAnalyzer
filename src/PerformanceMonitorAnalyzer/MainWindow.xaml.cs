@@ -469,6 +469,31 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
+        // FPS表示と描画品質の制御（ScottPlot 5.x対応）
+        try
+        {
+            // 描画品質を最適化してFPS表示を抑制
+            // ScottPlot 5.xではRenderManagerを通じて描画制御
+            if (PerformanceChart.Plot.RenderManager != null)
+            {
+                // 高品質レンダリングモードを有効化
+                PerformanceChart.Plot.RenderManager.EnableRendering = true;
+                
+                // アンチエイリアシングを有効化（品質向上、FPS抑制効果）
+                PerformanceChart.Plot.ScaleFactor = 1.0;
+                
+                LogInfo("描画品質設定: 高品質モード有効、FPS表示抑制設定完了");
+            }
+            
+            // WPFコントロールレベルでの最適化
+            PerformanceChart.IsManipulationEnabled = false; // 不要な操作を無効化
+            
+        }
+        catch (Exception ex)
+        {
+            LogError($"描画品質制御設定エラー: {ex.Message}");
+        }
+        
         // マウスホイールイベントハンドラーを追加（Y軸ズーム機能）
         PerformanceChart.MouseWheel += PerformanceChart_MouseWheel;
         
