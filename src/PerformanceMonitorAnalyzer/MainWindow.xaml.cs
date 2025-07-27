@@ -419,11 +419,8 @@ public partial class MainWindow : Window
     private const double MAX_ZOOM_RANGE = 1000.0; // 最大ズーム範囲
     private const double SCROLL_FACTOR = 0.1; // スクロール時の移動率（表示範囲の10%）
     
-    // 軸ドラッグ機能関連
-    private bool _isAxisDragging = false;
+    // フリー移動機能関連
     private bool _isFreeMoveMode = false; // フリー移動モードのフラグ
-    private double _yAxisDragStartValue = 0.0;
-    private double _xAxisDragStartValue = 0.0;
     private Point _axisDragStartPoint;
     private Point _lastMousePosition; // フリー移動モード用の前回マウス位置
     
@@ -471,8 +468,7 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
-        // ドラッグ状態を確実に初期化
-        _isAxisDragging = false;
+        // フリー移動モード状態を確実に初期化
         _isFreeMoveMode = false;
         
         // FPS表示制御機能の復元（ScottPlot 5.x対応）
@@ -863,18 +859,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 軸ドラッグを停止する共通メソッド（旧システムの名残り、現在は未使用）
+    /// フリー移動モード終了の共通メソッド
     /// </summary>
     private void StopAxisDragging()
     {
-        // フリー移動モードシステムでは使用しない
-        _isAxisDragging = false;
+        // フリー移動モードを終了
+        _isFreeMoveMode = false;
         PerformanceChart.Cursor = Cursors.Arrow;
         
-        // 軸値状態をクリア
+        // ドラッグ開始点をクリア
         _axisDragStartPoint = new Point(0, 0);
-        _yAxisDragStartValue = 0;
-        _xAxisDragStartValue = 0;
     }
 
     /// <summary>
