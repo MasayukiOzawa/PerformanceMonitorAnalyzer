@@ -421,9 +421,11 @@ public partial class MainWindow : Window
     
     // 軸ドラッグ機能関連
     private bool _isAxisDragging = false;
+    private bool _isFreeMoveMode = false; // フリー移動モードのフラグ
     private double _yAxisDragStartValue = 0.0;
     private double _xAxisDragStartValue = 0.0;
     private Point _axisDragStartPoint;
+    private Point _lastMousePosition; // フリー移動モード用の前回マウス位置
     
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
@@ -471,6 +473,7 @@ public partial class MainWindow : Window
         
         // ドラッグ状態を確実に初期化
         _isAxisDragging = false;
+        _isFreeMoveMode = false;
         
         // FPS表示制御機能の復元（ScottPlot 5.x対応）
         try
@@ -548,7 +551,7 @@ public partial class MainWindow : Window
         try
         {
             var instructions = PerformanceChart.Plot.Add.Text(
-                "グラフ操作: マウスホイール=ズーム | Shift+ホイール=左右スクロール | Ctrl+ホイール=上下スクロール | 左クリックドラッグ=移動",
+                "グラフ操作: マウスホイール=ズーム | Shift+ホイール=左右スクロール | Ctrl+ホイール=上下スクロール | 左クリック=フリー移動切替",
                 10, 10);
             instructions.LabelFontSize = 12;
             instructions.LabelFontColor = ScottPlot.Colors.DarkBlue;
@@ -738,53 +741,32 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウスダウンイベント（左クリックドラッグ開始）
+    /// マウスダウンイベント（左クリックでフリー移動モード切り替え）
     /// </summary>
     private void PerformanceChart_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         try
         {
-            // 左ボタンクリック時のみ軸ドラッグを開始
+            // 左ボタンクリック時のみフリー移動モードを切り替え
             if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
             {
-                // 既にドラッグ中の場合は終了
-                if (_isAxisDragging)
+                // フリー移動モードの切り替え
+                _isFreeMoveMode = !_isFreeMoveMode;
+                
+                if (_isFreeMoveMode)
                 {
-                    StopAxisDragging();
-                }
-                
-                _isAxisDragging = true;
-                _axisDragStartPoint = e.GetPosition(PerformanceChart);
-                
-                // 初期軸値を記録（相対移動用）
-                _yAxisDragStartValue = (_yAxisMin + _yAxisMax) / 2.0;
-                
-                // X軸の初期値を記録
-                if (_timeRangeDetected)
-                {
-                    var (startTime, endTime) = GetSelectedTimeRange();
-                    _xAxisDragStartValue = (startTime.ToOADate() + endTime.ToOADate()) / 2.0;
+                    // フリー移動モード開始
+                    _lastMousePosition = e.GetPosition(PerformanceChart);
+                    PerformanceChart.Cursor = Cursors.SizeAll;
+                    LogInfo("フリー移動モードを開始しました（マウス移動でグラフ移動）");
                 }
                 else
                 {
-                    _xAxisDragStartValue = PerformanceChart.Plot.Axes.Bottom.Min + 
-                                         (PerformanceChart.Plot.Axes.Bottom.Max - PerformanceChart.Plot.Axes.Bottom.Min) / 2.0;
+                    // フリー移動モード終了
+                    PerformanceChart.Cursor = Cursors.Arrow;
+                    LogInfo("フリー移動モードを終了しました");
                 }
                 
-                bool captured = PerformanceChart.CaptureMouse();
-                
-                // マウスキャプチャーが成功したかチェック
-                if (!captured)
-                {
-                    LogInfo("マウスキャプチャーに失敗しました");
-                    _isAxisDragging = false;
-                    return;
-                }
-                
-                // カーソルを変更（上下左右移動可能を示す）
-                PerformanceChart.Cursor = Cursors.SizeAll;
-                
-                LogInfo($"軸ドラッグを開始しました（左クリックドラッグで上下左右移動） 開始位置: {_axisDragStartPoint}");
                 e.Handled = true;
             }
         }
@@ -795,28 +777,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウス移動イベント（左クリックドラッグ中のみ処理）
+    /// マウス移動イベント（フリー移動モード中のみ処理）
     /// </summary>
     private void PerformanceChart_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         try
         {
-            // ドラッグフラグがfalseの場合は何もしない
-            if (!_isAxisDragging)
+            // フリー移動モード中のみ処理
+            if (!_isFreeMoveMode)
             {
-                return;
-            }
-            
-            // 左ボタンが押されていない場合は即座にドラッグを終了
-            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
-            {
-                StopAxisDragging();
                 return;
             }
 
             Point currentPoint = e.GetPosition(PerformanceChart);
-            double deltaX = currentPoint.X - _axisDragStartPoint.X;
-            double deltaY = currentPoint.Y - _axisDragStartPoint.Y;
+            double deltaX = currentPoint.X - _lastMousePosition.X;
+            double deltaY = currentPoint.Y - _lastMousePosition.Y;
             
             // Y軸の移動量を計算（画面座標と軸座標の変換）
             double currentYRange = _yAxisMax - _yAxisMin;
@@ -824,14 +799,12 @@ public partial class MainWindow : Window
             
             if (chartHeight > 0)
             {
-                // Y軸移動量をY軸座標系に変換（相対移動）
+                // Y軸移動量をY軸座標系に変換
                 double yAxisDelta = -(deltaY / chartHeight) * currentYRange;
                 
-                // Y軸範囲を一度だけ更新
-                double newYMin = _yAxisMin + yAxisDelta;
-                double newYMax = _yAxisMax + yAxisDelta;
-                _yAxisMin = newYMin;
-                _yAxisMax = newYMax;
+                // Y軸範囲を更新
+                _yAxisMin += yAxisDelta;
+                _yAxisMax += yAxisDelta;
             }
             
             // X軸の移動量を計算
@@ -841,18 +814,16 @@ public partial class MainWindow : Window
                 double currentXRange = PerformanceChart.Plot.Axes.Bottom.Max - PerformanceChart.Plot.Axes.Bottom.Min;
                 double xAxisDelta = -(deltaX / chartWidth) * currentXRange;
                 
-                // X軸範囲を一度だけ更新（相対移動）
-                double currentXMin = PerformanceChart.Plot.Axes.Bottom.Min;
-                double currentXMax = PerformanceChart.Plot.Axes.Bottom.Max;
-                
-                PerformanceChart.Plot.Axes.Bottom.Min = currentXMin + xAxisDelta;
-                PerformanceChart.Plot.Axes.Bottom.Max = currentXMax + xAxisDelta;
+                // X軸範囲を更新
+                PerformanceChart.Plot.Axes.Bottom.Min += xAxisDelta;
+                PerformanceChart.Plot.Axes.Bottom.Max += xAxisDelta;
             }
+            
+            // 前回のマウス位置を更新
+            _lastMousePosition = currentPoint;
             
             EnsureYAxisRange();
             PerformanceChart.Refresh();
-            
-            // ドラッグ開始点は更新しない（相対移動のため）
             
             e.Handled = true;
         }
@@ -863,36 +834,26 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウスアップイベント（左クリックドラッグ終了）
+    /// マウスアップイベント（現在は使用せず、クリックでモード切り替え）
     /// </summary>
     private void PerformanceChart_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        try
-        {
-            // 左ボタンが離された時は確実にドラッグを終了
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left && _isAxisDragging)
-            {
-                StopAxisDragging();
-                LogInfo("左クリックアップによりドラッグを終了しました");
-                e.Handled = true;
-            }
-        }
-        catch (Exception ex)
-        {
-            LogError($"マウスアップ処理エラー: {ex.Message}");
-        }
+        // フリー移動モードではマウスアップでは何もしない
+        // モード切り替えはMouseDownで行う
     }
 
     /// <summary>
-    /// マウスリーブイベントハンドラー（チャート外に出た時のドラッグ終了）
+    /// マウスリーブイベントハンドラー（チャート外に出た時のフリー移動モード終了）
     /// </summary>
     private void PerformanceChart_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
         try
         {
-            if (_isAxisDragging)
+            if (_isFreeMoveMode)
             {
-                StopAxisDragging();
+                _isFreeMoveMode = false;
+                PerformanceChart.Cursor = Cursors.Arrow;
+                LogInfo("マウスがチャート外に出たためフリー移動モードを終了しました");
             }
         }
         catch (Exception ex)
@@ -902,43 +863,18 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 軸ドラッグを停止する共通メソッド
+    /// 軸ドラッグを停止する共通メソッド（旧システムの名残り、現在は未使用）
     /// </summary>
     private void StopAxisDragging()
     {
-        if (!_isAxisDragging)
-        {
-            return; // 既に停止済み
-        }
-        
-        LogInfo("ドラッグ停止処理を開始します");
-        
-        // ドラッグ状態を確実にリセット
+        // フリー移動モードシステムでは使用しない
         _isAxisDragging = false;
-        
-        // マウスキャプチャーを確実に解除
-        try
-        {
-            if (PerformanceChart.IsMouseCaptured)
-            {
-                PerformanceChart.ReleaseMouseCapture();
-                LogInfo("マウスキャプチャーを解除しました");
-            }
-        }
-        catch (Exception ex)
-        {
-            LogError($"マウスキャプチャー解除エラー: {ex.Message}");
-        }
-        
-        // カーソルを元に戻す
         PerformanceChart.Cursor = Cursors.Arrow;
         
         // 軸値状態をクリア
         _axisDragStartPoint = new Point(0, 0);
         _yAxisDragStartValue = 0;
         _xAxisDragStartValue = 0;
-        
-        LogInfo($"軸ドラッグを確実に終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}");
     }
 
     /// <summary>
