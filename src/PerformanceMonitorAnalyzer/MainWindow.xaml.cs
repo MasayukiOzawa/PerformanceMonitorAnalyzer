@@ -417,6 +417,7 @@ public partial class MainWindow : Window
     private const double ZOOM_FACTOR = 0.1; // ズーム時の変化率
     private const double MIN_ZOOM_RANGE = 1.0; // 最小ズーム範囲
     private const double MAX_ZOOM_RANGE = 1000.0; // 最大ズーム範囲
+    private const double SCROLL_FACTOR = 0.1; // スクロール時の移動率（表示範囲の10%）
     
     // 軸ドラッグ機能関連
     private bool _isAxisDragging = false;
@@ -494,8 +495,31 @@ public partial class MainWindow : Window
         // 凡例を無効化（独立した凡例コンポーネントを使用）
         PerformanceChart.Plot.Legend.IsVisible = false;
         
+        // 操作説明テキストを追加
+        AddOperationInstructions();
+        
         // グラフの更新
         PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// グラフ操作説明を追加
+    /// </summary>
+    private void AddOperationInstructions()
+    {
+        try
+        {
+            var instructions = PerformanceChart.Plot.Add.Text(
+                "グラフ操作: マウスホイール=ズーム | Shift+ホイール=左右スクロール | Ctrl+ホイール=上下スクロール | 中ボタンドラッグ=移動",
+                10, 10);
+            instructions.LabelFontSize = 12;
+            instructions.LabelFontColor = ScottPlot.Colors.DarkBlue;
+            instructions.LabelAlignment = ScottPlot.Alignment.UpperLeft;
+        }
+        catch (Exception ex)
+        {
+            LogError($"操作説明テキストの追加に失敗: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -521,7 +545,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// マウスホイールによるY軸ズーム機能
+    /// マウスホイールによるY軸ズーム・スクロール機能
+    /// - 通常: Y軸ズーム
+    /// - Shift+ホイール: X軸（左右）スクロール
+    /// - Ctrl+ホイール: Y軸（上下）スクロール
     /// </summary>
     private void PerformanceChart_MouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
     {
@@ -538,41 +565,120 @@ public partial class MainWindow : Window
                 return; // プロット領域外では何もしない
             }
 
-            double currentRange = _yAxisMax - _yAxisMin;
-            double centerY = (_yAxisMin + _yAxisMax) / 2.0;
-            
-            // ズームイン/アウトの計算
-            double zoomChange = currentRange * ZOOM_FACTOR;
-            
-            if (e.Delta > 0)
+            // 修飾キーの状態を確認
+            bool isShiftPressed = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            bool isCtrlPressed = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+
+            if (isShiftPressed)
             {
-                // ズームイン（範囲を狭める）
-                double newRange = Math.Max(MIN_ZOOM_RANGE, currentRange - zoomChange);
-                double halfRange = newRange / 2.0;
-                _yAxisMin = centerY - halfRange;
-                _yAxisMax = centerY + halfRange;
-                LogInfo($"Y軸ズームイン: {_yAxisMin:F1} - {_yAxisMax:F1}");
+                // Shift+ホイール: X軸（左右）スクロール
+                PerformXAxisScroll(e.Delta);
+            }
+            else if (isCtrlPressed)
+            {
+                // Ctrl+ホイール: Y軸（上下）スクロール
+                PerformYAxisScroll(e.Delta);
             }
             else
             {
-                // ズームアウト（範囲を広げる）
-                double newRange = Math.Min(MAX_ZOOM_RANGE, currentRange + zoomChange);
-                double halfRange = newRange / 2.0;
-                _yAxisMin = centerY - halfRange;
-                _yAxisMax = centerY + halfRange;
-                LogInfo($"Y軸ズームアウト: {_yAxisMin:F1} - {_yAxisMax:F1}");
+                // 通常のホイール: Y軸ズーム（従来の機能）
+                PerformYAxisZoom(e.Delta);
             }
-            
-            // Y軸の範囲を更新
-            EnsureYAxisRange();
-            PerformanceChart.Refresh();
             
             e.Handled = true;
         }
         catch (Exception ex)
         {
-            LogError($"マウスホイールズーム処理エラー: {ex.Message}");
+            LogError($"マウスホイール処理エラー: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Y軸ズーム機能
+    /// </summary>
+    private void PerformYAxisZoom(int delta)
+    {
+        double currentRange = _yAxisMax - _yAxisMin;
+        double centerY = (_yAxisMin + _yAxisMax) / 2.0;
+        
+        // ズームイン/アウトの計算
+        double zoomChange = currentRange * ZOOM_FACTOR;
+        
+        if (delta > 0)
+        {
+            // ズームイン（範囲を狭める）
+            double newRange = Math.Max(MIN_ZOOM_RANGE, currentRange - zoomChange);
+            double halfRange = newRange / 2.0;
+            _yAxisMin = centerY - halfRange;
+            _yAxisMax = centerY + halfRange;
+            LogInfo($"Y軸ズームイン: {_yAxisMin:F1} - {_yAxisMax:F1}");
+        }
+        else
+        {
+            // ズームアウト（範囲を広げる）
+            double newRange = Math.Min(MAX_ZOOM_RANGE, currentRange + zoomChange);
+            double halfRange = newRange / 2.0;
+            _yAxisMin = centerY - halfRange;
+            _yAxisMax = centerY + halfRange;
+            LogInfo($"Y軸ズームアウト: {_yAxisMin:F1} - {_yAxisMax:F1}");
+        }
+        
+        // Y軸の範囲を更新
+        EnsureYAxisRange();
+        PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// X軸（左右）スクロール機能
+    /// </summary>
+    private void PerformXAxisScroll(int delta)
+    {
+        double currentXRange = PerformanceChart.Plot.Axes.Bottom.Max - PerformanceChart.Plot.Axes.Bottom.Min;
+        double scrollAmount = currentXRange * SCROLL_FACTOR;
+        
+        if (delta > 0)
+        {
+            // 上スクロール = 左にスクロール（時間を過去に移動）
+            PerformanceChart.Plot.Axes.Bottom.Min -= scrollAmount;
+            PerformanceChart.Plot.Axes.Bottom.Max -= scrollAmount;
+            LogInfo($"X軸左スクロール: {DateTime.FromOADate(PerformanceChart.Plot.Axes.Bottom.Min):HH:mm:ss} - {DateTime.FromOADate(PerformanceChart.Plot.Axes.Bottom.Max):HH:mm:ss}");
+        }
+        else
+        {
+            // 下スクロール = 右にスクロール（時間を未来に移動）
+            PerformanceChart.Plot.Axes.Bottom.Min += scrollAmount;
+            PerformanceChart.Plot.Axes.Bottom.Max += scrollAmount;
+            LogInfo($"X軸右スクロール: {DateTime.FromOADate(PerformanceChart.Plot.Axes.Bottom.Min):HH:mm:ss} - {DateTime.FromOADate(PerformanceChart.Plot.Axes.Bottom.Max):HH:mm:ss}");
+        }
+        
+        PerformanceChart.Refresh();
+    }
+
+    /// <summary>
+    /// Y軸（上下）スクロール機能
+    /// </summary>
+    private void PerformYAxisScroll(int delta)
+    {
+        double currentYRange = _yAxisMax - _yAxisMin;
+        double scrollAmount = currentYRange * SCROLL_FACTOR;
+        
+        if (delta > 0)
+        {
+            // 上スクロール = Y軸値を上に移動
+            _yAxisMin += scrollAmount;
+            _yAxisMax += scrollAmount;
+            LogInfo($"Y軸上スクロール: {_yAxisMin:F1} - {_yAxisMax:F1}");
+        }
+        else
+        {
+            // 下スクロール = Y軸値を下に移動
+            _yAxisMin -= scrollAmount;
+            _yAxisMax -= scrollAmount;
+            LogInfo($"Y軸下スクロール: {_yAxisMin:F1} - {_yAxisMax:F1}");
+        }
+        
+        EnsureYAxisRange();
+        PerformanceChart.Refresh();
     }
     
     /// <summary>
@@ -2041,6 +2147,9 @@ public partial class MainWindow : Window
             
             // 凡例を無効化（独立した凡例コンポーネントを使用）
             PerformanceChart.Plot.Legend.IsVisible = false;
+            
+            // 操作説明テキストを追加
+            AddOperationInstructions();
             
             // 選択されているカウンターを取得
             var selectedCounters = GetSelectedCounters();
