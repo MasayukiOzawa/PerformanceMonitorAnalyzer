@@ -468,10 +468,6 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
-        // FPS表示を無効化
-        PerformanceChart.Configuration.Quality = ScottPlot.Control.QualityMode.HighQuality;
-        PerformanceChart.Configuration.DpiStretch = false;
-        
         // マウスホイールイベントハンドラーを追加（Y軸ズーム機能）
         PerformanceChart.MouseWheel += PerformanceChart_MouseWheel;
         
