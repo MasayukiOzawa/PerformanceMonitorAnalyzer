@@ -393,6 +393,9 @@ public partial class MainWindow : Window
     // サポートされるスケール値
     private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
     
+    // 自動計算されたスケール（Y軸100に合わせるため）
+    private readonly Dictionary<string, double> _autoCalculatedScales = new();
+    
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
     
@@ -449,13 +452,14 @@ public partial class MainWindow : Window
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
-        // Y軸の最小値を0に制限（パフォーマンス監視データは負の値を持たない）
+        // Y軸を固定範囲0-100に設定
         PerformanceChart.Plot.Axes.Left.Min = 0;
+        PerformanceChart.Plot.Axes.Left.Max = 100;
         
-        // ユーザーのドラッグ操作後にもY軸の最小値を制限
+        // ユーザーのドラッグ操作後にもY軸の範囲を固定
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
         {
-            EnsureYAxisMinimumZero();
+            EnsureYAxisFixedRange();
         };
         
         // グラフ領域のフォントサイズを16に設定
@@ -475,22 +479,60 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Y軸の最小値を0に制限する（パフォーマンス監視データは負の値を持たない）
+    /// Y軸を固定範囲0-100に設定する
     /// </summary>
-    private void EnsureYAxisMinimumZero()
+    private void EnsureYAxisFixedRange()
     {
         try
         {
-            // 現在のY軸の最小値が0未満の場合は0に設定
-            if (PerformanceChart.Plot.Axes.Left.Min < 0)
+            // Y軸を常に0-100の固定範囲に設定
+            if (PerformanceChart.Plot.Axes.Left.Min != 0 || PerformanceChart.Plot.Axes.Left.Max != 100)
             {
                 PerformanceChart.Plot.Axes.Left.Min = 0;
-                System.Diagnostics.Debug.WriteLine("Y軸の最小値を0に制限しました");
+                PerformanceChart.Plot.Axes.Left.Max = 100;
+                System.Diagnostics.Debug.WriteLine("Y軸を固定範囲0-100に設定しました");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Y軸最小値制限エラー: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"Y軸範囲設定エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// カウンターの自動スケールを計算してY軸100に収まるようにする
+    /// </summary>
+    private double CalculateAutoScale(string counter)
+    {
+        try
+        {
+            if (!_counterData.ContainsKey(counter))
+                return 1.0;
+
+            var dataPoints = _counterData[counter];
+            if (!dataPoints.Any())
+                return 1.0;
+
+            // 最大値を取得
+            var maxValue = dataPoints.Max(dp => dp.Value);
+            
+            // 最大値が0または負の場合はスケール1.0を返す
+            if (maxValue <= 0)
+                return 1.0;
+
+            // Y軸最大値100に対して80%程度を目安にスケール計算
+            // これにより若干の余裕を持たせる
+            var targetMaxValue = 80.0;
+            var autoScale = targetMaxValue / maxValue;
+
+            System.Diagnostics.Debug.WriteLine($"Auto scale calculated for {counter}: max={maxValue:F2}, scale={autoScale:F6} (target={targetMaxValue})");
+            
+            return autoScale;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Auto scale calculation error for {counter}: {ex.Message}");
+            return 1.0;
         }
     }
 
@@ -1546,13 +1588,23 @@ public partial class MainWindow : Window
         }
         
         var dataPoints = _counterData[counter];
-        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
         
+        // 自動スケールを計算してキャッシュ
+        var autoScale = CalculateAutoScale(counter);
+        _autoCalculatedScales[counter] = autoScale;
+        
+        // 手動スケールを取得（デフォルトは1.0）
+        var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        
+        // 最終スケール = 自動スケール × 手動スケール
+        var finalScale = autoScale * manualScale;
+
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
         
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        System.Diagnostics.Debug.WriteLine($"Auto scale: {autoScale:F6}, Manual scale: {manualScale:F6}, Final scale: {finalScale:F6}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
         var colorIndex = _chartSeries.Count;
@@ -1575,11 +1627,8 @@ public partial class MainWindow : Window
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
-        // グラフを更新
-        PerformanceChart.Plot.Axes.AutoScale();
-        
-        // Y軸の最小値を0に制限
-        EnsureYAxisMinimumZero();
+        // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
+        EnsureYAxisFixedRange();
         
         // X軸の範囲を選択された時間範囲に設定
         UpdateChartXAxisRange();
@@ -1618,15 +1667,22 @@ public partial class MainWindow : Window
             return;
         }
         
-        // カウンターのスケール設定を取得（デフォルトは1.0）
-        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
-        System.Diagnostics.Debug.WriteLine($"Applying scale {scale} to counter: {counter}");
+        // 自動スケールを計算してキャッシュ
+        var autoScale = CalculateAutoScale(counter);
+        _autoCalculatedScales[counter] = autoScale;
+        
+        // 手動スケールを取得（デフォルトは1.0）
+        var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        
+        // 最終スケール = 自動スケール × 手動スケール
+        var finalScale = autoScale * manualScale;
+        System.Diagnostics.Debug.WriteLine($"Auto scale: {autoScale:F6}, Manual scale: {manualScale:F6}, Final scale: {finalScale:F6} for counter: {counter}");
         
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
         
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Scaled value range: {yValues.Min()} to {yValues.Max()}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
         var colorIndex = _chartSeries.Count;
@@ -1649,11 +1705,8 @@ public partial class MainWindow : Window
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
-        // グラフを更新
-        PerformanceChart.Plot.Axes.AutoScale();
-        
-        // Y軸の最小値を0に制限
-        EnsureYAxisMinimumZero();
+        // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
+        EnsureYAxisFixedRange();
         
         // X軸の範囲を選択された時間範囲に設定
         UpdateChartXAxisRange();
@@ -1798,10 +1851,8 @@ public partial class MainWindow : Window
                     break;
             }
             
-            PerformanceChart.Plot.Axes.AutoScale();
-            
-            // Y軸の最小値を0に制限
-            EnsureYAxisMinimumZero();
+            // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
+            EnsureYAxisFixedRange();
             
             // X軸の範囲を選択された時間範囲に設定
             UpdateChartXAxisRange();
@@ -1903,10 +1954,23 @@ public partial class MainWindow : Window
             }
             
             var dataPoints = _counterData[counter];
-            var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+            
+            // 自動スケールを計算してキャッシュ（まだない場合）
+            if (!_autoCalculatedScales.ContainsKey(counter))
+            {
+                var autoScale = CalculateAutoScale(counter);
+                _autoCalculatedScales[counter] = autoScale;
+            }
+            
+            // 手動スケールを取得（デフォルトは1.0）
+            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
+            
+            // 最終スケール = 自動スケール × 手動スケール
+            var autoScale_cached = _autoCalculatedScales[counter];
+            var finalScale = autoScale_cached * manualScale;
             
             // データポイントを辞書化（高速検索用）
-            var dataDict = dataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * scale);
+            var dataDict = dataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * finalScale);
             
             // タイムスタンプごとの値を補間
             var yValues = new double[timeArray.Length];
@@ -1920,7 +1984,7 @@ public partial class MainWindow : Window
                 else
                 {
                     // 補間：前後の値から線形補間
-                    yValues[i] = InterpolateValue(dataPoints, timestamp, scale);
+                    yValues[i] = InterpolateValue(dataPoints, timestamp, finalScale);
                 }
             }
             
@@ -2343,22 +2407,22 @@ public partial class MainWindow : Window
             };
         }
 
-        // スケールを適用（PDHカウンターのスケール処理を模倣）
-        var scale = _counterScales.TryGetValue(counterName, out var scaleValue) ? scaleValue : 1.0;
-        var scaledValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        // 統計情報は元の値で計算（スケールは適用しない）
+        // これにより、実際のデータ値の統計が表示される
+        var values = dataPoints.Select(dp => dp.Value).ToArray();
         
         // PDH_STATISTICSの計算ロジックを模倣
         // PDHでは内部的に以下の統計を計算します
-        var count = (uint)scaledValues.Length;
-        var sum = scaledValues.Sum();
+        var count = (uint)values.Length;
+        var sum = values.Sum();
         var mean = sum / count;
         
         // PDHの統計計算アルゴリズムに従った実装
-        var min = scaledValues.Min();
-        var max = scaledValues.Max();
+        var min = values.Min();
+        var max = values.Max();
         
         // 標準偏差の計算（PDH風）
-        var variance = scaledValues.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
+        var variance = values.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
         var standardDeviation = Math.Sqrt(variance);
 
         return new CounterStatistics
@@ -3419,7 +3483,7 @@ public partial class MainWindow : Window
                         RefreshCounterInChart(counterName);
                     }), System.Windows.Threading.DispatcherPriority.Normal);
                     
-                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale}");
+                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (グラフ表示位置のみ変更、実際のデータ値は保持)");
                 }
             }
         };
@@ -3485,7 +3549,7 @@ public partial class MainWindow : Window
                 // 積み重ね面グラフの場合は全体を再描画
                 if (_currentChartType == ChartType.StackedAreaChart)
                 {
-                    System.Diagnostics.Debug.WriteLine("Stacked area chart requires full redraw for scale change");
+                    System.Diagnostics.Debug.WriteLine("Stacked area chart requires full redraw for display scale change");
                     RefreshChartWithCurrentType();
                 }
                 else
@@ -4274,8 +4338,8 @@ public partial class MainWindow : Window
             // スライダーテキストを更新
             UpdateTimeSliderTexts();
             
-            // ScottPlotの自動スケールを適用してズームをリセット
-            PerformanceChart.Plot.Axes.AutoScale();
+            // Y軸を固定範囲に設定（ズームリセット時も0-100を維持）
+            EnsureYAxisFixedRange();
             
             // X軸範囲を更新（全体範囲に戻す）
             UpdateChartXAxisRange();
@@ -4515,11 +4579,11 @@ public partial class MainWindow : Window
                 if (_counterData.TryGetValue(item.CounterPath, out var dataPoints) && dataPoints.Count > 0)
                 {
                     var latestValue = dataPoints.Last().Value;
-                    var scale = _counterScales.GetValueOrDefault(item.CounterPath, 1.0);
-                    var scaledValue = latestValue * scale;
+                    // 凡例では元の値を表示（スケールは適用しない）
+                    // スケールはグラフの表示位置のみに影響する
                     
                     // 値をフォーマット
-                    item.CurrentValue = FormatCounterValue(scaledValue);
+                    item.CurrentValue = FormatCounterValue(latestValue);
                 }
                 else
                 {

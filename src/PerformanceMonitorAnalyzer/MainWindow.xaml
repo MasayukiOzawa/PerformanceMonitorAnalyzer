@@ -595,16 +595,20 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     
                     <!-- 説明テキスト -->
-                    <TextBlock Grid.Row="0" Text="各カウンターのスケールを調整:"
+                    <TextBlock Grid.Row="0" Text="Y軸固定範囲（0-100）内でのグラフ表示位置を調整:"
                              FontSize="11" Foreground="DarkGray" 
-                             Margin="5,5,5,10" TextWrapping="Wrap"/>
+                             Margin="5,5,5,5" TextWrapping="Wrap"/>
+                    <TextBlock Grid.Row="1" Text="※データは自動的にY軸100に収まるようにスケール調整され、実際のデータ値は変更されません"
+                             FontSize="10" Foreground="DarkOrange" FontStyle="Italic"
+                             Margin="5,0,5,10" TextWrapping="Wrap"/>
                     
                     <!-- カウンタースケール設定リスト -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="CounterScaleStackPanel" Margin="5">
                             <!-- カウンター別スケール設定が動的に追加される -->
                         </StackPanel>
