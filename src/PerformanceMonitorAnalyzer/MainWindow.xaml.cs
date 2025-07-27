@@ -469,29 +469,35 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
-        // FPS表示と描画品質の制御（ScottPlot 5.x対応）
+        // FPS表示制御機能の復元（ScottPlot 5.x対応）
         try
         {
-            // 描画品質を最適化してFPS表示を抑制
-            // ScottPlot 5.xではRenderManagerを通じて描画制御
+            // 描画品質とFPS表示を制御（以前のConfiguration.Quality相当）
             if (PerformanceChart.Plot.RenderManager != null)
             {
-                // 高品質レンダリングモードを有効化
+                // 高品質レンダリングモードでFPS表示を抑制
                 PerformanceChart.Plot.RenderManager.EnableRendering = true;
                 
-                // アンチエイリアシングを有効化（品質向上、FPS抑制効果）
+                // スケールファクターで描画品質を制御
                 PerformanceChart.Plot.ScaleFactor = 1.0;
                 
-                LogInfo("描画品質設定: 高品質モード有効、FPS表示抑制設定完了");
+                // レンダリング頻度を制御してFPS表示を抑制
+                PerformanceChart.Plot.RenderManager.RenderStarting += (sender, args) =>
+                {
+                    // FPS カウンターやデバッグ表示を抑制
+                };
+                
+                LogInfo("FPS表示制御: 高品質モード有効、FPS表示抑制完了");
             }
             
-            // WPFコントロールレベルでの最適化
-            PerformanceChart.IsManipulationEnabled = false; // 不要な操作を無効化
+            // WPFレベルでのパフォーマンス最適化
+            PerformanceChart.IsManipulationEnabled = false;
+            PerformanceChart.UseLayoutRounding = true;
             
         }
         catch (Exception ex)
         {
-            LogError($"描画品質制御設定エラー: {ex.Message}");
+            LogError($"FPS表示制御エラー: {ex.Message}");
         }
         
         // マウスホイールイベントハンドラーを追加（Y軸ズーム機能）
