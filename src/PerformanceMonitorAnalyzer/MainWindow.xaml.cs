@@ -507,6 +507,7 @@ public partial class MainWindow : Window
         PerformanceChart.MouseDown += PerformanceChart_MouseDown;
         PerformanceChart.MouseMove += PerformanceChart_MouseMove;
         PerformanceChart.MouseUp += PerformanceChart_MouseUp;
+        PerformanceChart.MouseLeave += PerformanceChart_MouseLeave;
         
         // ユーザーのドラッグ操作後にも軸の範囲を管理
         if (PerformanceChart.Plot.RenderManager != null)
@@ -782,9 +783,14 @@ public partial class MainWindow : Window
         try
         {
             // 左クリックドラッグ中のみグラフを移動
-            if (!_isAxisDragging)
+            // 実際の左ボタン状態とドラッグフラグを両方チェック
+            if (!_isAxisDragging || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
             {
-                // ドラッグ中でない場合は何も処理しない
+                // ドラッグ中でない場合、または左ボタンが押されていない場合はドラッグを終了
+                if (_isAxisDragging && e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                {
+                    StopAxisDragging();
+                }
                 return;
             }
 
@@ -842,15 +848,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_isAxisDragging)
+            if (_isAxisDragging && e.ChangedButton == System.Windows.Input.MouseButton.Left)
             {
-                _isAxisDragging = false;
-                PerformanceChart.ReleaseMouseCapture();
-                
-                // カーソルを元に戻す
-                PerformanceChart.Cursor = Cursors.Arrow;
-                
-                LogInfo($"軸ドラッグを終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}, X軸範囲も更新");
+                StopAxisDragging();
                 e.Handled = true;
             }
         }
@@ -858,6 +858,38 @@ public partial class MainWindow : Window
         {
             LogError($"マウスアップ処理エラー: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// マウスリーブイベントハンドラー（チャート外に出た時のドラッグ終了）
+    /// </summary>
+    private void PerformanceChart_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        try
+        {
+            if (_isAxisDragging)
+            {
+                StopAxisDragging();
+            }
+        }
+        catch (Exception ex)
+        {
+            LogError($"マウスリーブ処理エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 軸ドラッグを停止する共通メソッド
+    /// </summary>
+    private void StopAxisDragging()
+    {
+        _isAxisDragging = false;
+        PerformanceChart.ReleaseMouseCapture();
+        
+        // カーソルを元に戻す
+        PerformanceChart.Cursor = Cursors.Arrow;
+        
+        LogInfo($"軸ドラッグを終了しました: Y軸 {_yAxisMin:F1}-{_yAxisMax:F1}, X軸範囲も更新");
     }
 
     /// <summary>
