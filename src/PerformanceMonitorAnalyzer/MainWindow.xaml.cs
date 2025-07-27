@@ -469,6 +469,9 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = _yAxisMin;
         PerformanceChart.Plot.Axes.Left.Max = _yAxisMax;
         
+        // ドラッグ状態を確実に初期化
+        _isAxisDragging = false;
+        
         // FPS表示制御機能の復元（ScottPlot 5.x対応）
         try
         {
@@ -742,7 +745,7 @@ public partial class MainWindow : Window
         try
         {
             // 左ボタンクリック時のみ軸ドラッグを開始
-            if (e.LeftButton == System.Windows.Input.MouseButtonState.Pressed)
+            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
             {
                 _isAxisDragging = true;
                 _axisDragStartPoint = e.GetPosition(PerformanceChart);
@@ -790,19 +793,16 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 左ボタンが押されていない場合は即座にドラッグを終了
-            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
-            {
-                if (_isAxisDragging)
-                {
-                    StopAxisDragging();
-                }
-                return;
-            }
-            
             // ドラッグフラグがfalseの場合は何もしない
             if (!_isAxisDragging)
             {
+                return;
+            }
+            
+            // 左ボタンが押されていない場合は即座にドラッグを終了
+            if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+            {
+                StopAxisDragging();
                 return;
             }
 
@@ -899,8 +899,11 @@ public partial class MainWindow : Window
     {
         if (!_isAxisDragging)
         {
+            LogInfo("ドラッグ停止要求: 既に停止済み");
             return; // 既に停止済み
         }
+        
+        LogInfo("ドラッグ停止処理を開始します");
         
         _isAxisDragging = false;
         
@@ -908,6 +911,7 @@ public partial class MainWindow : Window
         if (PerformanceChart.IsMouseCaptured)
         {
             PerformanceChart.ReleaseMouseCapture();
+            LogInfo("マウスキャプチャーを解除しました");
         }
         
         // カーソルを元に戻す
