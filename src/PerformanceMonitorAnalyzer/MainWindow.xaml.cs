@@ -405,9 +405,6 @@ public partial class MainWindow : Window
     private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
     private static readonly string[] ScaleValueItems = { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
     
-    // 自動計算されたスケール（Y軸100に合わせるため）
-    private readonly Dictionary<string, double> _autoCalculatedScales = new();
-    
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
     private bool _isInitializingBulkScaleComboBox = false;
@@ -579,13 +576,8 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            if (!_autoCalculatedScales.ContainsKey(counter))
-            {
-                _autoCalculatedScales[counter] = CalculateAutoScale(counter);
-            }
-
             var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-            var finalScale = _autoCalculatedScales[counter] * manualScale;
+            var finalScale = manualScale;
             var counterMax = dataPoints.Max(dp => dp.Value * finalScale);
 
             if (double.IsNaN(counterMax) || double.IsInfinity(counterMax))
@@ -624,7 +616,7 @@ public partial class MainWindow : Window
     {
         return _currentValueMode == CounterValueMode.DeltaFromPrevious
             ? "Delta (Prev)"
-            : "Value";
+            : string.Empty;
     }
 
     /// <summary>
@@ -734,44 +726,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// カウンターの自動スケールを計算してY軸100に収まるようにする
-    /// </summary>
-    private double CalculateAutoScale(string counter)
-    {
-        try
-        {
-            var dataPoints = GetDisplayDataPoints(counter);
-            if (!dataPoints.Any())
-                return 1.0;
-
-            // ％系カウンターは実値をそのまま表示する（Process % Processor Time の正確性を優先）
-            if (string.Equals(EstimateUnit(counter), "%", StringComparison.Ordinal))
-                return 1.0;
-
-            // 最大値を取得
-            var maxValue = dataPoints.Max(dp => dp.Value);
-            
-            // 最大値が0または負の場合はスケール1.0を返す
-            if (maxValue <= 0)
-                return 1.0;
-
-            // Y軸最大値100に対して80%程度を目安にスケール計算
-            // これにより若干の余裕を持たせる
-            var targetMaxValue = 80.0;
-            var autoScale = targetMaxValue / maxValue;
-
-            System.Diagnostics.Debug.WriteLine($"Auto scale calculated for {counter}: max={maxValue:F2}, scale={autoScale:F6} (target={targetMaxValue})");
-            
-            return autoScale;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Auto scale calculation error for {counter}: {ex.Message}");
-            return 1.0;
-        }
-    }
-
-    /// <summary>
     /// 値モード変更時のイベントハンドラー
     /// </summary>
     private void ValueMode_Changed(object sender, RoutedEventArgs e)
@@ -795,7 +749,6 @@ public partial class MainWindow : Window
             }
 
             _currentValueMode = newValueMode;
-            _autoCalculatedScales.Clear();
 
             RefreshChartWithCurrentType();
             RefreshAllDataTabsForCurrentMode();
@@ -1984,21 +1937,17 @@ public partial class MainWindow : Window
             return;
         }
         
-        // 自動スケールを計算してキャッシュ
-        var autoScale = CalculateAutoScale(counter);
-        _autoCalculatedScales[counter] = autoScale;
-        
         // 手動スケールを取得（デフォルトは1.0）
         var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
         
-        // 最終スケール = 自動スケール × 手動スケール
-        var finalScale = autoScale * manualScale;
+        // 最終スケール = 手動スケール
+        var finalScale = manualScale;
 
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
         var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
         
         System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Auto scale: {autoScale:F6}, Manual scale: {manualScale:F6}, Final scale: {finalScale:F6}");
+        System.Diagnostics.Debug.WriteLine($"Manual scale: {manualScale:F6}, Final scale: {finalScale:F6}");
         System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
@@ -2062,16 +2011,12 @@ public partial class MainWindow : Window
             return;
         }
         
-        // 自動スケールを計算してキャッシュ
-        var autoScale = CalculateAutoScale(counter);
-        _autoCalculatedScales[counter] = autoScale;
-        
         // 手動スケールを取得（デフォルトは1.0）
         var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
         
-        // 最終スケール = 自動スケール × 手動スケール
-        var finalScale = autoScale * manualScale;
-        System.Diagnostics.Debug.WriteLine($"Auto scale: {autoScale:F6}, Manual scale: {manualScale:F6}, Final scale: {finalScale:F6} for counter: {counter}");
+        // 最終スケール = 手動スケール
+        var finalScale = manualScale;
+        System.Diagnostics.Debug.WriteLine($"Manual scale: {manualScale:F6}, Final scale: {finalScale:F6} for counter: {counter}");
         
         var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
         var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
@@ -2282,14 +2227,8 @@ public partial class MainWindow : Window
                 continue;
             }
             
-            if (!_autoCalculatedScales.ContainsKey(counter))
-            {
-                var autoScale = CalculateAutoScale(counter);
-                _autoCalculatedScales[counter] = autoScale;
-            }
-
             var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-            var finalScale = _autoCalculatedScales[counter] * manualScale;
+            var finalScale = manualScale;
             
             var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
             var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
@@ -2385,19 +2324,11 @@ public partial class MainWindow : Window
                 continue;
             }
             
-            // 自動スケールを計算してキャッシュ（まだない場合）
-            if (!_autoCalculatedScales.ContainsKey(counter))
-            {
-                var autoScale = CalculateAutoScale(counter);
-                _autoCalculatedScales[counter] = autoScale;
-            }
-            
             // 手動スケールを取得（デフォルトは1.0）
             var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
             
-            // 最終スケール = 自動スケール × 手動スケール
-            var autoScale_cached = _autoCalculatedScales[counter];
-            var finalScale = autoScale_cached * manualScale;
+            // 最終スケール = 手動スケール
+            var finalScale = manualScale;
             
             // データポイントを辞書化（高速検索用）
             var dataDict = dataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * finalScale);
