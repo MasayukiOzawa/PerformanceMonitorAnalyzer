@@ -415,3 +415,34 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 検証（追加19）
 - `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
+
+## 追補: 折れ線グラフ凡例のハイライト機能
+
+### 要望
+- 折れ線グラフ表示時に、特定の凡例項目の線だけを太くして強調したい。
+
+### 対応
+- 凡例行に `☆/★` ボタンを追加し、クリックで対象系列のハイライトを切り替え可能にした。
+- `MainWindow.xaml.cs` に `_highlightedLegendCounterPath` を追加し、選択中系列を管理。
+- 折れ線再描画時・可視状態更新時に `ApplyLineSeriesHighlight()` を実行し、対象系列のみ `LineWidth=4`（他は `LineWidth=2`）を適用。
+- 凡例モデル `LegendItem` に `IsHighlighted` を追加し、凡例側の視覚状態（★表示/背景色/太字）を同期。
+
+### 備考
+- ハイライト操作は折れ線グラフ時のみ有効（積み重ね面グラフでは無効）。
+
+### 検証（追加20）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 折れ線凡例ハイライトの複数選択対応
+
+### 要望
+- 複数の系列を同時にハイライトできるようにしたい。
+
+### 対応
+- 単一選択の `_highlightedLegendCounterPath` を、複数選択用の `HashSet<string>`（`_highlightedLegendCounterPaths`）へ変更。
+- `LegendHighlight_Click` をトグル方式に変更し、クリックした系列をセットへ追加/削除。
+- `ApplyLineSeriesHighlight()` でセット内の全系列に `LineWidth=4` を適用し、それ以外は `LineWidth=2` を適用。
+- 系列非表示・系列削除・凡例クリア時に対象パスをセットから除去し、状態の整合性を維持。
+
+### 検証（追加21）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。

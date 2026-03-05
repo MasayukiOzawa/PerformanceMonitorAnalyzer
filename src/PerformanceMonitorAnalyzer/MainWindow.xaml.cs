@@ -37,6 +37,7 @@ public class CounterStatisticsItem
 public class LegendItem : INotifyPropertyChanged
 {
     private bool _isVisible = true;
+    private bool _isHighlighted = false;
     private string _currentValue = "";
     private System.Windows.Media.Color _color = System.Windows.Media.Colors.Blue;
     
@@ -54,6 +55,23 @@ public class LegendItem : INotifyPropertyChanged
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(BackgroundBrush));
                 OnPropertyChanged(nameof(TextBrush));
+            }
+        }
+    }
+
+    public bool IsHighlighted
+    {
+        get => _isHighlighted;
+        set
+        {
+            if (_isHighlighted != value)
+            {
+                _isHighlighted = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(BackgroundBrush));
+                OnPropertyChanged(nameof(CounterFontWeight));
+                OnPropertyChanged(nameof(HighlightMark));
+                OnPropertyChanged(nameof(HighlightBrush));
             }
         }
     }
@@ -86,8 +104,15 @@ public class LegendItem : INotifyPropertyChanged
     }
     
     public Brush ColorBrush => new SolidColorBrush(_color);
-    public Brush BackgroundBrush => _isVisible ? Brushes.Transparent : new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 200, 200, 200));
+    public Brush BackgroundBrush => _isHighlighted
+        ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(60, 255, 242, 204))
+        : (_isVisible ? Brushes.Transparent : new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 200, 200, 200)));
     public Brush TextBrush => _isVisible ? Brushes.Black : Brushes.Gray;
+    public System.Windows.FontWeight CounterFontWeight => _isHighlighted
+        ? System.Windows.FontWeights.Bold
+        : System.Windows.FontWeights.Normal;
+    public string HighlightMark => _isHighlighted ? "★" : "☆";
+    public Brush HighlightBrush => _isHighlighted ? Brushes.Goldenrod : Brushes.Gray;
     
     public event PropertyChangedEventHandler? PropertyChanged;
     
@@ -417,6 +442,9 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, bool> _seriesVisibility = new();
     private readonly Dictionary<string, ScottPlot.Color> _counterLineColors = new(StringComparer.Ordinal);
     private bool _isBulkLegendVisibilityUpdate = false;
+    private readonly HashSet<string> _highlightedLegendCounterPaths = new(StringComparer.Ordinal);
+    private const float DefaultLineWidth = 2f;
+    private const float HighlightedLineWidth = 4f;
     
     // グラフリサイズハンドル関連
     private bool _isResizing = false;
@@ -1957,9 +1985,9 @@ public partial class MainWindow : Window
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
-        scatter.LineWidth = 2;
+        scatter.LineWidth = DefaultLineWidth;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
-        scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
         scatter.LineColor = scottPlotColor; // 色を設定
         scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
@@ -1968,6 +1996,9 @@ public partial class MainWindow : Window
         
         // 凡例アイテムを追加
         AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+
+        // 凡例ハイライト状態を反映
+        ApplyLineSeriesHighlight(refresh: false);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -2031,9 +2062,9 @@ public partial class MainWindow : Window
         // 新しいシリーズを作成（折れ線グラフとして）
         var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
         scatter.LegendText = GetCounterDisplayName(counter);
-        scatter.LineWidth = 2;
+        scatter.LineWidth = DefaultLineWidth;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
-        scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
+        scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
         scatter.LineColor = scottPlotColor; // 色を設定
         scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
@@ -2042,6 +2073,9 @@ public partial class MainWindow : Window
         
         // 凡例アイテムを追加
         AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+
+        // 凡例ハイライト状態を反映
+        ApplyLineSeriesHighlight(refresh: false);
         
         System.Diagnostics.Debug.WriteLine($"Added series to chart for: {counter}");
         
@@ -2073,6 +2107,7 @@ public partial class MainWindow : Window
         {
             PerformanceChart.Plot.Remove(scatter);
             _chartSeries.Remove(counter);
+            _highlightedLegendCounterPaths.Remove(counter);
             removedLine = true;
             System.Diagnostics.Debug.WriteLine($"Removed line series from chart for: {counter}");
         }
@@ -2190,6 +2225,9 @@ public partial class MainWindow : Window
                     DrawStackedAreaChart(selectedCounters);
                     break;
             }
+
+            // 凡例ハイライト状態を反映
+            ApplyLineSeriesHighlight(refresh: false);
             
             // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
             EnsureYAxisFixedRange();
@@ -2239,8 +2277,9 @@ public partial class MainWindow : Window
             
             var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
             scatter.LegendText = GetCounterDisplayName(counter);
-            scatter.LineWidth = 2;
+            scatter.LineWidth = DefaultLineWidth;
             scatter.MarkerSize = 0;
+            scatter.LineStyle.Width = DefaultLineWidth;
             scatter.LineColor = scottPlotColor; // 色を設定
             scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
             
@@ -2251,6 +2290,9 @@ public partial class MainWindow : Window
             
             System.Diagnostics.Debug.WriteLine($"Added line series for: {counter}");
         }
+
+        // 凡例ハイライト状態を反映
+        ApplyLineSeriesHighlight(refresh: false);
         
         // 凡例の現在値を更新
         UpdateLegendCurrentValues();
@@ -5187,9 +5229,62 @@ public partial class MainWindow : Window
     {
         LegendItemsControl.ItemsSource = _legendItems;
     }
-    
 
-    
+    private bool IsLineCounterHighlighted(string counterPath)
+    {
+        return _currentChartType == ChartType.LineChart
+            && _highlightedLegendCounterPaths.Contains(counterPath);
+    }
+
+    private void ApplyLineSeriesHighlight(bool refresh = true)
+    {
+        _highlightedLegendCounterPaths.RemoveWhere(path => !_chartSeries.ContainsKey(path));
+
+        foreach (var item in _legendItems)
+        {
+            item.IsHighlighted = IsLineCounterHighlighted(item.CounterPath);
+        }
+
+        foreach (var kvp in _chartSeries)
+        {
+            var lineWidth = IsLineCounterHighlighted(kvp.Key) ? HighlightedLineWidth : DefaultLineWidth;
+            kvp.Value.LineWidth = lineWidth;
+            kvp.Value.LineStyle.Width = lineWidth;
+        }
+
+        if (refresh)
+        {
+            PerformanceChart.Refresh();
+        }
+    }
+
+    /// <summary>
+    /// 凡例から折れ線のハイライトを切り替え
+    /// </summary>
+    private void LegendHighlight_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string counterPath })
+        {
+            return;
+        }
+
+        if (_currentChartType != ChartType.LineChart)
+        {
+            AddOperationLog(LogLevel.Info, "凡例ハイライトは折れ線グラフでのみ使用できます。");
+            return;
+        }
+
+        if (_highlightedLegendCounterPaths.Contains(counterPath))
+        {
+            _highlightedLegendCounterPaths.Remove(counterPath);
+        }
+        else
+        {
+            _highlightedLegendCounterPaths.Add(counterPath);
+        }
+        ApplyLineSeriesHighlight();
+    }
+
     /// <summary>
     /// すべてのシリーズを表示
     /// </summary>
@@ -5217,6 +5312,7 @@ public partial class MainWindow : Window
     /// </summary>
     private void HideAllSeries_Click(object sender, RoutedEventArgs e)
     {
+        _highlightedLegendCounterPaths.Clear();
         _isBulkLegendVisibilityUpdate = true;
         try
         {
@@ -5264,6 +5360,7 @@ public partial class MainWindow : Window
         if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
         {
             _seriesVisibility[counterPath] = false;
+            _highlightedLegendCounterPaths.Remove(counterPath);
             UpdateChartSeriesVisibility();
         }
     }
@@ -5300,7 +5397,8 @@ public partial class MainWindow : Window
                 
                 series.IsVisible = isVisible;
             }
-            
+
+            ApplyLineSeriesHighlight(refresh: false);
             PerformanceChart.Refresh();
         }
         catch (Exception ex)
@@ -5320,6 +5418,7 @@ public partial class MainWindow : Window
             // 既存のアイテムを更新
             existingItem.Color = color;
             existingItem.IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
+            existingItem.IsHighlighted = IsLineCounterHighlighted(counterPath);
             return;
         }
         
@@ -5329,6 +5428,7 @@ public partial class MainWindow : Window
             CounterName = counterName,
             Color = color,
             IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true),
+            IsHighlighted = IsLineCounterHighlighted(counterPath),
             CurrentValue = "-"
         };
         
@@ -5345,6 +5445,8 @@ public partial class MainWindow : Window
         {
             _legendItems.Remove(item);
         }
+
+        _highlightedLegendCounterPaths.Remove(counterPath);
     }
     
     /// <summary>
@@ -5356,6 +5458,7 @@ public partial class MainWindow : Window
         if (clearVisibility)
         {
             _seriesVisibility.Clear();
+            _highlightedLegendCounterPaths.Clear();
         }
     }
     
