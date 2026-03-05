@@ -389,3 +389,29 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 検証（追加17）
 - 実行中の `PerformanceMonitorAnalyzer.exe`（PID 66952）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 自動スケール機能の削除（手動スケールのみ）
+
+### 要求
+- グラフ描画時の自動スケール（`_autoCalculatedScales` / `CalculateAutoScale()`）依存をなくし、手動スケールのみで描画したい。
+
+### 対応
+- `MainWindow.xaml.cs` から `_autoCalculatedScales` フィールドと `CalculateAutoScale()` を削除。
+- 折れ線グラフ・積み重ね面グラフ・Y軸上限算出でのスケール計算を `manualScale`（`_counterScales`）のみへ統一。
+- 値モード切替時の自動スケールキャッシュクリア処理を削除。
+
+### 検証（追加18）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
+
+## 追補: Y軸の `Value` ラベルを非表示化
+
+### 要望
+- Y軸の `Value` ラベルは不要。
+
+### 対応
+- `MainWindow.xaml.cs` の `GetCurrentYAxisLabel()` を変更。
+  - 差分モードは従来どおり `Delta (Prev)` を表示。
+  - 生値モードは `string.Empty` を返し、Y軸ラベルを非表示化。
+
+### 検証（追加19）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
