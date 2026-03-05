@@ -76,8 +76,25 @@ public class BlgFileAnalyzer : IDisposable
                     return true;
                 }
                 
-                // 方法1が失敗した場合、方法2: 従来のPdhOpenLogを試行
-                progress?.Report($"PdhBindInputDataSource失敗 ({PdhApi.GetErrorMessage(result)})、PdhOpenLogを試行中...");
+                // 方法1が失敗した場合、方法2: PdhOpenQuery(データソース指定)を試行
+                progress?.Report($"PdhBindInputDataSource失敗 ({PdhApi.GetErrorMessage(result)})、PdhOpenQuery(データソース指定)を試行中...");
+
+                _query = IntPtr.Zero;
+                result = PdhApi.PdhOpenQuery(filePath, IntPtr.Zero, out _query);
+                if (result == PdhApi.ERROR_SUCCESS)
+                {
+                    progress?.Report("PdhOpenQuery(データソース指定)でBLGファイルを開きました");
+                    return true;
+                }
+
+                if (_query != IntPtr.Zero)
+                {
+                    PdhApi.PdhCloseQuery(_query);
+                    _query = IntPtr.Zero;
+                }
+
+                // 方法2が失敗した場合、方法3: 従来のPdhOpenLogを試行
+                progress?.Report($"PdhOpenQuery(データソース指定)失敗 ({PdhApi.GetErrorMessage(result)})、PdhOpenLogを試行中...");
                 
                 // まずクエリを開く
                 result = PdhApi.PdhOpenQuery(null, IntPtr.Zero, out _query);
@@ -609,7 +626,7 @@ public class BlgFileAnalyzer : IDisposable
                     // フォーマットされた値を取得
                     result = PdhApi.PdhGetFormattedCounterValue(
                         counter,
-                        PdhApi.PDH_FMT_DOUBLE,
+                        PdhApi.PDH_FMT_DOUBLE | PdhApi.PDH_FMT_NOCAP100,
                         IntPtr.Zero,
                         out PdhApi.PDH_FMT_COUNTERVALUE value);
 
@@ -827,7 +844,7 @@ public class BlgFileAnalyzer : IDisposable
                     // フォーマットされた値を取得
                     result = PdhApi.PdhGetFormattedCounterValue(
                         counter,
-                        PdhApi.PDH_FMT_DOUBLE,
+                        PdhApi.PDH_FMT_DOUBLE | PdhApi.PDH_FMT_NOCAP100,
                         IntPtr.Zero,
                         out PdhApi.PDH_FMT_COUNTERVALUE value);
 
@@ -1423,10 +1440,19 @@ public class BlgFileAnalyzer : IDisposable
             return counterPath;
         }
 
+        var normalizedPath = counterPath.Trim();
+
         // 既にマシン名が含まれている場合（\\MachineName\ で始まっている場合）
-        if (counterPath.StartsWith("\\\\"))
+        if (normalizedPath.StartsWith("\\\\", StringComparison.Ordinal))
         {
-            return counterPath; // そのまま返す
+            return normalizedPath; // そのまま返す
+        }
+
+        // 先頭の \\ がなくても、Machine\Object\Counter 形式なら既にマシン名付きとみなして正規化
+        var parts = normalizedPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 3)
+        {
+            return $"\\\\{parts[0]}\\{string.Join("\\", parts.Skip(1))}";
         }
 
         // マシン名を取得
@@ -1436,23 +1462,30 @@ public class BlgFileAnalyzer : IDisposable
         if (string.IsNullOrEmpty(machineName))
         {
             // マシン名が取得できない場合はそのまま返す
-            return counterPath;
+            return normalizedPath;
         }
 
+        machineName = machineName.TrimStart('\\');
+
         // \ で始まっている場合は先頭の \ を削除（境界チェック強化）
-        var pathWithoutLeadingSlash = counterPath;
-        if (counterPath.StartsWith("\\") && counterPath.Length > 1)
+        var pathWithoutLeadingSlash = normalizedPath;
+        if (normalizedPath.StartsWith("\\", StringComparison.Ordinal) && normalizedPath.Length > 1)
         {
-            pathWithoutLeadingSlash = counterPath.Substring(1);
+            pathWithoutLeadingSlash = normalizedPath.Substring(1);
         }
-        else if (counterPath == "\\")
+        else if (normalizedPath == "\\")
         {
             // 単独の \ の場合は空文字列にする
             pathWithoutLeadingSlash = "";
         }
         
         // マシン名を追加したフルパスを生成
-        return $"{machineName}\\{pathWithoutLeadingSlash}";
+        if (string.IsNullOrEmpty(pathWithoutLeadingSlash))
+        {
+            return $"\\\\{machineName}\\";
+        }
+
+        return $"\\\\{machineName}\\{pathWithoutLeadingSlash}";
     }
 
     public void Dispose()

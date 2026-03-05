@@ -418,6 +418,7 @@ public partial class MainWindow : Window
     // 凡例管理用のプロパティ
     private readonly ObservableCollection<LegendItem> _legendItems = new();
     private readonly Dictionary<string, bool> _seriesVisibility = new();
+    private readonly Dictionary<string, ScottPlot.Color> _counterLineColors = new(StringComparer.Ordinal);
     private bool _isBulkLegendVisibilityUpdate = false;
     
     // グラフリサイズハンドル関連
@@ -430,6 +431,9 @@ public partial class MainWindow : Window
     private GridLength _lastCounterPanelWidth = new(350);
     private GridLength _lastScalePanelWidth = new(230);
     private bool _isScalePanelCollapsed = false;
+    private bool _isManualYAxisRangeEnabled = false;
+    private double _manualYAxisMin = 0;
+    private double _manualYAxisMax = 100;
     
     
     // ログ機能
@@ -474,11 +478,11 @@ public partial class MainWindow : Window
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
         
-        // Y軸を固定範囲0-100に設定
+        // Y軸の初期範囲を設定
         PerformanceChart.Plot.Axes.Left.Min = 0;
         PerformanceChart.Plot.Axes.Left.Max = 100;
         
-        // ユーザーのドラッグ操作後にもY軸の範囲を固定
+        // ユーザー操作後も現在データに応じたY軸範囲を維持
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
         {
             EnsureYAxisFixedRange();
@@ -501,30 +505,116 @@ public partial class MainWindow : Window
         var plotMenu = new WpfPlotMenu(PerformanceChart);
         plotMenu.Clear();
         PerformanceChart.Menu = plotMenu;
+        // 右クリックはコンテキストメニュー用途のみとし、ドラッグズームを無効化
+        PerformanceChart.UserInputProcessor.RightClickDragZoom(false);
+        PerformanceChart.PreviewMouseRightButtonUp -= PerformanceChart_PreviewMouseRightButtonUp;
+        PerformanceChart.PreviewMouseRightButtonUp += PerformanceChart_PreviewMouseRightButtonUp;
         
         // グラフの更新
         PerformanceChart.Refresh();
     }
 
     /// <summary>
-    /// Y軸を固定範囲0-100に設定する
+    /// Y軸範囲を設定する（通常時は自動、手動設定時は指定範囲）
     /// </summary>
     private void EnsureYAxisFixedRange()
     {
         try
         {
-            // Y軸を常に0-100の固定範囲に設定
-            if (PerformanceChart.Plot.Axes.Left.Min != 0 || PerformanceChart.Plot.Axes.Left.Max != 100)
+            const double defaultYAxisMin = 0;
+            const double defaultYAxisMax = 100;
+
+            var yAxisMin = defaultYAxisMin;
+            var yAxisMax = defaultYAxisMax;
+
+            if (_isManualYAxisRangeEnabled)
             {
-                PerformanceChart.Plot.Axes.Left.Min = 0;
-                PerformanceChart.Plot.Axes.Left.Max = 100;
-                System.Diagnostics.Debug.WriteLine("Y軸を固定範囲0-100に設定しました");
+                yAxisMin = _manualYAxisMin;
+                yAxisMax = _manualYAxisMax;
+            }
+            else if (TryGetCurrentDisplayMax(out var displayMax) && displayMax > defaultYAxisMax)
+            {
+                yAxisMax = Math.Ceiling(displayMax * 1.1);
+            }
+
+            if (Math.Abs(PerformanceChart.Plot.Axes.Left.Min - yAxisMin) > 1e-9 ||
+                Math.Abs(PerformanceChart.Plot.Axes.Left.Max - yAxisMax) > 1e-9)
+            {
+                PerformanceChart.Plot.Axes.Left.Min = yAxisMin;
+                PerformanceChart.Plot.Axes.Left.Max = yAxisMax;
+                System.Diagnostics.Debug.WriteLine($"Y軸範囲を更新しました: {yAxisMin} - {yAxisMax}");
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Y軸範囲設定エラー: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 現在表示中データの最大表示値を取得
+    /// </summary>
+    private bool TryGetCurrentDisplayMax(out double maxValue)
+    {
+        maxValue = 0;
+
+        var currentCounters = GetCurrentChartCounters()
+            .Where(counter => _seriesVisibility.GetValueOrDefault(counter, true))
+            .ToList();
+
+        if (!currentCounters.Any())
+        {
+            return false;
+        }
+
+        bool hasValue = false;
+        double currentMax = double.MinValue;
+        double stackedUpperBound = 0;
+
+        foreach (var counter in currentCounters)
+        {
+            var dataPoints = GetDisplayDataPoints(counter);
+            if (!dataPoints.Any())
+            {
+                continue;
+            }
+
+            if (!_autoCalculatedScales.ContainsKey(counter))
+            {
+                _autoCalculatedScales[counter] = CalculateAutoScale(counter);
+            }
+
+            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
+            var finalScale = _autoCalculatedScales[counter] * manualScale;
+            var counterMax = dataPoints.Max(dp => dp.Value * finalScale);
+
+            if (double.IsNaN(counterMax) || double.IsInfinity(counterMax))
+            {
+                continue;
+            }
+
+            hasValue = true;
+            currentMax = Math.Max(currentMax, counterMax);
+
+            if (_currentChartType == ChartType.StackedAreaChart && counterMax > 0)
+            {
+                stackedUpperBound += counterMax;
+            }
+        }
+
+        if (_currentChartType == ChartType.StackedAreaChart && stackedUpperBound > 0)
+        {
+            currentMax = Math.Max(currentMax, stackedUpperBound);
+            hasValue = true;
+        }
+
+        if (!hasValue)
+        {
+            return false;
+        }
+
+        maxValue = currentMax;
+        return true;
     }
 
     /// <summary>
@@ -652,6 +742,10 @@ public partial class MainWindow : Window
         {
             var dataPoints = GetDisplayDataPoints(counter);
             if (!dataPoints.Any())
+                return 1.0;
+
+            // ％系カウンターは実値をそのまま表示する（Process % Processor Time の正確性を優先）
+            if (string.Equals(EstimateUnit(counter), "%", StringComparison.Ordinal))
                 return 1.0;
 
             // 最大値を取得
@@ -1161,6 +1255,7 @@ public partial class MainWindow : Window
         _counterTreeNodes.Clear();
         DataTabControl.Items.Clear();
         _counterData.Clear();
+        _counterLineColors.Clear();
         
         // 凡例をクリア
         ClearLegendItems();
@@ -1218,7 +1313,11 @@ public partial class MainWindow : Window
 
             // 時間範囲を検出
             ProgressStatusText.Text = "時間範囲を検出中...";
-            await DetectTimeRangeAsync(fileName, progress);
+            var timeRangeDetected = await DetectTimeRangeAsync(fileName, progress);
+            if (!timeRangeDetected)
+            {
+                ExecuteButton.IsEnabled = true;
+            }
 
             NoDataMessage.Visibility = Visibility.Collapsed;
             
@@ -1678,10 +1777,10 @@ public partial class MainWindow : Window
                     {
                         HandleWildcardCounterSelection(node, true);
                     }
-                    
-                    // relog.exe情報表示を更新
-                    UpdateRelogCommandDisplay();
                 }
+
+                // ノード種別に関係なく、現在の選択状態でrelog表示を更新
+                UpdateRelogCommandDisplay();
             }
             else
             {
@@ -1731,10 +1830,10 @@ public partial class MainWindow : Window
                     {
                         HandleWildcardCounterSelection(node, false);
                     }
-                    
-                    // relog.exe情報表示を更新
-                    UpdateRelogCommandDisplay();
                 }
+
+                // ノード種別に関係なく、現在の選択状態でrelog表示を更新
+                UpdateRelogCommandDisplay();
             }
         }
         catch (Exception ex)
@@ -1903,8 +2002,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
-        var colorIndex = _chartSeries.Count;
-        var scottPlotColor = GetNextColor(colorIndex);
+        var scottPlotColor = GetOrCreateCounterColor(counter);
         var mediaColor = ConvertToMediaColor(scottPlotColor);
         
         // 新しいシリーズを作成（折れ線グラフとして）
@@ -1913,7 +2011,7 @@ public partial class MainWindow : Window
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
-        scatter.LineStyle.Color = scottPlotColor; // 色を設定
+        scatter.LineColor = scottPlotColor; // 色を設定
         scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
         // シリーズを記録
@@ -1982,8 +2080,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
         
         // 色を取得
-        var colorIndex = _chartSeries.Count;
-        var scottPlotColor = GetNextColor(colorIndex);
+        var scottPlotColor = GetOrCreateCounterColor(counter);
         var mediaColor = ConvertToMediaColor(scottPlotColor);
         
         // 新しいシリーズを作成（折れ線グラフとして）
@@ -1992,7 +2089,7 @@ public partial class MainWindow : Window
         scatter.LineWidth = 2;
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
-        scatter.LineStyle.Color = scottPlotColor; // 色を設定
+        scatter.LineColor = scottPlotColor; // 色を設定
         scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
         // シリーズを記録
@@ -2198,15 +2295,14 @@ public partial class MainWindow : Window
             var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
             
             // 色を取得
-            var colorIndex = _chartSeries.Count;
-            var scottPlotColor = GetNextColor(colorIndex);
+            var scottPlotColor = GetOrCreateCounterColor(counter);
             var mediaColor = ConvertToMediaColor(scottPlotColor);
             
             var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
             scatter.LegendText = GetCounterDisplayName(counter);
             scatter.LineWidth = 2;
             scatter.MarkerSize = 0;
-            scatter.LineStyle.Color = scottPlotColor; // 色を設定
+            scatter.LineColor = scottPlotColor; // 色を設定
             scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
             
             _chartSeries[counter] = scatter;
@@ -2401,6 +2497,21 @@ public partial class MainWindow : Window
         };
         
         return colors[index % colors.Length];
+    }
+
+    /// <summary>
+    /// カウンターごとの折れ線色を取得（未割り当て時は新規採番）
+    /// </summary>
+    private ScottPlot.Color GetOrCreateCounterColor(string counter)
+    {
+        if (_counterLineColors.TryGetValue(counter, out var color))
+        {
+            return color;
+        }
+
+        color = GetNextColor(_counterLineColors.Count);
+        _counterLineColors[counter] = color;
+        return color;
     }
     
     /// <summary>
@@ -2994,6 +3105,8 @@ public partial class MainWindow : Window
         {
             objectNode.IsChecked = isChecked;
         }
+
+        UpdateRelogCommandDisplay();
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e)
@@ -3139,8 +3252,8 @@ public partial class MainWindow : Window
             
             if (!opened)
             {
-                LogError("PDH APIでBLGファイルを開けませんでした");
-                return false;
+                ApplyFallbackTimeRange("PDH APIでBLGファイルを開けませんでした");
+                return true;
             }
 
             // PDH APIの直接的な時間範囲取得を使用
@@ -3196,10 +3309,23 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            LogError($"PDH APIによる時間範囲検出に失敗: {ex.Message}");
+            ApplyFallbackTimeRange($"PDH APIによる時間範囲検出に失敗: {ex.Message}");
+            return true;
         }
         
         return false;
+    }
+
+    /// <summary>
+    /// 時間範囲検出失敗時のフォールバック時間範囲を設定してUIを有効化
+    /// </summary>
+    private void ApplyFallbackTimeRange(string reason)
+    {
+        _fileStartTime = DateTime.Now.AddHours(-24);
+        _fileEndTime = DateTime.Now;
+        _timeRangeDetected = true;
+        UpdateTimeRangeUI();
+        LogError($"時間範囲フォールバックを適用: {reason} / {_fileStartTime:yyyy-MM-dd HH:mm:ss} - {_fileEndTime:yyyy-MM-dd HH:mm:ss}");
     }
 
     /// <summary>
@@ -3256,7 +3382,7 @@ public partial class MainWindow : Window
         else
         {
             TimeRangeExpander.Visibility = Visibility.Collapsed;
-            ExecuteButton.IsEnabled = false;
+            ExecuteButton.IsEnabled = !string.IsNullOrEmpty(_currentBlgFile);
         }
     }
 
@@ -3314,10 +3440,10 @@ public partial class MainWindow : Window
     /// </summary>
     private async void ExecuteSelectedCounters_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrEmpty(_currentBlgFile) || !_timeRangeDetected)
+        if (string.IsNullOrEmpty(_currentBlgFile))
         {
-            AddOperationLog(LogLevel.Warning, "BLGファイルが読み込まれていないか、時間範囲が検出されていません。");
-            MessageBox.Show("BLGファイルが読み込まれていないか、時間範囲が検出されていません。", 
+            AddOperationLog(LogLevel.Warning, "BLGファイルが読み込まれていません。");
+            MessageBox.Show("BLGファイルが読み込まれていません。", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -3344,19 +3470,34 @@ public partial class MainWindow : Window
             
             var progress = new Progress<string>(status => ProgressStatusText.Text = status);
             
-            // 選択された時間範囲を計算
-            var totalDuration = _fileEndTime - _fileStartTime;
-            var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
-            var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
-            
-            var selectedStartTime = _fileStartTime + startOffset;
-            var selectedEndTime = _fileStartTime + endOffset;
+            // 選択された時間範囲を計算（時間範囲未検出時は全期間扱い）
+            DateTime selectedStartTime;
+            DateTime selectedEndTime;
+            if (_timeRangeDetected)
+            {
+                var totalDuration = _fileEndTime - _fileStartTime;
+                var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
+                var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
+
+                selectedStartTime = _fileStartTime + startOffset;
+                selectedEndTime = _fileStartTime + endOffset;
+            }
+            else
+            {
+                selectedStartTime = _fileStartTime;
+                selectedEndTime = _fileEndTime;
+            }
             
             await ExecuteRelogForSelectedCounters(selectedCounters, selectedStartTime, selectedEndTime, progress);
-            
+            ResetBulkScaleToDefaultAfterCounterLoad();
+
+            var timeRangeMessage = _timeRangeDetected
+                ? $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}"
+                : "時間範囲: 全期間（時間範囲の自動検出なし）";
+
             AddOperationLog(LogLevel.Success, $"カウンターデータの読み込みが完了しました。\n" +
                            $"処理されたカウンター数: {selectedCounters.Count}個\n" +
-                           $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}");
+                           $"{timeRangeMessage}");
         }
         catch (Exception ex)
         {
@@ -4065,6 +4206,53 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 選択カウンター読み込み後に一括スケールを既定値(1.0)へ戻して適用
+    /// </summary>
+    private void ResetBulkScaleToDefaultAfterCounterLoad()
+    {
+        const double defaultScale = 1.0;
+
+        if (BulkScaleComboBox != null)
+        {
+            _isInitializingBulkScaleComboBox = true;
+            try
+            {
+                _ = TrySelectScaleComboBoxItem(BulkScaleComboBox, defaultScale);
+            }
+            finally
+            {
+                _isInitializingBulkScaleComboBox = false;
+            }
+        }
+
+        var currentCounters = GetCurrentChartCounters();
+        if (!currentCounters.Any())
+        {
+            return;
+        }
+
+        foreach (var counter in currentCounters)
+        {
+            _counterScales[counter] = defaultScale;
+        }
+
+        if (_currentChartType == ChartType.LineChart)
+        {
+            foreach (var counter in currentCounters)
+            {
+                RefreshCounterInChart(counter);
+            }
+        }
+        else
+        {
+            RefreshChartWithCurrentType();
+        }
+
+        UpdateScaleControlVisibility();
+        SyncVisibleCounterScaleComboBoxes(defaultScale);
+    }
+
+    /// <summary>
     /// 特定のカウンターのグラフ表示を更新
     /// </summary>
     private void RefreshCounterInChart(string counter)
@@ -4291,6 +4479,9 @@ public partial class MainWindow : Window
                 // オブジェクト レベルの状態更新
                 objNode.UpdateParentStateFromChild();
             }
+
+            // パターン適用後の選択状態でrelog表示を更新
+            UpdateRelogCommandDisplay();
 
             // 結果の表示
             var message = $"パターン「{pattern.Name}」を適用しました。\n" +
@@ -4853,11 +5044,108 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// グラフ領域の右クリック時にアプリ独自コンテキストメニューを表示
+    /// </summary>
+    private void PerformanceChart_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            if (PerformanceChart.ContextMenu is null)
+            {
+                return;
+            }
+
+            PerformanceChart.ContextMenu.PlacementTarget = PerformanceChart;
+            PerformanceChart.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+            PerformanceChart.ContextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+        catch (Exception ex)
+        {
+            LogError($"グラフコンテキストメニュー表示エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// グラフをクリップボードにコピーする（UI イベント）
     /// </summary>
     private void CopyGraphToClipboard_Click(object sender, RoutedEventArgs e)
     {
         CopyGraphToClipboardInternal();
+    }
+
+    /// <summary>
+    /// Y軸範囲入力値を適用する
+    /// </summary>
+    private void ApplyYAxisRange_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!TryParseYAxisInput(YAxisMinTextBox.Text, out double yAxisMin) ||
+                !TryParseYAxisInput(YAxisMaxTextBox.Text, out double yAxisMax))
+            {
+                AddOperationLog(LogLevel.Warning, "Y軸範囲の入力値が不正です。数値を入力してください。");
+                return;
+            }
+
+            if (yAxisMax <= yAxisMin)
+            {
+                AddOperationLog(LogLevel.Warning, "Y軸範囲の入力値が不正です。上限は下限より大きい値を指定してください。");
+                return;
+            }
+
+            _manualYAxisMin = yAxisMin;
+            _manualYAxisMax = yAxisMax;
+            _isManualYAxisRangeEnabled = true;
+
+            EnsureYAxisFixedRange();
+            PerformanceChart.Refresh();
+            AddOperationLog(LogLevel.Info, $"Y軸範囲を手動設定しました: {_manualYAxisMin} ～ {_manualYAxisMax}");
+        }
+        catch (Exception ex)
+        {
+            LogError($"Y軸範囲適用エラー: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Y軸範囲入力のEnterキー操作
+    /// </summary>
+    private void YAxisRangeTextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+        {
+            return;
+        }
+
+        ApplyYAxisRange_Click(sender, new RoutedEventArgs());
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Y軸範囲の自動設定に戻す
+    /// </summary>
+    private void ResetYAxisRange_Click(object sender, RoutedEventArgs e)
+    {
+        _isManualYAxisRangeEnabled = false;
+        _manualYAxisMin = 0;
+        _manualYAxisMax = 100;
+        YAxisMinTextBox.Text = "0";
+        YAxisMaxTextBox.Text = "100";
+
+        EnsureYAxisFixedRange();
+        PerformanceChart.Refresh();
+        AddOperationLog(LogLevel.Info, "Y軸範囲を自動設定に戻しました。");
+    }
+
+    /// <summary>
+    /// Y軸範囲入力の数値解析
+    /// </summary>
+    private static bool TryParseYAxisInput(string? input, out double value)
+    {
+        var text = input?.Trim() ?? string.Empty;
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value) ||
+               double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     /// <summary>
@@ -4874,7 +5162,7 @@ public partial class MainWindow : Window
             // スライダーテキストを更新
             UpdateTimeSliderTexts();
             
-            // Y軸を固定範囲に設定（ズームリセット時も0-100を維持）
+            // Y軸範囲を現在データに合わせて再設定
             EnsureYAxisFixedRange();
             
             // X軸範囲を更新（全体範囲に戻す）

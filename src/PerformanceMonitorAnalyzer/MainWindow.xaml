@@ -175,10 +175,10 @@
                     </Expander>
                     
                     <!-- relog.exe情報表示 -->
-                    <Expander Grid.Row="5" Header="📝 relog.exe同等コマンド" IsExpanded="False" 
+                    <Expander Grid.Row="5" Header="📝 relog.exe コマンド" IsExpanded="False" 
                              Margin="5,5,5,5" x:Name="RelogCommandExpander" Visibility="Collapsed">
                         <StackPanel Margin="5">
-                            <TextBlock Text="現在の設定で同等のrelog.exeコマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
+                            <TextBlock Text="現在の設定の relog.exe コマンド:" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,3"/>
                             <TextBox x:Name="RelogCommandDisplay" 
                                     IsReadOnly="True" 
                                     Background="LightCyan"
@@ -293,16 +293,48 @@
                     <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Margin="5,5,5,0">
                         <Grid Margin="10,8">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,20,0" VerticalAlignment="Center">
+                                <TextBlock Text="Y軸:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                                <TextBlock Text="下限" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="YAxisMinTextBox"
+                                        Width="70"
+                                        Text="0"
+                                        Margin="0,0,6,0"
+                                        VerticalContentAlignment="Center"
+                                        KeyDown="YAxisRangeTextBox_KeyDown"
+                                        ToolTip="Y軸の下限値"/>
+                                <TextBlock Text="上限" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBox x:Name="YAxisMaxTextBox"
+                                        Width="70"
+                                        Text="100"
+                                        Margin="0,0,6,0"
+                                        VerticalContentAlignment="Center"
+                                        KeyDown="YAxisRangeTextBox_KeyDown"
+                                        ToolTip="Y軸の上限値"/>
+                                <Button x:Name="ApplyYAxisRangeButton"
+                                       Content="適用"
+                                       Click="ApplyYAxisRange_Click"
+                                       Padding="8,4"
+                                       Margin="0,0,4,0"
+                                       ToolTip="入力したY軸範囲を適用します"/>
+                                <Button x:Name="ResetYAxisRangeButton"
+                                       Content="自動"
+                                       Click="ResetYAxisRange_Click"
+                                       Padding="8,4"
+                                       ToolTip="Y軸範囲を自動設定に戻します"/>
+                            </StackPanel>
+
                             <!-- グラフタイプ選択 -->
-                             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                 <TextBlock Text="📊 グラフタイプ:" 
-                                          VerticalAlignment="Center" 
-                                          FontWeight="SemiBold" 
-                                          Margin="0,0,15,0"/>
+                             <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                  <TextBlock Text="📊 グラフタイプ:" 
+                                           VerticalAlignment="Center" 
+                                           FontWeight="SemiBold" 
+                                           Margin="0,0,15,0"/>
                                 <RadioButton x:Name="LineChartRadio" 
                                            Content="折れ線グラフ" 
                                            IsChecked="True" 
@@ -317,7 +349,7 @@
                                             VerticalAlignment="Center"/>
                              </StackPanel>
                             
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0,0,0">
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0,0,0">
                                 <TextBlock Text="📉 値モード:" 
                                          VerticalAlignment="Center" 
                                          FontWeight="SemiBold" 
@@ -543,11 +575,11 @@
                                Content="📋 グラフをクリップボードにコピー" 
                                Click="CopyGraphToClipboard_Click"
                                Background="#E3F2FD" 
-                               BorderBrush="#1976D2"
-                               Foreground="#1976D2"
-                               Padding="10,5"
-                               Margin="5"
-                               ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
+                                BorderBrush="#1976D2"
+                                 Foreground="#1976D2"
+                                 Padding="10,5"
+                                 Margin="5"
+                                 ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
                     </StackPanel>
 
                     <!-- 統計情報エリアの高さ調整 -->
@@ -714,21 +746,11 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    
-                    <!-- 説明テキスト -->
-                    <TextBlock Grid.Row="0" Text="Y軸固定範囲（0-100）内でのグラフ表示位置を調整:"
-                             FontSize="11" Foreground="DarkGray" 
-                             Margin="5,5,5,5" TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="1" Text="※データは自動的にY軸100に収まるようにスケール調整され、実際のデータ値は変更されません"
-                             FontSize="10" Foreground="DarkOrange" FontStyle="Italic"
-                             Margin="5,0,5,10" TextWrapping="Wrap"/>
 
                     <!-- 一括スケール設定 -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5,0,5,8">
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,8">
                         <TextBlock Text="一括スケール:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <ComboBox x:Name="BulkScaleComboBox" Width="130" Margin="0,0,8,0"
                                  SelectionChanged="BulkScaleComboBox_SelectionChanged"
@@ -740,7 +762,7 @@
                     </StackPanel>
                     
                     <!-- カウンタースケール設定リスト -->
-                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="CounterScaleStackPanel" Margin="5">
                             <!-- カウンター別スケール設定が動的に追加される -->
                         </StackPanel>

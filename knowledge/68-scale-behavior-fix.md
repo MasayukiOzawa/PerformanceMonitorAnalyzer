@@ -175,3 +175,217 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 検証（追加）
 - `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 選択カウンター読み込み時の一括スケール初期化
+
+### 追加で発生した問題
+- 「選択されたカウンターを読み込み」を実行した際、直前の一括スケール値が残るため、新規読み込み時の比較基準が一定にならない。
+
+### 対応内容
+- `ExecuteSelectedCounters_Click` の読み込み完了後に `ResetBulkScaleToDefaultAfterCounterLoad()` を呼び出すよう変更。
+- `ResetBulkScaleToDefaultAfterCounterLoad()` で以下を実施:
+  - 一括スケールのプルダウン選択を `1.0` に更新
+  - 現在表示中カウンターの `_counterScales` を `1.0` に上書き
+  - チャートを再描画し、下部の個別スケールプルダウン表示も `1.0` に同期
+
+### 検証（追加2）
+- 実行中プロセス停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: Process `% Processor Time` が同値化して見える問題の是正
+
+### 問題
+- Process の `% Processor Time` を複数表示した際、系列ごとの差が見えず、同じ値に見えるケースがある。
+
+### 原因
+- 自動スケール処理 `CalculateAutoScale()` が各系列を個別に正規化していたため、%系カウンターでも最大値がほぼ同じ高さに揃って表示されていた。
+
+### 対応
+- `EstimateUnit(counter) == "%"` の場合は自動スケールを `1.0` 固定にし、%系カウンターは実値のまま描画するよう変更。
+
+### 検証（追加3）
+- 実行中プロセス停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: Process `% Processor Time` が 100 固定に見える問題
+
+### 問題
+- `%` カウンターを実値表示（自動スケール1.0）にした際、Y軸が 0-100 固定のままのため高値が上端でクリップし、100固定に見える。
+
+### 対応
+- `EnsureYAxisFixedRange()` を動的上限対応に変更。
+  - 既定下限は `0`、既定上限は `100` を維持。
+  - `TryGetCurrentDisplayMax()` で現在表示中データ（手動/自動スケール反映後）の最大値を算出し、100を超える場合は上限を拡張（`ceil(max * 1.1)`）。
+- 折れ線グラフと積み重ね面グラフの両方で上限算出ロジックを適用。
+
+### 検証（追加4）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: `% Processor Time` がデータテーブルで100固定になる問題
+
+### 問題
+- Process `% Processor Time` のデータテーブル値がすべて `100` になるケースがある。
+
+### 原因
+- `PdhGetFormattedCounterValue` を `PDH_FMT_DOUBLE` のみで取得していたため、PDHの100上限キャップが有効になり、100超過値が100へ丸められていた。
+
+### 対応
+- `PdhApi` に `PDH_FMT_NOCAP100` 定数を追加。
+- `BlgFileAnalyzer.LoadCounterDataAsync`（通常/時間制約付きの両方）で `PDH_FMT_DOUBLE | PDH_FMT_NOCAP100` を指定して取得するよう変更。
+
+### 検証（追加5）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 複数折れ線が同色になる問題
+
+### 問題
+- 複数カウンターを追加した際に、折れ線グラフが同じ色で描画されるケースがある。
+
+### 対応
+- 折れ線シリーズの色指定を `scatter.LineStyle.Color` から `scatter.LineColor` に変更。
+- 対象箇所:
+  - `AddLineChartSeries`
+  - `AddCounterToChartInternal`
+  - `DrawLineChart`
+
+### 検証（追加6）
+- 実行中プロセス停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 折れ線色の再描画時同色化対策
+
+### 問題
+- 複数カウンター読み込み後、再描画（スケール変更や読み込み後処理）で折れ線色が同色になるケースがある。
+
+### 対応
+- `_counterLineColors` を追加し、カウンターごとの色を永続管理。
+- `GetOrCreateCounterColor()` を導入し、折れ線色決定を共通化。
+- `AddLineChartSeries` / `AddCounterToChartInternal` / `DrawLineChart` で共通色解決を使用。
+- BLG再読み込み時は `_counterLineColors.Clear()` で色割り当てをリセット。
+
+### 検証（追加7）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: UIラベル文言整理
+
+### 対応
+- スケール設定の注釈ラベル（「Y軸固定範囲...」「※データは...」）を削除。
+- relog表示の文言を「relog.exe同等コマンド」から「relog.exe コマンド」に変更。
+
+### 検証（追加8）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 「選択されたカウンターを読み込み」ボタンが押せない問題
+
+### 問題
+- BLG読み込み後に時間範囲検出が失敗した場合、`ExecuteButton` が無効のままとなり押せない。
+
+### 対応
+- `UpdateTimeRangeUI()` の `_timeRangeDetected == false` 分岐で、BLG読み込み済みなら `ExecuteButton` を有効化。
+- `LoadBlgFileAsync()` で `DetectTimeRangeAsync()` が失敗した場合も `ExecuteButton` を有効化。
+- `ExecuteSelectedCounters_Click()` から `_timeRangeDetected` 必須条件を外し、時間範囲未検出時は全期間扱いで処理可能に変更。
+
+### 検証（追加9）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 時間範囲選択UIが表示されない問題
+
+### 問題
+- 時間範囲検出失敗時に `TimeRangeExpander` が非表示のままとなり、時間範囲選択UIが使えない。
+
+### 対応
+- `DetectTimeRangeAsync()` の失敗経路でも `ApplyFallbackTimeRange()` を呼び、フォールバック時間範囲を設定して `_timeRangeDetected=true` とする。
+- `ApplyFallbackTimeRange()` で `UpdateTimeRangeUI()` を実行し、UI表示を必ず更新。
+
+### 検証（追加10）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: `PDH_CSTATUS_BAD_COUNTERNAME` でBLGオープン失敗
+
+### 問題
+- 「選択されたカウンターを読み込み」実行時に `BLGファイルを開けませんでした: PDH_CSTATUS_BAD_COUNTERNAME (0xC0000BBD)` が発生するケースがある。
+
+### 対応
+- `BlgFileAnalyzer.OpenBlgFileAsync()` のフォールバックを強化。
+  - `PdhBindInputDataSource` 失敗時に、`PdhOpenQuery(filePath, ...)` を追加試行。
+  - 追加試行に失敗した場合のみ `PdhOpenLog` 経路へフォールバック。
+  - 失敗した `_query` ハンドルは都度クリーンアップしてから次経路を試行。
+
+### 検証（追加11）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 23264）停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: マシン名重複による `PDH_CSTATUS_BAD_COUNTERNAME` 対策
+
+### 問題
+- 一部環境でカウンターパスが `Machine\Object\Counter` 形式で渡される際、`EnsureMachineNameInPath()` がさらにマシン名を付与し、`Machine\Machine\Object\Counter` となって `PDH_CSTATUS_BAD_COUNTERNAME` が発生する。
+
+### 対応
+- `EnsureMachineNameInPath()` を以下の正規化仕様に変更:
+  - `\\Machine\...` 形式はそのまま利用。
+  - `Machine\Object\Counter` 形式は「既にマシン名付き」と判定し、`\\Machine\Object\Counter` に正規化。
+  - マシン名未付与パスのみBLGのマシン名を1回だけ付与。
+
+### 検証（追加12）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 8140）停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: relog コマンドの事前表示
+
+### 問題
+- 「選択されたカウンターを読み込み」を実行しないと、`relog.exe コマンド` が更新・表示されない操作経路がある。
+
+### 対応
+- チェックボックス変更時の `UpdateRelogCommandDisplay()` 呼び出しをリーフノード限定から全ノード変更後へ移動。
+- 「すべて選択/すべて解除」（`SetAllCheckBoxes`）実行後にも `UpdateRelogCommandDisplay()` を実行。
+- パターン適用（`ApplyCounterPatternAsync`）完了後にも `UpdateRelogCommandDisplay()` を実行。
+
+### 検証（追加13）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: グラフ右クリックのコンテキストメニュー表示不具合
+
+### 問題
+- グラフ領域を右クリックした際に、アプリ側で定義したコンテキストメニューが期待どおり表示されない。
+
+### 対応
+- `InitializeChart()` で `PerformanceChart.PreviewMouseRightButtonUp` を購読。
+- `PerformanceChart_PreviewMouseRightButtonUp` を追加し、`PerformanceChart.ContextMenu` を `MousePoint` 位置で明示表示。
+- 既存の ScottPlot メニュー無効化（`WpfPlotMenu.Clear()`）を維持したまま、右クリック時はアプリ独自メニューを確実に表示。
+
+### 検証（追加14）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 37800）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: グラフ領域カーソル移動時の意図しないズーム挙動
+
+### 問題
+- グラフ領域で右クリック操作時に、コンテキストメニュー操作と干渉してズーム動作が発生することがある。
+
+### 対応
+- `InitializeChart()` で `PerformanceChart.UserInputProcessor.RightClickDragZoom(false)` を設定し、右ドラッグズームを無効化。
+- 右クリックはアプリ独自コンテキストメニュー表示用途に限定。
+
+### 検証（追加15）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 67868）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: Y軸の上限/下限を手動変更可能にする
+
+### 要望
+- Y軸の上限・下限を任意の値に変更できるようにしたい。
+
+### 対応
+- グラフ操作パネルに Y軸範囲入力UIを追加（`下限` / `上限` / `適用` / `自動`）。
+- `ApplyYAxisRange_Click` を追加し、入力値を検証して手動Y軸モードを有効化。
+- `ResetYAxisRange_Click` を追加し、手動Y軸モードを解除して自動範囲へ復帰。
+- `EnsureYAxisFixedRange()` を拡張し、手動モード時は入力した上限/下限を優先、通常時は既存の自動範囲ロジックを適用。
+
+### 検証（追加16）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 45792）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: Y軸設定UIの配置変更（左側）
+
+### 要望
+- Y軸設定UIをグラフ表示の左側に配置したい。
+
+### 対応
+- `MainWindow.xaml` のグラフ表示ヘッダー（グラフタイプ/値モード行）へ Y軸設定UIを移動。
+- 既存のグラフ操作ボタン行（ズームリセット/コピー）から Y軸設定UIを削除。
+- 結果として、Y軸設定は「グラフ表示上部の左側」に常時表示される構成に変更。
+
+### 検証（追加17）
+- 実行中の `PerformanceMonitorAnalyzer.exe`（PID 66952）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。

@@ -30,6 +30,7 @@ public static class PdhApi
     public const uint PDH_FMT_DOUBLE = 0x00000200;
     public const uint PDH_FMT_LARGE = 0x00000400;
     public const uint PDH_FMT_LONG = 0x00000100;
+    public const uint PDH_FMT_NOCAP100 = 0x00008000;
 
     // PDH ログタイプ
     public const uint PDH_LOG_TYPE_BINARY = 0x00000008;
