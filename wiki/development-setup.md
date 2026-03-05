@@ -3,7 +3,7 @@
 ## 必要な環境
 
 ### 基本要件
-- **.NET 8.0 SDK** 以降
+- **.NET 10.0 SDK** 以降
 - **Visual Studio Code** または **Visual Studio 2022**
 - **Git**
 
@@ -45,13 +45,13 @@ cd PerformanceMonitorAnalyzer
 #### .NET SDK のインストール
 ```bash
 # Windows (winget)
-winget install Microsoft.DotNet.SDK.8
+winget install Microsoft.DotNet.SDK.10
 
 # Ubuntu/Debian
 wget https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
 sudo dpkg -i packages-microsoft-prod.deb
 sudo apt-get update
-sudo apt-get install -y dotnet-sdk-8.0
+sudo apt-get install -y dotnet-sdk-10.0
 
 # macOS (Homebrew)
 brew install dotnet
@@ -75,8 +75,8 @@ dotnet run
 ### WPF版のビルド（Windows環境）
 ```bash
 cd src/PerformanceMonitorAnalyzer
-dotnet build -p:BuildWindowsWpf=true -f net8.0-windows
-dotnet run -p:BuildWindowsWpf=true -f net8.0-windows
+dotnet build -p:BuildWindowsWpf=true -f net10.0-windows
+dotnet run -p:BuildWindowsWpf=true -f net10.0-windows
 ```
 
 ### テストの実行
@@ -235,7 +235,7 @@ dotnet run -c Release --project Benchmarks
 
 ## 参考資料
 
-- [.NET 8.0 Documentation](https://docs.microsoft.com/en-us/dotnet/)
+- [.NET 10.0 Documentation](https://docs.microsoft.com/en-us/dotnet/)
 - [WPF Documentation](https://docs.microsoft.com/en-us/dotnet/desktop/wpf/)
 - [LiveCharts Documentation](https://lvcharts.net/)
 - [Performance Monitor API](https://docs.microsoft.com/en-us/windows/win32/perfctrs/performance-counters-portal)

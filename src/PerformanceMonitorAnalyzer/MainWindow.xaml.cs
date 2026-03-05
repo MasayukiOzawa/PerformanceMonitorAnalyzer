@@ -11,6 +11,7 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
@@ -289,6 +290,15 @@ public enum ChartType
     StackedAreaChart  // 積み重ね面グラフ
 }
 
+/// <summary>
+/// カウンター値の表示モード
+/// </summary>
+public enum CounterValueMode
+{
+    RawValue,          // 生値
+    DeltaFromPrevious  // 1つ前との差分
+}
+
 public enum NodeType
 {
     Object,
@@ -386,18 +396,21 @@ public partial class MainWindow : Window
 
     private readonly Dictionary<string, ScottPlot.Plottables.FillY> _areaChartSeries = new();
     private ChartType _currentChartType = ChartType.LineChart;
+    private CounterValueMode _currentValueMode = CounterValueMode.RawValue;
     
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
     
     // サポートされるスケール値
     private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
+    private static readonly string[] ScaleValueItems = { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
     
     // 自動計算されたスケール（Y軸100に合わせるため）
     private readonly Dictionary<string, double> _autoCalculatedScales = new();
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
+    private bool _isInitializingBulkScaleComboBox = false;
     
     // パターン管理機能
     private CounterPatternManager? _patternManager;
@@ -405,11 +418,18 @@ public partial class MainWindow : Window
     // 凡例管理用のプロパティ
     private readonly ObservableCollection<LegendItem> _legendItems = new();
     private readonly Dictionary<string, bool> _seriesVisibility = new();
+    private bool _isBulkLegendVisibilityUpdate = false;
     
     // グラフリサイズハンドル関連
     private bool _isResizing = false;
     private Point _resizeStartPoint;
     private Size _resizeStartSize;
+
+    // カウンター選択エリアの表示制御
+    private bool _isCounterPanelVisible = true;
+    private GridLength _lastCounterPanelWidth = new(350);
+    private GridLength _lastScalePanelWidth = new(230);
+    private bool _isScalePanelCollapsed = false;
     
     
     // ログ機能
@@ -420,6 +440,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeChart();
+        InitializeBulkScaleComboBox();
+        InitializeCounterPanelControls();
         CounterTreeView.ItemsSource = _counterTreeNodes;
         
         // 凡例の初期化
@@ -447,7 +469,7 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Clear();
         
         PerformanceChart.Plot.XLabel("時間");
-        PerformanceChart.Plot.YLabel("値");
+        PerformanceChart.Plot.YLabel(GetCurrentYAxisLabel());
         
         // 時間軸の設定
         PerformanceChart.Plot.Axes.DateTimeTicksBottom();
@@ -473,6 +495,12 @@ public partial class MainWindow : Window
         
         // 凡例を無効化（独立した凡例コンポーネントを使用）
         PerformanceChart.Plot.Legend.IsVisible = false;
+
+        // ScottPlot既定メニューは Open in New Window でNREが発生するため無効化
+        // （右クリック時はXAMLで定義したアプリ独自メニューを使用）
+        var plotMenu = new WpfPlotMenu(PerformanceChart);
+        plotMenu.Clear();
+        PerformanceChart.Menu = plotMenu;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -500,16 +528,129 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 現在の値モードに応じたY軸ラベルを取得
+    /// </summary>
+    private string GetCurrentYAxisLabel()
+    {
+        return _currentValueMode == CounterValueMode.DeltaFromPrevious
+            ? "Delta (Prev)"
+            : "Value";
+    }
+
+    /// <summary>
+    /// 現在の値モードに応じた表示用データポイントを取得
+    /// </summary>
+    private List<PerformanceDataPoint> GetDisplayDataPoints(string counter)
+    {
+        if (!_counterData.TryGetValue(counter, out var rawData) || rawData.Count == 0)
+        {
+            return new List<PerformanceDataPoint>();
+        }
+
+        if (_currentValueMode == CounterValueMode.RawValue)
+        {
+            return rawData;
+        }
+
+        if (rawData.Count < 2)
+        {
+            return new List<PerformanceDataPoint>();
+        }
+
+        var unit = EstimateUnit(counter);
+        var deltaDataPoints = new List<PerformanceDataPoint>(rawData.Count - 1);
+
+        for (int i = 1; i < rawData.Count; i++)
+        {
+            var current = rawData[i];
+            var previous = rawData[i - 1];
+            var deltaValue = current.Value - previous.Value;
+
+            deltaDataPoints.Add(new PerformanceDataPoint
+            {
+                Counter = counter,
+                Value = deltaValue,
+                Timestamp = current.Timestamp,
+                FormattedValue = FormatValueWithUnit(deltaValue, unit),
+                Unit = unit
+            });
+        }
+
+        return deltaDataPoints;
+    }
+
+    /// <summary>
+    /// 現在の値モードに応じた最新値を取得
+    /// </summary>
+    private bool TryGetLatestDisplayValue(string counter, out double latestValue)
+    {
+        latestValue = 0;
+
+        if (!_counterData.TryGetValue(counter, out var rawData) || rawData.Count == 0)
+        {
+            return false;
+        }
+
+        if (_currentValueMode == CounterValueMode.RawValue)
+        {
+            latestValue = rawData[^1].Value;
+            return true;
+        }
+
+        if (rawData.Count < 2)
+        {
+            return false;
+        }
+
+        latestValue = rawData[^1].Value - rawData[^2].Value;
+        return true;
+    }
+
+    /// <summary>
+    /// 値モード変更時に全データタブを再生成
+    /// </summary>
+    private void RefreshAllDataTabsForCurrentMode()
+    {
+        var currentTabCounters = DataTabControl.Items
+            .Cast<TabItem>()
+            .Select(tab => tab.Tag as string)
+            .Where(counter => !string.IsNullOrEmpty(counter))
+            .Cast<string>()
+            .ToList();
+
+        if (!currentTabCounters.Any())
+        {
+            return;
+        }
+
+        var selectedCounter = (DataTabControl.SelectedItem as TabItem)?.Tag as string;
+
+        DataTabControl.Items.Clear();
+
+        foreach (var counter in currentTabCounters)
+        {
+            AddCounterTab(counter);
+        }
+
+        if (!string.IsNullOrEmpty(selectedCounter))
+        {
+            var selectedTab = DataTabControl.Items.Cast<TabItem>()
+                .FirstOrDefault(tab => string.Equals(tab.Tag as string, selectedCounter, StringComparison.Ordinal));
+            if (selectedTab != null)
+            {
+                DataTabControl.SelectedItem = selectedTab;
+            }
+        }
+    }
+
+    /// <summary>
     /// カウンターの自動スケールを計算してY軸100に収まるようにする
     /// </summary>
     private double CalculateAutoScale(string counter)
     {
         try
         {
-            if (!_counterData.ContainsKey(counter))
-                return 1.0;
-
-            var dataPoints = _counterData[counter];
+            var dataPoints = GetDisplayDataPoints(counter);
             if (!dataPoints.Any())
                 return 1.0;
 
@@ -533,6 +674,162 @@ public partial class MainWindow : Window
         {
             System.Diagnostics.Debug.WriteLine($"Auto scale calculation error for {counter}: {ex.Message}");
             return 1.0;
+        }
+    }
+
+    /// <summary>
+    /// 値モード変更時のイベントハンドラー
+    /// </summary>
+    private void ValueMode_Changed(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (sender is not RadioButton radioButton)
+            {
+                return;
+            }
+
+            var newValueMode = radioButton.Name switch
+            {
+                "DeltaValueModeRadio" => CounterValueMode.DeltaFromPrevious,
+                _ => CounterValueMode.RawValue
+            };
+
+            if (_currentValueMode == newValueMode)
+            {
+                return;
+            }
+
+            _currentValueMode = newValueMode;
+            _autoCalculatedScales.Clear();
+
+            RefreshChartWithCurrentType();
+            RefreshAllDataTabsForCurrentMode();
+
+            var modeDisplayName = _currentValueMode == CounterValueMode.DeltaFromPrevious ? "前回差分" : "生値";
+            AddOperationLog(LogLevel.Info, $"値モードを「{modeDisplayName}」に変更しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in ValueMode_Changed: {ex.Message}");
+            LogError($"値モード変更エラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// カウンター選択エリア制御の初期化
+    /// </summary>
+    private void InitializeCounterPanelControls()
+    {
+        _isCounterPanelVisible = CounterPanelGroupBox.Visibility == Visibility.Visible;
+
+        if (CounterPanelColumn.Width.Value > 0)
+        {
+            _lastCounterPanelWidth = CounterPanelColumn.Width;
+        }
+
+        CounterPanelSplitterColumn.Width = new GridLength(22);
+
+        UpdateCounterPanelControls();
+    }
+
+    /// <summary>
+    /// カウンター選択エリアの表示/非表示切替
+    /// </summary>
+    private void CounterPanelVisibilityButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_isCounterPanelVisible)
+            {
+                HideCounterPanel();
+                AddOperationLog(LogLevel.Info, "カウンター選択エリアを非表示にしました。");
+            }
+            else
+            {
+                ShowCounterPanel();
+                AddOperationLog(LogLevel.Info, "カウンター選択エリアを表示しました。");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CounterPanelVisibilityButton_Click: {ex.Message}");
+            LogError($"カウンター選択エリア表示切替エラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// カウンター選択エリアを非表示にする
+    /// </summary>
+    private void HideCounterPanel()
+    {
+        if (!_isCounterPanelVisible)
+        {
+            return;
+        }
+
+        if (CounterPanelColumn.Width.Value > 0)
+        {
+            _lastCounterPanelWidth = CounterPanelColumn.Width;
+        }
+
+        CounterPanelGroupBox.Visibility = Visibility.Collapsed;
+        CounterPanelColumn.MinWidth = 0;
+        CounterPanelColumn.Width = new GridLength(0);
+        CounterPanelSplitterColumn.Width = new GridLength(22);
+        _isCounterPanelVisible = false;
+
+        UpdateCounterPanelControls();
+    }
+
+    /// <summary>
+    /// カウンター選択エリアを表示する
+    /// </summary>
+    private void ShowCounterPanel()
+    {
+        if (_isCounterPanelVisible)
+        {
+            return;
+        }
+
+        CounterPanelGroupBox.Visibility = Visibility.Visible;
+        CounterPanelColumn.MinWidth = 220;
+        CounterPanelColumn.Width = _lastCounterPanelWidth.Value > 0 ? _lastCounterPanelWidth : new GridLength(350);
+        CounterPanelSplitterColumn.Width = new GridLength(22);
+        _isCounterPanelVisible = true;
+
+        UpdateCounterPanelControls();
+    }
+
+    /// <summary>
+    /// カウンター選択エリア制御UIの表示状態を更新する
+    /// </summary>
+    private void UpdateCounterPanelControls()
+    {
+        CounterPanelToggleButton.Content = _isCounterPanelVisible ? "◀" : "▶";
+        CounterPanelToggleButton.ToolTip = _isCounterPanelVisible
+            ? "クリックでカウンター選択エリアを非表示にします"
+            : "クリックでカウンター選択エリアを表示します";
+        CounterPanelGridSplitter.Visibility = _isCounterPanelVisible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// スケール設定エリアの表示/非表示切替
+    /// </summary>
+    private void ScalePanelToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _isScalePanelCollapsed = !_isScalePanelCollapsed;
+            UpdateScaleControlVisibility();
+            AddOperationLog(LogLevel.Info, _isScalePanelCollapsed
+                ? "スケール設定エリアを非表示にしました。"
+                : "スケール設定エリアを表示しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in ScalePanelToggleButton_Click: {ex.Message}");
+            LogError($"スケール設定エリア表示切替エラー: {ex}");
         }
     }
 
@@ -1582,12 +1879,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void AddLineChartSeries(string counter)
     {
-        if (!_counterData.ContainsKey(counter) || !_counterData[counter].Any())
+        var dataPoints = GetDisplayDataPoints(counter);
+        if (!dataPoints.Any())
         {
             return;
         }
-        
-        var dataPoints = _counterData[counter];
         
         // 自動スケールを計算してキャッシュ
         var autoScale = CalculateAutoScale(counter);
@@ -1618,6 +1914,7 @@ public partial class MainWindow : Window
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
         scatter.LineStyle.Color = scottPlotColor; // 色を設定
+        scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
@@ -1660,7 +1957,7 @@ public partial class MainWindow : Window
         }
         
         // データポイントを準備
-        var dataPoints = _counterData[counter];
+        var dataPoints = GetDisplayDataPoints(counter);
         if (!dataPoints.Any())
         {
             System.Diagnostics.Debug.WriteLine($"No data points for counter: {counter}");
@@ -1696,6 +1993,7 @@ public partial class MainWindow : Window
         scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
         scatter.LineStyle.Width = 2; // 線の太さを明示的に設定
         scatter.LineStyle.Color = scottPlotColor; // 色を設定
+        scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
         
         // シリーズを記録
         _chartSeries[counter] = scatter;
@@ -1819,11 +2117,11 @@ public partial class MainWindow : Window
             _areaChartSeries.Clear();
             
             // 凡例をクリア
-            ClearLegendItems();
+            ClearLegendItems(false);
             
             // グラフの基本設定を再初期化
             PerformanceChart.Plot.XLabel("時間");
-            PerformanceChart.Plot.YLabel("値");
+            PerformanceChart.Plot.YLabel(GetCurrentYAxisLabel());
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
             
             // 凡例を無効化（独立した凡例コンポーネントを使用）
@@ -1881,16 +2179,23 @@ public partial class MainWindow : Window
         
         foreach (var counter in selectedCounters)
         {
-            if (!_counterData.ContainsKey(counter) || !_counterData[counter].Any())
+            var dataPoints = GetDisplayDataPoints(counter);
+            if (!dataPoints.Any())
             {
                 continue;
             }
             
-            var dataPoints = _counterData[counter];
-            var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+            if (!_autoCalculatedScales.ContainsKey(counter))
+            {
+                var autoScale = CalculateAutoScale(counter);
+                _autoCalculatedScales[counter] = autoScale;
+            }
+
+            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
+            var finalScale = _autoCalculatedScales[counter] * manualScale;
             
             var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-            var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+            var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
             
             // 色を取得
             var colorIndex = _chartSeries.Count;
@@ -1902,6 +2207,7 @@ public partial class MainWindow : Window
             scatter.LineWidth = 2;
             scatter.MarkerSize = 0;
             scatter.LineStyle.Color = scottPlotColor; // 色を設定
+            scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
             
             _chartSeries[counter] = scatter;
             
@@ -1926,18 +2232,48 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        // 凡例は選択中カウンター全体を維持（表示/非表示の再切替を可能にする）
+        var counterColors = new Dictionary<string, ScottPlot.Color>(StringComparer.Ordinal);
+        for (int i = 0; i < selectedCounters.Count; i++)
+        {
+            var counter = selectedCounters[i];
+            var scottPlotColor = GetNextColor(i);
+            counterColors[counter] = scottPlotColor;
+            AddLegendItem(counter, GetCounterDisplayName(counter), ConvertToMediaColor(scottPlotColor));
+        }
+
+        // 積み上げ計算は「表示中（チェック有効）」の項目のみ対象
+        var visibleCounters = selectedCounters
+            .Where(counter => _seriesVisibility.GetValueOrDefault(counter, true))
+            .ToList();
+
+        if (!visibleCounters.Any())
+        {
+            UpdateLegendCurrentValues();
+            return;
+        }
         
         // 全カウンターの共通のタイムスタンプを取得
+        var displayedCounterData = new Dictionary<string, List<PerformanceDataPoint>>();
         var allTimestamps = new SortedSet<DateTime>();
-        foreach (var counter in selectedCounters)
+        foreach (var counter in visibleCounters)
         {
-            if (_counterData.ContainsKey(counter))
+            var dataPoints = GetDisplayDataPoints(counter);
+            if (dataPoints.Any())
             {
-                foreach (var dp in _counterData[counter])
+                displayedCounterData[counter] = dataPoints;
+                foreach (var dp in dataPoints)
                 {
                     allTimestamps.Add(dp.Timestamp);
                 }
             }
+        }
+
+        if (!allTimestamps.Any())
+        {
+            UpdateLegendCurrentValues();
+            return;
         }
         
         var timeArray = allTimestamps.ToArray();
@@ -1946,14 +2282,12 @@ public partial class MainWindow : Window
         // 積み重ねのベースライン（前回の累積値）
         var baseline = new double[timeArray.Length];
         
-        foreach (var counter in selectedCounters)
+        foreach (var counter in visibleCounters)
         {
-            if (!_counterData.ContainsKey(counter) || !_counterData[counter].Any())
+            if (!displayedCounterData.TryGetValue(counter, out var dataPoints))
             {
                 continue;
             }
-            
-            var dataPoints = _counterData[counter];
             
             // 自動スケールを計算してキャッシュ（まだない場合）
             if (!_autoCalculatedScales.ContainsKey(counter))
@@ -1998,14 +2332,11 @@ public partial class MainWindow : Window
             // FillYプロットを作成（ベースラインから現在の値まで）
             var fillY = PerformanceChart.Plot.Add.FillY(xValues, baseline, topValues);
             fillY.LegendText = GetCounterDisplayName(counter);
-            var scottPlotColor = GetNextColor(_areaChartSeries.Count);
-            var mediaColor = ConvertToMediaColor(scottPlotColor);
+            var scottPlotColor = counterColors[counter];
             fillY.FillStyle.Color = scottPlotColor;
+            fillY.IsVisible = true;
             
             _areaChartSeries[counter] = fillY;
-            
-            // 凡例アイテムを追加
-            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
             
             // 次のカウンター用にベースラインを更新
             baseline = topValues;
@@ -2135,7 +2466,8 @@ public partial class MainWindow : Window
             // 各カウンターの統計情報を計算
             foreach (var counterName in currentCounters.OrderBy(c => c))
             {
-                if (_counterData.TryGetValue(counterName, out var dataPoints) && dataPoints.Any())
+                var dataPoints = GetDisplayDataPoints(counterName);
+                if (dataPoints.Any())
                 {
                     // PerformanceDataPointから(DateTime, double)タプルに変換
                     var tupleDataPoints = dataPoints.Select(dp => (dp.Timestamp, dp.Value)).ToList();
@@ -2221,6 +2553,8 @@ public partial class MainWindow : Window
                 return;
             }
 
+            var displayDataPoints = GetDisplayDataPoints(counter);
+
             // 既存のタブがあるかチェック
             var existingTab = DataTabControl.Items.Cast<TabItem>()
                 .FirstOrDefault(tab => (string)tab.Tag == counter);
@@ -2249,13 +2583,13 @@ public partial class MainWindow : Window
             {
                 AutoGenerateColumns = false,
                 IsReadOnly = true,
-                ItemsSource = _counterData[counter],
+                ItemsSource = displayDataPoints,
                 AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
                 GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
                 HeadersVisibility = DataGridHeadersVisibility.Column
             };
 
-            System.Diagnostics.Debug.WriteLine($"Data points count: {_counterData[counter].Count}");
+            System.Diagnostics.Debug.WriteLine($"Data points count: {displayDataPoints.Count}");
 
             // 列を定義
             dataGrid.Columns.Add(new DataGridTextColumn
@@ -2303,7 +2637,7 @@ public partial class MainWindow : Window
             mainGrid.Children.Add(dataGrid);
 
             // 統計情報パネルを作成
-            var statisticsPanel = CreateStatisticsPanel(counter, _counterData[counter]);
+            var statisticsPanel = CreateStatisticsPanel(counter, displayDataPoints);
             Grid.SetRow(statisticsPanel, 1);
             mainGrid.Children.Add(statisticsPanel);
 
@@ -2350,6 +2684,10 @@ public partial class MainWindow : Window
             Orientation = System.Windows.Controls.Orientation.Horizontal
         };
 
+        var periodText = statistics.DataPointCount > 0
+            ? $"{statistics.FirstTimestamp:MM/dd HH:mm} - {statistics.LastTimestamp:MM/dd HH:mm}"
+            : "-";
+
         // 統計情報を表示するテキストブロックを作成
         var statisticsItems = new[]
         {
@@ -2358,7 +2696,7 @@ public partial class MainWindow : Window
             $"最大: {statistics.FormattedMaximum}",
             $"最小: {statistics.FormattedMinimum}",
             $"標準偏差: {statistics.FormattedStandardDeviation}",
-            $"期間: {statistics.FirstTimestamp:MM/dd HH:mm} - {statistics.LastTimestamp:MM/dd HH:mm}"
+            $"期間: {periodText}"
         };
 
         foreach (var item in statisticsItems)
@@ -2717,7 +3055,16 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (!_counterData.Any())
+            var exportCounterData = _counterData.Keys
+                .Select(counter => new
+                {
+                    Counter = counter,
+                    DataPoints = GetDisplayDataPoints(counter)
+                })
+                .Where(x => x.DataPoints.Any())
+                .ToList();
+
+            if (!exportCounterData.Any())
             {
                 AddOperationLog(LogLevel.Warning, "エクスポートするデータがありません。BLGファイルを読み込んでカウンターを選択してください。");
                 MessageBox.Show("エクスポートするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。", 
@@ -2742,11 +3089,11 @@ public partial class MainWindow : Window
                 // 各カウンターのデータを統合
                 var allData = new List<(DateTime timestamp, string counter, PerformanceDataPoint data)>();
                 
-                foreach (var counterPair in _counterData)
+                foreach (var counterPair in exportCounterData)
                 {
-                    foreach (var dataPoint in counterPair.Value)
+                    foreach (var dataPoint in counterPair.DataPoints)
                     {
-                        allData.Add((dataPoint.Timestamp, counterPair.Key, dataPoint));
+                        allData.Add((dataPoint.Timestamp, counterPair.Counter, dataPoint));
                     }
                 }
                 
@@ -2765,7 +3112,7 @@ public partial class MainWindow : Window
                 
                 AddOperationLog(LogLevel.Success, $"全データがCSVファイルに保存されました。\n" +
                               $"ファイル: {saveFileDialog.FileName}\n" +
-                              $"カウンター数: {_counterData.Count}個\n" +
+                              $"カウンター数: {exportCounterData.Count}個\n" +
                               $"データポイント数: {allData.Count}個");
             }
         }
@@ -3388,6 +3735,116 @@ public partial class MainWindow : Window
     #region スケール変更機能
 
     /// <summary>
+    /// 一括スケール選択コンボボックスを初期化
+    /// </summary>
+    private void InitializeBulkScaleComboBox()
+    {
+        if (BulkScaleComboBox == null)
+        {
+            return;
+        }
+
+        _isInitializingBulkScaleComboBox = true;
+        BulkScaleComboBox.Items.Clear();
+
+        foreach (var scaleValue in ScaleValueItems)
+        {
+            BulkScaleComboBox.Items.Add(new ComboBoxItem
+            {
+                Content = scaleValue,
+                Tag = scaleValue
+            });
+        }
+
+        var defaultItem = BulkScaleComboBox.Items
+            .OfType<ComboBoxItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "1.0", StringComparison.Ordinal));
+        if (defaultItem != null)
+        {
+            BulkScaleComboBox.SelectedItem = defaultItem;
+        }
+
+        _isInitializingBulkScaleComboBox = false;
+    }
+
+    /// <summary>
+    /// 一括スケール選択変更時に即時適用
+    /// </summary>
+    private void BulkScaleComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isInitializingBulkScaleComboBox || !IsLoaded)
+        {
+            return;
+        }
+
+        if (!GetCurrentChartCounters().Any())
+        {
+            return;
+        }
+
+        ApplyScaleToAllCounters_Click(sender, new RoutedEventArgs());
+    }
+
+    /// <summary>
+    /// 現在のチャートタイプで表示中のカウンター一覧を取得
+    /// </summary>
+    private List<string> GetCurrentChartCounters()
+    {
+        return _currentChartType == ChartType.LineChart
+            ? _chartSeries.Keys.OrderBy(c => c).ToList()
+            : _areaChartSeries.Keys.OrderBy(c => c).ToList();
+    }
+
+    /// <summary>
+    /// カウンター別スケール設定コントロールを作成
+    /// </summary>
+    private static bool TrySelectScaleComboBoxItem(ComboBox scaleComboBox, double targetScale)
+    {
+        foreach (ComboBoxItem item in scaleComboBox.Items)
+        {
+            if (item.Tag?.ToString() is string tagValue &&
+                double.TryParse(tagValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double itemScale) &&
+                Math.Abs(itemScale - targetScale) < 1e-12)
+            {
+                scaleComboBox.SelectedItem = item;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 表示中のカウンタースケールプルダウンを指定スケールに同期
+    /// </summary>
+    private void SyncVisibleCounterScaleComboBoxes(double targetScale)
+    {
+        _isUpdatingScaleControls = true;
+        try
+        {
+            foreach (var border in CounterScaleStackPanel.Children.OfType<Border>())
+            {
+                if (border.Child is not Grid grid)
+                {
+                    continue;
+                }
+
+                var comboBox = grid.Children.OfType<ComboBox>().FirstOrDefault();
+                if (comboBox == null)
+                {
+                    continue;
+                }
+
+                _ = TrySelectScaleComboBoxItem(comboBox, targetScale);
+            }
+        }
+        finally
+        {
+            _isUpdatingScaleControls = false;
+        }
+    }
+
+    /// <summary>
     /// カウンター別スケール設定コントロールを作成
     /// </summary>
     private Border CreateCounterScaleControl(string counter)
@@ -3427,8 +3884,7 @@ public partial class MainWindow : Window
         };
 
         // スケール値を追加
-        var scaleItems = new[] { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
-        foreach (var scaleValue in scaleItems)
+        foreach (var scaleValue in ScaleValueItems)
         {
             scaleComboBox.Items.Add(new ComboBoxItem 
             { 
@@ -3439,40 +3895,30 @@ public partial class MainWindow : Window
 
         // 現在のスケール値を選択
         var currentScale = _counterScales.GetValueOrDefault(counter, 1.0);
-        foreach (ComboBoxItem item in scaleComboBox.Items)
+        var selected = TrySelectScaleComboBoxItem(scaleComboBox, currentScale);
+        if (!selected)
         {
-            if (item.Tag?.ToString() is string tagValue && 
-                double.TryParse(tagValue, out double itemScale) && 
-                Math.Abs(itemScale - currentScale) < 0.0001)
-            {
-                scaleComboBox.SelectedItem = item;
-                break;
-            }
+            selected = TrySelectScaleComboBoxItem(scaleComboBox, 1.0);
         }
-        
-        // デフォルトで1.0を選択（見つからない場合）
-        if (scaleComboBox.SelectedItem == null && scaleComboBox.Items.Count > 0)
+        if (!selected && scaleComboBox.Items.Count > 0)
         {
-            // "1.0" を探して選択
-            foreach (ComboBoxItem item in scaleComboBox.Items)
-            {
-                if (item.Tag?.ToString() == "1.0")
-                {
-                    scaleComboBox.SelectedItem = item;
-                    break;
-                }
-            }
+            scaleComboBox.SelectedIndex = 0;
         }
 
         // イベントハンドラー追加
         scaleComboBox.SelectionChanged += (sender, e) =>
         {
+            if (_isUpdatingScaleControls)
+            {
+                return;
+            }
+
             if (sender is ComboBox comboBox && 
                 comboBox.Tag is string counterName &&
                 comboBox.SelectedItem is ComboBoxItem selectedItem &&
                 selectedItem.Tag is string scaleString)
             {
-                if (double.TryParse(scaleString, out double newScale))
+                if (double.TryParse(scaleString, NumberStyles.Float, CultureInfo.InvariantCulture, out double newScale))
                 {
                     var oldScale = _counterScales.GetValueOrDefault(counterName, 1.0);
                     _counterScales[counterName] = newScale;
@@ -3507,24 +3953,114 @@ public partial class MainWindow : Window
         }
         
         bool hasChartData = _chartSeries.Any() || _areaChartSeries.Any();
-        ScaleControlGroupBox.Visibility = hasChartData ? Visibility.Visible : Visibility.Collapsed;
-        
-        if (hasChartData)
+        if (!hasChartData)
         {
-            // 既存のコントロールをクリア
-            CounterScaleStackPanel.Children.Clear();
-            
-            // 現在のチャートタイプに応じてカウンターを取得
-            var currentCounters = _currentChartType == ChartType.LineChart 
-                ? (IEnumerable<string>)_chartSeries.Keys 
-                : (IEnumerable<string>)_areaChartSeries.Keys;
-            
-            // 各カウンターのスケール設定コントロールを追加
-            foreach (var counter in currentCounters.OrderBy(c => c))
+            ScaleControlGroupBox.Visibility = Visibility.Collapsed;
+            ScalePanelDividerHost.Visibility = Visibility.Collapsed;
+
+            if (ScalePanelColumn.Width.Value > 0)
             {
-                var control = CreateCounterScaleControl(counter);
-                CounterScaleStackPanel.Children.Add(control);
+                _lastScalePanelWidth = ScalePanelColumn.Width;
             }
+
+            ScalePanelColumn.MinWidth = 0;
+            ScalePanelColumn.Width = new GridLength(0);
+            ScalePanelSplitterColumn.Width = new GridLength(0);
+            return;
+        }
+
+        ScalePanelDividerHost.Visibility = Visibility.Visible;
+        ScalePanelToggleButton.Content = _isScalePanelCollapsed ? "◀" : "▶";
+        ScalePanelToggleButton.ToolTip = _isScalePanelCollapsed
+            ? "クリックでスケール設定エリアを表示します"
+            : "クリックでスケール設定エリアを非表示にします";
+        ScalePanelGridSplitter.Visibility = _isScalePanelCollapsed ? Visibility.Collapsed : Visibility.Visible;
+
+        if (_isScalePanelCollapsed)
+        {
+            if (ScalePanelColumn.Width.Value > 0)
+            {
+                _lastScalePanelWidth = ScalePanelColumn.Width;
+            }
+
+            ScaleControlGroupBox.Visibility = Visibility.Collapsed;
+            ScalePanelColumn.MinWidth = 0;
+            ScalePanelColumn.Width = new GridLength(0);
+            ScalePanelSplitterColumn.Width = new GridLength(22);
+            return;
+        }
+
+        ScaleControlGroupBox.Visibility = Visibility.Visible;
+        ScalePanelColumn.MinWidth = 210;
+        ScalePanelSplitterColumn.Width = new GridLength(22);
+
+        if (ScalePanelColumn.Width.Value <= 0)
+        {
+            ScalePanelColumn.Width = _lastScalePanelWidth.Value > 0 ? _lastScalePanelWidth : new GridLength(230);
+        }
+
+        // 既存のコントロールをクリア
+        CounterScaleStackPanel.Children.Clear();
+        
+        // 現在のチャートタイプに応じてカウンターを取得
+        var currentCounters = GetCurrentChartCounters();
+        
+        // 各カウンターのスケール設定コントロールを追加
+        foreach (var counter in currentCounters)
+        {
+            var control = CreateCounterScaleControl(counter);
+            CounterScaleStackPanel.Children.Add(control);
+        }
+    }
+
+    /// <summary>
+    /// 現在表示中の全カウンターに同一スケールを一括適用
+    /// </summary>
+    private void ApplyScaleToAllCounters_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (BulkScaleComboBox.SelectedItem is not ComboBoxItem selectedItem ||
+                selectedItem.Tag is not string scaleString ||
+                !double.TryParse(scaleString, NumberStyles.Float, CultureInfo.InvariantCulture, out double newScale))
+            {
+                AddOperationLog(LogLevel.Warning, "一括適用するスケール値を選択してください。");
+                return;
+            }
+
+            var currentCounters = GetCurrentChartCounters();
+            if (!currentCounters.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "一括適用の対象カウンターがありません。");
+                return;
+            }
+
+            foreach (var counter in currentCounters)
+            {
+                _counterScales[counter] = newScale;
+            }
+
+            if (_currentChartType == ChartType.LineChart)
+            {
+                foreach (var counter in currentCounters)
+                {
+                    RefreshCounterInChart(counter);
+                }
+            }
+            else
+            {
+                RefreshChartWithCurrentType();
+            }
+
+            UpdateScaleControlVisibility();
+            SyncVisibleCounterScaleComboBoxes(newScale);
+
+            AddOperationLog(LogLevel.Success, $"全{currentCounters.Count}カウンターにスケール {scaleString} を適用しました。");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"一括スケール適用に失敗しました: {ex.Message}");
+            LogError($"Bulk scale apply failed: {ex}");
         }
     }
 
@@ -4440,11 +4976,20 @@ public partial class MainWindow : Window
     /// </summary>
     private void ShowAllSeries_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var item in _legendItems)
+        _isBulkLegendVisibilityUpdate = true;
+        try
         {
-            item.IsVisible = true;
-            _seriesVisibility[item.CounterPath] = true;
+            foreach (var item in _legendItems)
+            {
+                item.IsVisible = true;
+                _seriesVisibility[item.CounterPath] = true;
+            }
         }
+        finally
+        {
+            _isBulkLegendVisibilityUpdate = false;
+        }
+
         UpdateChartSeriesVisibility();
     }
     
@@ -4453,11 +4998,20 @@ public partial class MainWindow : Window
     /// </summary>
     private void HideAllSeries_Click(object sender, RoutedEventArgs e)
     {
-        foreach (var item in _legendItems)
+        _isBulkLegendVisibilityUpdate = true;
+        try
         {
-            item.IsVisible = false;
-            _seriesVisibility[item.CounterPath] = false;
+            foreach (var item in _legendItems)
+            {
+                item.IsVisible = false;
+                _seriesVisibility[item.CounterPath] = false;
+            }
         }
+        finally
+        {
+            _isBulkLegendVisibilityUpdate = false;
+        }
+
         UpdateChartSeriesVisibility();
     }
     
@@ -4466,6 +5020,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void LegendItem_Checked(object sender, RoutedEventArgs e)
     {
+        if (_isBulkLegendVisibilityUpdate)
+        {
+            return;
+        }
+
         if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
         {
             _seriesVisibility[counterPath] = true;
@@ -4478,6 +5037,11 @@ public partial class MainWindow : Window
     /// </summary>
     private void LegendItem_Unchecked(object sender, RoutedEventArgs e)
     {
+        if (_isBulkLegendVisibilityUpdate)
+        {
+            return;
+        }
+
         if (sender is CheckBox checkBox && checkBox.Tag is string counterPath)
         {
             _seriesVisibility[counterPath] = false;
@@ -4492,6 +5056,12 @@ public partial class MainWindow : Window
     {
         try
         {
+            if (_currentChartType == ChartType.StackedAreaChart)
+            {
+                RefreshChartWithCurrentType();
+                return;
+            }
+
             // 折れ線グラフの場合
             foreach (var kvp in _chartSeries)
             {
@@ -4561,10 +5131,13 @@ public partial class MainWindow : Window
     /// <summary>
     /// すべての凡例アイテムをクリア
     /// </summary>
-    private void ClearLegendItems()
+    private void ClearLegendItems(bool clearVisibility = true)
     {
         _legendItems.Clear();
-        _seriesVisibility.Clear();
+        if (clearVisibility)
+        {
+            _seriesVisibility.Clear();
+        }
     }
     
     /// <summary>
@@ -4576,12 +5149,8 @@ public partial class MainWindow : Window
         {
             foreach (var item in _legendItems)
             {
-                if (_counterData.TryGetValue(item.CounterPath, out var dataPoints) && dataPoints.Count > 0)
+                if (TryGetLatestDisplayValue(item.CounterPath, out var latestValue))
                 {
-                    var latestValue = dataPoints.Last().Value;
-                    // 凡例では元の値を表示（スケールは適用しない）
-                    // スケールはグラフの表示位置のみに影響する
-                    
                     // 値をフォーマット
                     item.CurrentValue = FormatCounterValue(latestValue);
                 }

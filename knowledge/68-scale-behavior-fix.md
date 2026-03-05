@@ -145,3 +145,33 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 ## まとめ
 
 この修正により、スケール機能は純粋に「グラフ表示位置の調整」機能となり、実際のデータ値は常に保持されるようになりました。これにより、ユーザーは視覚的な比較と正確なデータ分析の両方を同時に行うことができるようになります。
+
+---
+
+## 追補: 一括スケールと下部プルダウンの同期改善
+
+### 追加で発生した問題
+- 一括スケール適用後、下部の各カウンタースケールプルダウンの選択表示が更新されないケースがある。
+
+### 対応内容
+- スケール項目選択ロジックを `TrySelectScaleComboBoxItem()` として共通化。
+- 一括スケール適用後に `SyncVisibleCounterScaleComboBoxes()` で表示中の各プルダウンを明示同期。
+- 同期時は `_isUpdatingScaleControls` を使って `SelectionChanged` の再入を抑止し、不要な再描画ループを回避。
+
+### 検証
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+### 追加改善（操作性）
+- 一括スケールのプルダウン変更時にも即時適用されるよう `BulkScaleComboBox_SelectionChanged` を追加。
+- 従来の「全カウンターに適用」ボタン操作も継続して利用可能。
+
+### 追加改善（積み重ね面グラフの可視項目再スタック）
+- 問題: 積み重ね面グラフで凡例チェックをOFFにしても、面の表示が消えるだけで積み上げ計算自体は再構成されず、下段だけが欠けた表示になる。
+- 対応:
+  - 積み重ね計算対象を `_seriesVisibility == true` のカウンターに限定。
+  - `UpdateChartSeriesVisibility()` で積み重ね面グラフ時は `RefreshChartWithCurrentType()` を呼び、可視状態変更のたびに再描画。
+  - 凡例は選択中カウンター全体を維持し、再表示操作を継続可能にした。
+  - 「すべて表示/非表示」時の再入を防ぐため `_isBulkLegendVisibilityUpdate` フラグでイベント連鎖を抑止。
+
+### 検証（追加）
+- `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。

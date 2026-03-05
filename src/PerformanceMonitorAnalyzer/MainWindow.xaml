@@ -56,13 +56,15 @@
         <!-- 上部: カウンター選択とグラフ表示 -->
         <Grid Grid.Row="2" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="350"/>
+                <ColumnDefinition x:Name="CounterPanelColumn" Width="350" MinWidth="220"/>
+                <ColumnDefinition x:Name="CounterPanelSplitterColumn" Width="22"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="200"/>
+                <ColumnDefinition x:Name="ScalePanelSplitterColumn" Width="22"/>
+                <ColumnDefinition x:Name="ScalePanelColumn" Width="230" MinWidth="210"/>
             </Grid.ColumnDefinitions>
 
             <!-- 左側: カウンター一覧 -->
-            <GroupBox Grid.Column="0" Header="パフォーマンスカウンター" Margin="0,0,10,0">
+            <GroupBox Grid.Column="0" x:Name="CounterPanelGroupBox" Header="パフォーマンスカウンター" Margin="0,0,5,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -238,14 +240,53 @@
                 </Grid>
             </GroupBox>
 
+            <!-- カウンター選択エリアとグラフ領域の幅調整 -->
+            <Grid Grid.Column="1" x:Name="CounterPanelDividerHost">
+                <Border Background="#F8F8F8"
+                        BorderBrush="#CCCCCC"
+                        BorderThickness="1,0,1,0"/>
+                <GridSplitter x:Name="CounterPanelGridSplitter"
+                              Width="5"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch"
+                              Background="#E0E0E0"
+                              Cursor="SizeWE"
+                              ShowsPreview="False"
+                              ToolTip="ドラッグしてカウンター選択エリアの幅を調整">
+                    <GridSplitter.Style>
+                        <Style TargetType="GridSplitter">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#D0D0D0"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </GridSplitter.Style>
+                </GridSplitter>
+                <Button x:Name="CounterPanelToggleButton"
+                        Width="16"
+                        Height="34"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Click="CounterPanelVisibilityButton_Click"
+                        ToolTip="クリックでカウンター選択エリアの表示/非表示を切り替えます"
+                        Padding="0"
+                        FontSize="11"
+                        Content="◀"
+                        Background="White"
+                        BorderBrush="#BDBDBD"
+                        BorderThickness="1"/>
+            </Grid>
+
             <!-- 中央: グラフ表示 -->
-            <GroupBox Grid.Column="1" Header="グラフ表示" Margin="0,0,10,0">
+            <GroupBox Grid.Column="2" Header="グラフ表示" Margin="5,0,10,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="5"/>
+                        <RowDefinition x:Name="StatisticsAreaRowDefinition" Height="170" MinHeight="80" MaxHeight="450"/>
                     </Grid.RowDefinitions>
                     
                     <!-- グラフタイプ選択と凡例制御 -->
@@ -257,11 +298,11 @@
                             </Grid.ColumnDefinitions>
                             
                             <!-- グラフタイプ選択 -->
-                            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                <TextBlock Text="📊 グラフタイプ:" 
-                                         VerticalAlignment="Center" 
-                                         FontWeight="SemiBold" 
-                                         Margin="0,0,15,0"/>
+                             <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                 <TextBlock Text="📊 グラフタイプ:" 
+                                          VerticalAlignment="Center" 
+                                          FontWeight="SemiBold" 
+                                          Margin="0,0,15,0"/>
                                 <RadioButton x:Name="LineChartRadio" 
                                            Content="折れ線グラフ" 
                                            IsChecked="True" 
@@ -269,14 +310,31 @@
                                            Checked="ChartType_Changed"
                                            Margin="0,0,20,0"
                                            VerticalAlignment="Center"/>
-                                <RadioButton x:Name="StackedAreaChartRadio" 
-                                           Content="積み重ね面グラフ" 
-                                           GroupName="ChartType"
-                                           Checked="ChartType_Changed"
+                                 <RadioButton x:Name="StackedAreaChartRadio" 
+                                            Content="積み重ね面グラフ" 
+                                            GroupName="ChartType"
+                                            Checked="ChartType_Changed"
+                                            VerticalAlignment="Center"/>
+                             </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="20,0,0,0">
+                                <TextBlock Text="📉 値モード:" 
+                                         VerticalAlignment="Center" 
+                                         FontWeight="SemiBold" 
+                                         Margin="0,0,15,0"/>
+                                <RadioButton x:Name="RawValueModeRadio" 
+                                           Content="生値" 
+                                           IsChecked="True"
+                                           GroupName="ValueMode"
+                                           Checked="ValueMode_Changed"
+                                           Margin="0,0,20,0"
+                                           VerticalAlignment="Center"/>
+                                <RadioButton x:Name="DeltaValueModeRadio" 
+                                           Content="前回差分" 
+                                           GroupName="ValueMode"
+                                           Checked="ValueMode_Changed"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
-                            
-
                         </Grid>
                     </Border>
                     
@@ -470,7 +528,7 @@
                     </StackPanel>
                     
                     <!-- グラフ操作ボタン -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5" 
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5,5,5,0" 
                                x:Name="GraphControlPanel" Visibility="Collapsed">
                         <Button x:Name="ResetZoomButton" 
                                Content="🔄 ズームをリセット" 
@@ -491,9 +549,33 @@
                                Margin="5"
                                ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
                     </StackPanel>
-                    
+
+                    <!-- 統計情報エリアの高さ調整 -->
+                    <GridSplitter Grid.Row="3"
+                                  x:Name="StatisticsGridSplitter"
+                                  Height="5"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
+                                  Background="#E0E0E0"
+                                  BorderBrush="#CCCCCC"
+                                  BorderThickness="0,1,0,1"
+                                  Cursor="SizeNS"
+                                  ShowsPreview="False"
+                                  Visibility="Collapsed"
+                                  ToolTip="ドラッグして統計情報エリアの高さを調整">
+                        <GridSplitter.Style>
+                            <Style TargetType="GridSplitter">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#D0D0D0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </GridSplitter.Style>
+                    </GridSplitter>
+                     
                     <!-- 統計情報表示エリア -->
-                    <Border Grid.Row="3" x:Name="StatisticsBorder" 
+                    <Border Grid.Row="4" x:Name="StatisticsBorder" 
                            Background="#F8F8F8" 
                            BorderBrush="#E0E0E0" 
                            BorderThickness="0,1,0,0" 
@@ -516,8 +598,7 @@
                             <!-- 統計情報テーブル -->
                             <ScrollViewer Grid.Row="1" 
                                         VerticalScrollBarVisibility="Auto" 
-                                        HorizontalScrollBarVisibility="Auto"
-                                        MaxHeight="150">
+                                        HorizontalScrollBarVisibility="Auto">
                                 <DataGrid x:Name="StatisticsDataGrid"
                                         AutoGenerateColumns="False"
                                         IsReadOnly="True"
@@ -590,10 +671,49 @@
                 </Grid>
             </GroupBox>
 
+            <!-- グラフ領域とスケール設定領域の幅調整 -->
+            <Grid Grid.Column="3" x:Name="ScalePanelDividerHost" Visibility="Collapsed">
+                <Border Background="#F8F8F8"
+                        BorderBrush="#CCCCCC"
+                        BorderThickness="1,0,1,0"/>
+                <GridSplitter x:Name="ScalePanelGridSplitter"
+                              Width="5"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch"
+                              Background="#E0E0E0"
+                              Cursor="SizeWE"
+                              ShowsPreview="False"
+                              ToolTip="ドラッグしてスケール設定エリアの幅を調整">
+                    <GridSplitter.Style>
+                        <Style TargetType="GridSplitter">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#D0D0D0"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </GridSplitter.Style>
+                </GridSplitter>
+                <Button x:Name="ScalePanelToggleButton"
+                        Width="16"
+                        Height="34"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Click="ScalePanelToggleButton_Click"
+                        ToolTip="クリックでスケール設定エリアの表示/非表示を切り替えます"
+                        Padding="0"
+                        FontSize="11"
+                        Content="▶"
+                        Background="White"
+                        BorderBrush="#BDBDBD"
+                        BorderThickness="1"/>
+            </Grid>
+
             <!-- 右側: スケール設定 -->
-            <GroupBox Grid.Column="2" Header="スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed">
+            <GroupBox Grid.Column="4" Header="スケール設定" x:Name="ScaleControlGroupBox" Visibility="Collapsed" Margin="5,0,0,0">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -606,9 +726,21 @@
                     <TextBlock Grid.Row="1" Text="※データは自動的にY軸100に収まるようにスケール調整され、実際のデータ値は変更されません"
                              FontSize="10" Foreground="DarkOrange" FontStyle="Italic"
                              Margin="5,0,5,10" TextWrapping="Wrap"/>
+
+                    <!-- 一括スケール設定 -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="5,0,5,8">
+                        <TextBlock Text="一括スケール:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox x:Name="BulkScaleComboBox" Width="130" Margin="0,0,8,0"
+                                 SelectionChanged="BulkScaleComboBox_SelectionChanged"
+                                 ToolTip="全カウンターに適用するスケール値を選択"/>
+                        <Button Content="全カウンターに適用"
+                               Click="ApplyScaleToAllCounters_Click"
+                               Padding="10,3"
+                               ToolTip="現在表示中の全カウンターへ一括でスケール値を適用します"/>
+                    </StackPanel>
                     
                     <!-- カウンタースケール設定リスト -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="CounterScaleStackPanel" Margin="5">
                             <!-- カウンター別スケール設定が動的に追加される -->
                         </StackPanel>

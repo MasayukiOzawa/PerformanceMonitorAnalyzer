@@ -2,13 +2,13 @@
 
 ## 概要
 
-Performance Monitor Analyzerは、.NET 8.0を使用したWPFデスクトップアプリケーションです。シングルバイナリ配布に対応しており、.NET Frameworkがインストールされていない環境でも動作します。
+Performance Monitor Analyzerは、.NET 10.0を使用したWPFデスクトップアプリケーションです。シングルバイナリ配布に対応しており、.NET Frameworkがインストールされていない環境でも動作します。
 
 ## 開発環境でのビルド
 
 ### 前提条件
 
-- .NET 8.0 SDK以降
+- .NET 10.0 SDK以降
 - Windows 10/11（WPF機能のため）
 - Visual Studio 2022またはVisual Studio Code
 
