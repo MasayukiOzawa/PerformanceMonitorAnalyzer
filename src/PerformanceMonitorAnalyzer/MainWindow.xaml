@@ -485,13 +485,28 @@
                                                     <Grid>
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="20"/>
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
+
+                                                        <!-- 折れ線ハイライト -->
+                                                        <Button Grid.Column="0"
+                                                                Content="{Binding HighlightMark}"
+                                                                Click="LegendHighlight_Click"
+                                                                Tag="{Binding CounterPath}"
+                                                                Width="24"
+                                                                Height="20"
+                                                                Margin="0,0,6,0"
+                                                                Padding="0"
+                                                                VerticalAlignment="Center"
+                                                                FontWeight="Bold"
+                                                                Foreground="{Binding HighlightBrush}"
+                                                                ToolTip="折れ線グラフでこの系列を強調表示します"/>
                                                         
                                                         <!-- 表示/非表示チェックボックス -->
-                                                        <CheckBox Grid.Column="0"
+                                                        <CheckBox Grid.Column="1"
                                                                   IsChecked="{Binding IsVisible}"
                                                                   Checked="LegendItem_Checked"
                                                                   Unchecked="LegendItem_Unchecked"
@@ -500,23 +515,24 @@
                                                                   ToolTip="シリーズの表示/非表示を切り替えます"/>
                                                         
                                                         <!-- 色見本 -->
-                                                        <Rectangle Grid.Column="1"
+                                                        <Rectangle Grid.Column="2"
                                                                    Width="16" Height="3"
                                                                    Fill="{Binding ColorBrush}"
                                                                    Margin="5,0"
                                                                    VerticalAlignment="Center"/>
                                                         
                                                         <!-- カウンター名 -->
-                                                        <TextBlock Grid.Column="2"
+                                                        <TextBlock Grid.Column="3"
                                                                    Text="{Binding CounterName}"
                                                                    TextWrapping="Wrap"
                                                                    VerticalAlignment="Center"
                                                                    FontSize="11"
+                                                                   FontWeight="{Binding CounterFontWeight}"
                                                                    Foreground="{Binding TextBrush}"
                                                                    ToolTip="{Binding CounterPath}"/>
                                                         
                                                         <!-- 現在値 -->
-                                                        <TextBlock Grid.Column="3"
+                                                        <TextBlock Grid.Column="4"
                                                                    Text="{Binding CurrentValue}"
                                                                    VerticalAlignment="Center"
                                                                    FontSize="10"
@@ -524,6 +540,7 @@
                                                                    Foreground="DarkBlue"
                                                                    Margin="5,0,0,0"
                                                                    ToolTip="最新の値"/>
+
                                                     </Grid>
                                                 </Border>
                                             </DataTemplate>

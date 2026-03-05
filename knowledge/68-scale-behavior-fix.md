@@ -389,3 +389,60 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 検証（追加17）
 - 実行中の `PerformanceMonitorAnalyzer.exe`（PID 66952）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 自動スケール機能の削除（手動スケールのみ）
+
+### 要求
+- グラフ描画時の自動スケール（`_autoCalculatedScales` / `CalculateAutoScale()`）依存をなくし、手動スケールのみで描画したい。
+
+### 対応
+- `MainWindow.xaml.cs` から `_autoCalculatedScales` フィールドと `CalculateAutoScale()` を削除。
+- 折れ線グラフ・積み重ね面グラフ・Y軸上限算出でのスケール計算を `manualScale`（`_counterScales`）のみへ統一。
+- 値モード切替時の自動スケールキャッシュクリア処理を削除。
+
+### 検証（追加18）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
+
+## 追補: Y軸の `Value` ラベルを非表示化
+
+### 要望
+- Y軸の `Value` ラベルは不要。
+
+### 対応
+- `MainWindow.xaml.cs` の `GetCurrentYAxisLabel()` を変更。
+  - 差分モードは従来どおり `Delta (Prev)` を表示。
+  - 生値モードは `string.Empty` を返し、Y軸ラベルを非表示化。
+
+### 検証（追加19）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
+
+## 追補: 折れ線グラフ凡例のハイライト機能
+
+### 要望
+- 折れ線グラフ表示時に、特定の凡例項目の線だけを太くして強調したい。
+
+### 対応
+- 凡例行に `☆/★` ボタンを追加し、クリックで対象系列のハイライトを切り替え可能にした。
+- `MainWindow.xaml.cs` に `_highlightedLegendCounterPath` を追加し、選択中系列を管理。
+- 折れ線再描画時・可視状態更新時に `ApplyLineSeriesHighlight()` を実行し、対象系列のみ `LineWidth=4`（他は `LineWidth=2`）を適用。
+- 凡例モデル `LegendItem` に `IsHighlighted` を追加し、凡例側の視覚状態（★表示/背景色/太字）を同期。
+
+### 備考
+- ハイライト操作は折れ線グラフ時のみ有効（積み重ね面グラフでは無効）。
+
+### 検証（追加20）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: 折れ線凡例ハイライトの複数選択対応
+
+### 要望
+- 複数の系列を同時にハイライトできるようにしたい。
+
+### 対応
+- 単一選択の `_highlightedLegendCounterPath` を、複数選択用の `HashSet<string>`（`_highlightedLegendCounterPaths`）へ変更。
+- `LegendHighlight_Click` をトグル方式に変更し、クリックした系列をセットへ追加/削除。
+- `ApplyLineSeriesHighlight()` でセット内の全系列に `LineWidth=4` を適用し、それ以外は `LineWidth=2` を適用。
+- 系列非表示・系列削除・凡例クリア時に対象パスをセットから除去し、状態の整合性を維持。
+
+### 検証（追加21）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
