@@ -363,6 +363,115 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 ### 検証（追加15）
 - 実行中の `PerformanceMonitorAnalyzer.exe`（PID 67868）停止後、`dotnet build -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
 
+## 追補: 積み重ね面グラフの境界線を細線化
+
+### 要望
+- 積み重ね面グラフの系列境界線を、現状より細くして見やすくしたい。
+
+### 対応
+- `MainWindow.xaml.cs` に `StackedAreaOutlineWidth` 定数を追加。
+- `DrawStackedAreaChart()` で `FillY` 作成時に `LineColor` を系列色へ合わせ、`LineWidth` / `LineStyle.Width` を `1f` に明示設定。
+- 面の塗りつぶし色は維持しつつ、境界線だけを折れ線グラフ（2px）より細く調整。
+
+### 検証（追加）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 凡例境界線のトグルボタン追加
+
+### 要望
+- 凡例領域についても、境界線から表示/非表示を切り替えたい。
+
+### 対応
+- `MainWindow.xaml` の凡例境界列を、`GridSplitter` とトグルボタンを重ねた `LegendDividerHost` に変更。
+- `LegendPanelToggleButton_Click()` / `UpdateLegendPanelControls()` を追加し、凡例の折りたたみ時は境界列だけ残して再表示しやすくした。
+- `UpdateChartVisibility()` から凡例境界UIの表示状態も更新し、グラフデータがないときはトグルごと非表示にするよう調整。
+
+### 検証（追加）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+### 最新仕様の調整
+- 凡例境界のドラッグによる幅変更は廃止し、境界中央のトグルボタンによる表示/非表示切り替えに特化した。
+- `MainWindow.xaml.cs` では `LegendGridSplitter` の表示制御を削除し、トグル状態に応じた列幅の復元だけを継続する構成へ整理した。
+
+## 追補: 統計情報エリア境界のトグル
+
+### 要望
+- グラフ下部の統計情報エリアについて、中央のトグルアイコンで最小化できるようにしたい。
+
+### 対応
+- `MainWindow.xaml` の統計領域境界を `StatisticsDividerHost` とし、中央トグルボタンで表示/非表示を切り替える構成にした。
+- `MainWindow.xaml.cs` に `_isStatisticsPanelCollapsed` / `_lastStatisticsPanelHeight` を追加し、統計情報エリアの表示高さを保持したまま折りたたみ/再表示できるようにした。
+- `UpdateStatisticsDisplay()` から `UpdateStatisticsPanelControls()` を呼び出し、データ有無に応じて境界・統計領域の表示状態を一元管理。
+
+### 検証（追加）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 統計情報エリアのドラッグリサイズを一時オミット
+
+### 要望
+- 統計情報エリアについて、境界線のドラッグ＆ドロップによる高さ変更機能は一度外したい。
+
+### 対応
+- `MainWindow.xaml` の `StatisticsGridSplitter` を通常の境界表示へ置き換え、ドラッグで高さ変更できないようにした。
+- トグルボタンによる最小化/再表示は維持し、統計情報の開閉操作だけは継続可能にした。
+
+### 検証（追加）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 統計情報エリアのドラッグリサイズを再有効化
+
+### 要望
+- 統計情報エリアの表示領域の高さを、再度境界線のドラッグ＆ドロップで変更できるようにしたい。
+
+### 対応
+- `MainWindow.xaml` の統計境界を、メイン `Grid` の直接子である `StatisticsGridSplitter` として再配置し、`ResizeDirection="Rows"` / `ResizeBehavior="PreviousAndNext"` を明示した。
+- トグルボタンは同じ行にオーバーレイ配置し、ドラッグリサイズと最小化/再表示の両方が使えるようにした。
+- `MainWindow.xaml.cs` では表示制御対象を `StatisticsDividerBorder` / `StatisticsGridSplitter` / `StatisticsPanelToggleButton` に整理した。
+
+## 追補: 統計情報境界機能の復旧
+
+### 問題
+- 統計情報エリアの境界について、ドラッグリサイズやトグルが動作しなくなる回帰が発生した。
+
+### 対応
+- 境界UIを再度見直し、`StatisticsGridSplitter` をネイティブなWPFの行リサイズとして動作させる構成へ戻した。
+- 境界線・`GridSplitter`・トグルボタンをそれぞれ独立要素として配置し、表示/非表示制御も個別に行うよう修正した。
+
+### 検証（追加）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 統計情報境界のリサイズ対象を修正
+
+### 問題
+- 統計情報境界の `GridSplitter` が「ズームをリセット / クリップボードにコピー」行と統計情報行をリサイズ対象として扱っており、ドラッグ時に統計情報ではなくボタン行の高さが広がっていた。
+
+### 対応
+- グラフ表示エリアを「グラフ・凡例」と「グラフ操作ボタン」の2段構成の内部 `Grid` にまとめ、外側の統計情報用 `GridSplitter` がそのまとまり全体と統計情報エリアをリサイズするように変更した。
+- これにより、操作ボタン行は内部 `Grid` の `Auto` 行として自然高さを維持し、境界ドラッグ時は統計情報エリアの高さだけが期待どおりに変化する。
+
+### 検証
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: データテーブル / ログ表示境界のトグル追加
+
+### 要望
+- データテーブル / ログ表示エリアの上端境界にも、中央のトグルアイコンを追加して最小化できるようにしたい。
+
+### 対応
+- ルート `Grid` の下部境界行を `BottomPanelDividerRowDefinition` として再定義し、`BottomPanelGridSplitter` と `BottomPanelToggleButton` を重ねて配置した。
+- `MainWindow.xaml.cs` に `_isBottomPanelCollapsed` / `_lastBottomPanelHeight` と `InitializeBottomPanelControls()` / `BottomPanelToggleButton_Click()` / `UpdateBottomPanelControls()` を追加し、リサイズ後の高さを保持したまま折りたたみ / 再表示できるようにした。
+- 下部エリア本体は `BottomPanelGrid` としてまとめ、折りたたみ時は `Visibility.Collapsed` と行高 `0` を同時に適用して不要な余白を残さないようにした。
+
+### 検証
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
 ## 追補: Y軸の上限/下限を手動変更可能にする
 
 ### 要望
@@ -410,8 +519,7 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 対応
 - `MainWindow.xaml.cs` の `GetCurrentYAxisLabel()` を変更。
-  - 差分モードは従来どおり `Delta (Prev)` を表示。
-  - 生値モードは `string.Empty` を返し、Y軸ラベルを非表示化。
+  - `string.Empty` を返し、Y軸ラベルを非表示化。
 
 ### 検証（追加19）
 - `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功（既存警告: `CS0162` は継続）。
@@ -446,3 +554,127 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 
 ### 検証（追加21）
 - `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+
+## 追補: MainWindow.xaml.cs のリファクタリング
+
+### 目的
+- `MainWindow.xaml.cs` に集中していた補助型定義と折れ線系列生成/ハイライト処理の重複を整理し、挙動を変えずに保守しやすくしたい。
+
+### 対応
+- `CounterStatisticsItem` / `LegendItem` / `CounterTreeNode` / `PerformanceDataPoint` / `LogEntry` と関連 enum を `src\PerformanceMonitorAnalyzer\*.cs` の個別ファイルへ抽出し、`MainWindow.xaml.cs` から定義を削除。
+- 折れ線系列生成で重複していたデータ点取得・色解決・Scatter設定・凡例追加を `BuildLineSeries()` / `AddBuiltLineSeriesToChart()` に集約。
+- 複数ハイライト用 `HashSet<string>` の追加/削除/クリーンアップ処理を、専用ヘルパー経由に寄せて重複を削減。
+- 並列作業時に補助型が `MainWindow.xaml.cs` に残ったため、最終検証で重複定義エラーを検知し、不要定義を削除して整合性を回復。
+
+### 検証（追加22）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q --no-build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+
+## 追補: 値モードラベル文言の調整
+
+### 要望
+- 値モードのラベルを `Raw / 差分` に変更したい。
+
+### 対応
+- `MainWindow.xaml` の値モードラジオボタン文言を `Raw` / `差分` に変更。
+- `MainWindow.xaml.cs` の操作ログ文言も同じ表示名へ統一。
+- README / wiki の値モード説明も `Raw / 差分` 表記へ更新。
+
+### 検証（追加23）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+
+## 追補: 階層チェックボックスのクリック遷移修正
+
+### 問題
+- 親/インスタンスの三状態チェックボックスをユーザーが直接クリックすると、`チェック -> 部分選択 -> 無効` の順に循環してしまう。
+
+### 対応
+- `CounterTreeNode` に `ToggleFromUserInteraction()` を追加し、ユーザー操作時は `true / false` のみを切り替えるように変更。
+- `MainWindow.xaml` のツリー用チェックボックスに `PreviewMouseLeftButtonDown` / `PreviewKeyDown` を追加し、親ノードは部分選択を経由せず全選択/全解除へ遷移させるよう修正。
+- `CounterTreeNodeTests` を追加し、親子同期・部分選択からの全選択・チェック済みからの全解除・ワイルドカード除外を自動テスト化。
+
+### 検証（追加24）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 値モード配置の調整と積み重ね差分時のY軸ラベル抑制
+
+### 要望
+- 値モードのラジオボタンをグラフタイプのすぐ右側に移動したい。
+- 積み重ね面グラフ + 差分モードで表示される Y 軸ラベルは不要。
+
+### 対応
+- `MainWindow.xaml` のグラフ表示ヘッダーを調整し、グラフタイプと値モードを同じ横並び領域に集約した。
+- `MainWindow.xaml.cs` の `GetCurrentYAxisLabel()` を見直し、`Delta (Prev)` は **折れ線グラフ + 差分モード** の組み合わせでのみ返すようにした。
+- README / wiki の説明も、新しい操作位置と Y 軸ラベル条件に合わせて更新した。
+
+### 検証（追加25）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: グラフのY軸表示そのものを非表示化
+
+### 要望
+- グラフの Y 軸は、差分モードのラベルだけでなく表示自体を削除して問題ない。
+
+### 対応
+- `MainWindow.xaml.cs` の `InitializeChart()` と `RefreshChartWithCurrentType()` で `PerformanceChart.Plot.Axes.Left.IsVisible = false` を設定し、Y軸の目盛り・ラベル・軸線をまとめて非表示化した。
+- README / wiki も、Y軸は表示せず上部入力欄から範囲のみ調整する説明へ更新した。
+
+### 検証（追加26）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: Y軸表示の復元
+
+### 要望
+- Y軸の表示は必要なので、目盛りと軸線は元に戻したい。
+
+### 対応
+- `MainWindow.xaml.cs` の `InitializeChart()` と `RefreshChartWithCurrentType()` で `PerformanceChart.Plot.Axes.Left.IsVisible = true` を設定し、左軸を再表示した。
+- 左軸の目盛り文字サイズも復元しつつ、`GetCurrentYAxisLabel()` は空文字のまま維持して Y 軸ラベルだけ非表示にした。
+- README / wiki の Y軸説明も「軸は表示、ラベルは非表示」に合わせて更新した。
+
+### 検証（追加27）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 選択カウンター読み込みエリアの「すべて選択」ボタン削除
+
+### 要望
+- 「選択されたカウンターを読み込み」付近の「すべて選択」ボタンは不要。
+
+### 対応
+- `MainWindow.xaml` から `すべて選択` ボタンを削除し、`MainWindow.xaml.cs` の未使用になった `SelectAll_Click()` も削除した。
+- 一括解除は従来どおり `すべて解除` ボタンと `SetAllCheckBoxes(false)` で維持し、親/インスタンスのチェックボックスによる配下一括選択はそのまま利用できるようにした。
+- README / wiki の操作説明も現在の UI に合わせて更新した。
+
+### 検証（追加28）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 選択カウンター読み込みボタン列の左揃え
+
+### 要望
+- 「選択されたカウンターを読み込み」のボタン位置を左揃えにしたい。
+
+### 対応
+- `MainWindow.xaml` のボタン行 `StackPanel` の `HorizontalAlignment` を `Left` に変更し、実行ボタンと `すべて解除` ボタンが左寄せで並ぶようにした。
+
+### 検証（追加29）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+
+## 追補: 積み重ね面グラフでの「凡例のすべて非表示」回帰修正
+
+### 問題
+- 差分 + 積み重ね面グラフで「すべて非表示」を押すと、凡例チェックの一括オフだけでなく、凡例や関連パネルまで非表示になってしまう。
+
+### 対応
+- `MainWindow.xaml.cs` に「表示中シリーズの有無」と「凡例パネルを維持すべき文脈」を分けるヘルパーを追加した。
+- `UpdateLegendPanelControls()` / `UpdateStatisticsPanelControls()` / `UpdateScaleControlVisibility()` の呼び出し元を見直し、積み重ね面グラフで全系列が非表示でも `_legendItems` が残っている間はパネルを維持するようにした。
+- `GraphControlPanel` は表示を維持しつつ、表示系列がないときだけ無効化するように調整した。
+
+### 検証（追加30）
+- `dotnet build --nologo -v q src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`

@@ -11,8 +11,8 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="5"/>
-            <RowDefinition Height="400" MinHeight="100" MaxHeight="750"/>
+            <RowDefinition x:Name="BottomPanelDividerRowDefinition" Height="22"/>
+            <RowDefinition x:Name="BottomPanelAreaRowDefinition" Height="400" MinHeight="100" MaxHeight="750"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -31,6 +31,10 @@
                 <Separator/>
                 <MenuItem Header="パターン設定ファイルを開く(_O)..." Click="OpenPatternConfig_Click"/>
                 <MenuItem Header="パターン設定を再読み込み(_R)" Click="ReloadPatternConfig_Click"/>
+            </MenuItem>
+            <MenuItem Header="表示(_V)">
+                <MenuItem Header="すべて折りたたむ(_C)" Click="CollapseAllPanelsMenu_Click"/>
+                <MenuItem Header="すべて展開する(_E)" Click="ExpandAllPanelsMenu_Click"/>
             </MenuItem>
             <MenuItem Header="グラフ(_G)" x:Name="GraphMenu" IsEnabled="False">
                 <MenuItem Header="グラフをクリップボードにコピー(_C)" Click="CopyGraphToClipboard_Click" InputGestureText="Ctrl+C"/>
@@ -191,7 +195,7 @@
                     </Expander>
                     
                     <!-- ボタン群 -->
-                    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Left" Margin="5">
                         <Button Content="🚀 選択されたカウンターを読み込み" 
                                AutomationProperties.Name="選択されたカウンターを読み込み"
                                Click="ExecuteSelectedCounters_Click"
@@ -200,7 +204,6 @@
                                Margin="0,0,10,0"
                                IsEnabled="False"
                                x:Name="ExecuteButton"/>
-                        <Button Content="すべて選択" Click="SelectAll_Click" Margin="0,0,5,0"/>
                         <Button Content="すべて解除" Click="UnselectAll_Click"/>
                     </StackPanel>
                     
@@ -216,6 +219,8 @@
                                     <StackPanel Orientation="Horizontal">
                                         <CheckBox IsChecked="{Binding IsChecked}" 
                                                 IsThreeState="{Binding IsThreeState}"
+                                                PreviewMouseLeftButtonDown="CounterCheckBox_PreviewMouseLeftButtonDown"
+                                                PreviewKeyDown="CounterCheckBox_PreviewKeyDown"
                                                 Checked="CounterCheckBox_Checked"
                                                 Unchecked="CounterCheckBox_Unchecked"
                                                 Indeterminate="CounterCheckBox_Indeterminate"
@@ -240,29 +245,11 @@
                 </Grid>
             </GroupBox>
 
-            <!-- カウンター選択エリアとグラフ領域の幅調整 -->
+            <!-- カウンター選択エリアとグラフ領域の表示切り替え -->
             <Grid Grid.Column="1" x:Name="CounterPanelDividerHost">
                 <Border Background="#F8F8F8"
                         BorderBrush="#CCCCCC"
                         BorderThickness="1,0,1,0"/>
-                <GridSplitter x:Name="CounterPanelGridSplitter"
-                              Width="5"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Stretch"
-                              Background="#E0E0E0"
-                              Cursor="SizeWE"
-                              ShowsPreview="False"
-                              ToolTip="ドラッグしてカウンター選択エリアの幅を調整">
-                    <GridSplitter.Style>
-                        <Style TargetType="GridSplitter">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#D0D0D0"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </GridSplitter.Style>
-                </GridSplitter>
                 <Button x:Name="CounterPanelToggleButton"
                         Width="16"
                         Height="34"
@@ -284,19 +271,18 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="5"/>
+                        <RowDefinition x:Name="StatisticsDividerRowDefinition" Height="0"/>
                         <RowDefinition x:Name="StatisticsAreaRowDefinition" Height="170" MinHeight="80" MaxHeight="450"/>
                     </Grid.RowDefinitions>
                     
                     <!-- グラフタイプ選択と凡例制御 -->
                     <Border Grid.Row="0" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Margin="5,5,5,0">
-                        <Grid Margin="10,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                            <Grid Margin="10,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
                             
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,20,0" VerticalAlignment="Center">
                                 <TextBlock Text="Y軸:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,6,0"/>
@@ -330,53 +316,72 @@
                             </StackPanel>
 
                             <!-- グラフタイプ選択 -->
-                             <StackPanel Grid.Column="1" Orientation="Horizontal">
+                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                   <TextBlock Text="📊 グラフタイプ:" 
                                            VerticalAlignment="Center" 
                                            FontWeight="SemiBold" 
                                            Margin="0,0,15,0"/>
-                                <RadioButton x:Name="LineChartRadio" 
+                                 <RadioButton x:Name="LineChartRadio" 
                                            Content="折れ線グラフ" 
                                            IsChecked="True" 
                                            GroupName="ChartType"
                                            Checked="ChartType_Changed"
                                            Margin="0,0,20,0"
                                            VerticalAlignment="Center"/>
-                                 <RadioButton x:Name="StackedAreaChartRadio" 
-                                            Content="積み重ね面グラフ" 
-                                            GroupName="ChartType"
-                                            Checked="ChartType_Changed"
+                                  <RadioButton x:Name="StackedAreaChartRadio" 
+                                             Content="積み重ね面グラフ" 
+                                             GroupName="ChartType"
+                                             Checked="ChartType_Changed"
+                                             Margin="0,0,24,0"
+                                             VerticalAlignment="Center"/>
+                                 <TextBlock Text="📉 値モード:" 
+                                          VerticalAlignment="Center" 
+                                          FontWeight="SemiBold" 
+                                          Margin="0,0,15,0"/>
+                                 <RadioButton x:Name="RawValueModeRadio" 
+                                            Content="Raw" 
+                                            IsChecked="True"
+                                            GroupName="ValueMode"
+                                            Checked="ValueMode_Changed"
+                                            Margin="0,0,20,0"
                                             VerticalAlignment="Center"/>
+                                  <RadioButton x:Name="DeltaValueModeRadio" 
+                                             Content="差分" 
+                                             GroupName="ValueMode"
+                                             Checked="ValueMode_Changed"
+                                             VerticalAlignment="Center"/>
                              </StackPanel>
-                            
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0,0,0">
-                                <TextBlock Text="📉 値モード:" 
-                                         VerticalAlignment="Center" 
-                                         FontWeight="SemiBold" 
-                                         Margin="0,0,15,0"/>
-                                <RadioButton x:Name="RawValueModeRadio" 
-                                           Content="生値" 
-                                           IsChecked="True"
-                                           GroupName="ValueMode"
-                                           Checked="ValueMode_Changed"
-                                           Margin="0,0,20,0"
-                                           VerticalAlignment="Center"/>
-                                <RadioButton x:Name="DeltaValueModeRadio" 
-                                           Content="前回差分" 
-                                           GroupName="ValueMode"
-                                           Checked="ValueMode_Changed"
-                                           VerticalAlignment="Center"/>
+
+                             <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="20,0,0,0">
+                                 <Button x:Name="CollapseAllPanelsButton"
+                                        Content="すべて折りたたむ"
+                                        Click="CollapseAllPanelsMenu_Click"
+                                       Padding="8,4"
+                                       Margin="0,0,6,0"
+                                       ToolTip="トグル対応エリアを一括で折りたたみます"/>
+                                <Button x:Name="ExpandAllPanelsButton"
+                                       Content="すべて展開する"
+                                       Click="ExpandAllPanelsMenu_Click"
+                                       Padding="8,4"
+                                       ToolTip="トグル対応エリアを一括で展開します"/>
                             </StackPanel>
                         </Grid>
                     </Border>
                     
-                    <!-- グラフと凡例の表示エリア -->
+                    <!-- グラフと操作エリア -->
                     <Grid Grid.Row="1">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="5" x:Name="LegendSplitterColumn"/>
-                            <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- グラフと凡例の表示エリア -->
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="22" x:Name="LegendSplitterColumn"/>
+                                <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
+                            </Grid.ColumnDefinitions>
                         
                         <!-- ScottPlot グラフコンテナ（リサイズハンドル付き） -->
                         <Border Grid.Column="0" x:Name="GraphContainer" Background="Transparent">
@@ -418,29 +423,25 @@
                             </Grid>
                         </Border>
                         
-                        <!-- グリッドスプリッター -->
-                        <GridSplitter Grid.Column="1" 
-                                      x:Name="LegendGridSplitter"
-                                      Width="5" 
-                                      HorizontalAlignment="Stretch" 
-                                      VerticalAlignment="Stretch"
-                                      Background="#E0E0E0"
-                                      BorderBrush="#CCCCCC"
-                                      BorderThickness="1,0,1,0"
-                                      Cursor="SizeWE"
-                                      ShowsPreview="False"
-                                      ToolTip="ドラッグして凡例領域の幅を調整"
-                                      Visibility="Visible">
-                            <GridSplitter.Style>
-                                <Style TargetType="GridSplitter">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#D0D0D0"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </GridSplitter.Style>
-                        </GridSplitter>
+                        <!-- 凡例領域の表示切り替え -->
+                        <Grid Grid.Column="1" x:Name="LegendDividerHost" Visibility="Collapsed">
+                            <Border Background="#F8F8F8"
+                                    BorderBrush="#CCCCCC"
+                                    BorderThickness="1,0,1,0"/>
+                            <Button x:Name="LegendPanelToggleButton"
+                                    Width="16"
+                                    Height="34"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Click="LegendPanelToggleButton_Click"
+                                    ToolTip="クリックで凡例の表示/非表示を切り替えます"
+                                    Padding="0"
+                                    FontSize="11"
+                                    Content="▶"
+                                    Background="White"
+                                    BorderBrush="#BDBDBD"
+                                    BorderThickness="1"/>
+                        </Grid>
                         
                         <!-- 凡例表示エリア -->
                         <GroupBox Grid.Column="2" 
@@ -549,82 +550,105 @@
                                 </ScrollViewer>
                             </Grid>
                         </GroupBox>
+                        </Grid>
+                     
+                        <!-- データなしの場合のメッセージ -->
+                        <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  x:Name="NoDataMessagePanel" 
+                                  Visibility="Visible">
+                            <TextBlock x:Name="NoDataMessage" 
+                                     Text="📊 BLGファイルを開いてカウンターを選択してください"
+                                     HorizontalAlignment="Center"
+                                     FontSize="16"
+                                     Foreground="Gray"
+                                     Margin="10"/>
+                            <TextBlock HorizontalAlignment="Center" FontSize="12" Foreground="DarkGray" Margin="5">
+                                <Run Text="💡 "/>
+                                <Run Text="チェックボックス" FontWeight="Bold"/>
+                                <Run Text=" または "/>
+                                <Run Text="カウンター名" FontWeight="Bold"/>
+                                <Run Text="をクリックして詳細データを表示"/>
+                            </TextBlock>
+                            <TextBlock Text="✨ グラフ機能が実装されました！"
+                                     HorizontalAlignment="Center"
+                                     FontSize="12"
+                                     Foreground="DarkGreen"
+                                     FontWeight="Bold"
+                                     Margin="5"/>
+                        </StackPanel>
+                     
+                        <!-- グラフ操作ボタン -->
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5,5,5,0" 
+                                   x:Name="GraphControlPanel" Visibility="Collapsed">
+                            <Button x:Name="ResetZoomButton" 
+                                   Content="🔄 ズームをリセット" 
+                                   Click="ResetZoom_Click"
+                                   Background="#FFF3E0" 
+                                   BorderBrush="#F57C00"
+                                   Foreground="#F57C00"
+                                   Padding="10,5"
+                                   Margin="5"
+                                   ToolTip="時間範囲とズーム倍率を初期状態にリセットします"/>
+                            <Button x:Name="CopyGraphButton" 
+                                   Content="📋 グラフをクリップボードにコピー" 
+                                   Click="CopyGraphToClipboard_Click"
+                                   Background="#E3F2FD" 
+                                    BorderBrush="#1976D2"
+                                     Foreground="#1976D2"
+                                     Padding="10,5"
+                                     Margin="5"
+                                     ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
+                        </StackPanel>
                     </Grid>
-                    
-                    <!-- データなしの場合のメッセージ -->
-                    <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                              x:Name="NoDataMessagePanel" 
-                              Visibility="Visible">
-                        <TextBlock x:Name="NoDataMessage" 
-                                 Text="📊 BLGファイルを開いてカウンターを選択してください"
-                                 HorizontalAlignment="Center"
-                                 FontSize="16"
-                                 Foreground="Gray"
-                                 Margin="10"/>
-                        <TextBlock HorizontalAlignment="Center" FontSize="12" Foreground="DarkGray" Margin="5">
-                            <Run Text="💡 "/>
-                            <Run Text="チェックボックス" FontWeight="Bold"/>
-                            <Run Text=" または "/>
-                            <Run Text="カウンター名" FontWeight="Bold"/>
-                            <Run Text="をクリックして詳細データを表示"/>
-                        </TextBlock>
-                        <TextBlock Text="✨ グラフ機能が実装されました！"
-                                 HorizontalAlignment="Center"
-                                 FontSize="12"
-                                 Foreground="DarkGreen"
-                                 FontWeight="Bold"
-                                 Margin="5"/>
-                    </StackPanel>
-                    
-                    <!-- グラフ操作ボタン -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5,5,5,0" 
-                               x:Name="GraphControlPanel" Visibility="Collapsed">
-                        <Button x:Name="ResetZoomButton" 
-                               Content="🔄 ズームをリセット" 
-                               Click="ResetZoom_Click"
-                               Background="#FFF3E0" 
-                               BorderBrush="#F57C00"
-                               Foreground="#F57C00"
-                               Padding="10,5"
-                               Margin="5"
-                               ToolTip="時間範囲とズーム倍率を初期状態にリセットします"/>
-                        <Button x:Name="CopyGraphButton" 
-                               Content="📋 グラフをクリップボードにコピー" 
-                               Click="CopyGraphToClipboard_Click"
-                               Background="#E3F2FD" 
-                                BorderBrush="#1976D2"
-                                 Foreground="#1976D2"
-                                 Padding="10,5"
-                                 Margin="5"
-                                 ToolTip="現在表示されているグラフを画像としてクリップボードにコピーします"/>
-                    </StackPanel>
 
-                    <!-- 統計情報エリアの高さ調整 -->
-                    <GridSplitter Grid.Row="3"
+                    <!-- 統計情報エリアの高さ調整と表示切り替え -->
+                    <Border Grid.Row="2"
+                            x:Name="StatisticsDividerBorder"
+                            Background="#F8F8F8"
+                            BorderBrush="#CCCCCC"
+                            BorderThickness="0,1,0,1"
+                            Visibility="Collapsed"/>
+                    <GridSplitter Grid.Row="2"
                                   x:Name="StatisticsGridSplitter"
-                                  Height="5"
                                   HorizontalAlignment="Stretch"
                                   VerticalAlignment="Stretch"
-                                  Background="#E0E0E0"
-                                  BorderBrush="#CCCCCC"
-                                  BorderThickness="0,1,0,1"
+                                  Background="#10D0D0D0"
                                   Cursor="SizeNS"
                                   ShowsPreview="False"
+                                  ResizeDirection="Rows"
+                                  ResizeBehavior="PreviousAndNext"
                                   Visibility="Collapsed"
-                                  ToolTip="ドラッグして統計情報エリアの高さを調整">
+                                  ToolTip="ドラッグして統計情報エリアの高さを調整"
+                                  Panel.ZIndex="1">
                         <GridSplitter.Style>
                             <Style TargetType="GridSplitter">
                                 <Style.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#D0D0D0"/>
+                                        <Setter Property="Background" Value="#20D0D0D0"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
                         </GridSplitter.Style>
                     </GridSplitter>
+                    <Button Grid.Row="2"
+                            x:Name="StatisticsPanelToggleButton"
+                            Width="34"
+                            Height="16"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Panel.ZIndex="2"
+                            Click="StatisticsPanelToggleButton_Click"
+                            ToolTip="クリックで統計情報エリアの表示/非表示を切り替えます"
+                            Padding="0"
+                            FontSize="11"
+                            Visibility="Collapsed"
+                            Content="▲"
+                            Background="White"
+                            BorderBrush="#BDBDBD"
+                            BorderThickness="1"/>
                      
                     <!-- 統計情報表示エリア -->
-                    <Border Grid.Row="4" x:Name="StatisticsBorder" 
+                    <Border Grid.Row="3" x:Name="StatisticsBorder" 
                            Background="#F8F8F8" 
                            BorderBrush="#E0E0E0" 
                            BorderThickness="0,1,0,0" 
@@ -720,29 +744,11 @@
                 </Grid>
             </GroupBox>
 
-            <!-- グラフ領域とスケール設定領域の幅調整 -->
+            <!-- グラフ領域とスケール設定領域の表示切り替え -->
             <Grid Grid.Column="3" x:Name="ScalePanelDividerHost" Visibility="Collapsed">
                 <Border Background="#F8F8F8"
                         BorderBrush="#CCCCCC"
                         BorderThickness="1,0,1,0"/>
-                <GridSplitter x:Name="ScalePanelGridSplitter"
-                              Width="5"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Stretch"
-                              Background="#E0E0E0"
-                              Cursor="SizeWE"
-                              ShowsPreview="False"
-                              ToolTip="ドラッグしてスケール設定エリアの幅を調整">
-                    <GridSplitter.Style>
-                        <Style TargetType="GridSplitter">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#D0D0D0"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </GridSplitter.Style>
-                </GridSplitter>
                 <Button x:Name="ScalePanelToggleButton"
                         Width="16"
                         Height="34"
@@ -788,30 +794,54 @@
             </GroupBox>
         </Grid>
 
-        <!-- GridSplitter: データテーブル領域の高さを動的に変更 -->
-        <GridSplitter Grid.Row="3" 
-                      Height="5" 
-                      HorizontalAlignment="Stretch" 
+        <!-- データテーブル / ログ表示エリアの高さ調整と表示切り替え -->
+        <Border Grid.Row="3"
+                x:Name="BottomPanelDividerBorder"
+                Background="#F8F8F8"
+                BorderBrush="#CCCCCC"
+                BorderThickness="0,1,0,1"/>
+        <GridSplitter Grid.Row="3"
+                      x:Name="BottomPanelGridSplitter"
+                      Height="22"
+                      HorizontalAlignment="Stretch"
                       VerticalAlignment="Stretch"
-                      Background="#E0E0E0"
+                      Background="#10D0D0D0"
                       BorderBrush="#CCCCCC"
                       BorderThickness="0,1,0,1"
                       Cursor="SizeNS"
                       ShowsPreview="False"
-                      ToolTip="ドラッグしてデータテーブル領域の高さを調整">
+                      ResizeDirection="Rows"
+                      ResizeBehavior="PreviousAndNext"
+                      ToolTip="ドラッグしてデータテーブル / ログ表示エリアの高さを調整"
+                      Panel.ZIndex="1">
             <GridSplitter.Style>
                 <Style TargetType="GridSplitter">
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#D0D0D0"/>
+                            <Setter Property="Background" Value="#20D0D0D0"/>
                         </Trigger>
                     </Style.Triggers>
                 </Style>
             </GridSplitter.Style>
         </GridSplitter>
+        <Button Grid.Row="3"
+                x:Name="BottomPanelToggleButton"
+                Width="34"
+                Height="16"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Panel.ZIndex="2"
+                Click="BottomPanelToggleButton_Click"
+                ToolTip="クリックでデータテーブル / ログ表示エリアの表示/非表示を切り替えます"
+                Padding="0"
+                FontSize="11"
+                Content="▼"
+                Background="White"
+                BorderBrush="#BDBDBD"
+                BorderThickness="1"/>
 
         <!-- 下部: データテーブルとログ表示 -->
-        <Grid Grid.Row="4" Margin="10,0,10,10">
+        <Grid Grid.Row="4" x:Name="BottomPanelGrid" Margin="10,0,10,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="5"/>

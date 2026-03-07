@@ -21,387 +21,6 @@ using ScottPlot.WPF;
 namespace PerformanceMonitorAnalyzer;
 
 /// <summary>
-/// 統計情報表示用のデータクラス
-/// </summary>
-public class CounterStatisticsItem
-{
-    public string CounterName { get; set; } = string.Empty;
-    public string Average { get; set; } = string.Empty;
-    public string Maximum { get; set; } = string.Empty;
-    public string Minimum { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// 凡例アイテム用のデータクラス
-/// </summary>
-public class LegendItem : INotifyPropertyChanged
-{
-    private bool _isVisible = true;
-    private bool _isHighlighted = false;
-    private string _currentValue = "";
-    private System.Windows.Media.Color _color = System.Windows.Media.Colors.Blue;
-    
-    public string CounterName { get; set; } = string.Empty;
-    public string CounterPath { get; set; } = string.Empty;
-    
-    public bool IsVisible
-    {
-        get => _isVisible;
-        set
-        {
-            if (_isVisible != value)
-            {
-                _isVisible = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(BackgroundBrush));
-                OnPropertyChanged(nameof(TextBrush));
-            }
-        }
-    }
-
-    public bool IsHighlighted
-    {
-        get => _isHighlighted;
-        set
-        {
-            if (_isHighlighted != value)
-            {
-                _isHighlighted = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(BackgroundBrush));
-                OnPropertyChanged(nameof(CounterFontWeight));
-                OnPropertyChanged(nameof(HighlightMark));
-                OnPropertyChanged(nameof(HighlightBrush));
-            }
-        }
-    }
-    
-    public string CurrentValue
-    {
-        get => _currentValue;
-        set
-        {
-            if (_currentValue != value)
-            {
-                _currentValue = value;
-                OnPropertyChanged();
-            }
-        }
-    }
-    
-    public System.Windows.Media.Color Color
-    {
-        get => _color;
-        set
-        {
-            if (_color != value)
-            {
-                _color = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(ColorBrush));
-            }
-        }
-    }
-    
-    public Brush ColorBrush => new SolidColorBrush(_color);
-    public Brush BackgroundBrush => _isHighlighted
-        ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(60, 255, 242, 204))
-        : (_isVisible ? Brushes.Transparent : new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 200, 200, 200)));
-    public Brush TextBrush => _isVisible ? Brushes.Black : Brushes.Gray;
-    public System.Windows.FontWeight CounterFontWeight => _isHighlighted
-        ? System.Windows.FontWeights.Bold
-        : System.Windows.FontWeights.Normal;
-    public string HighlightMark => _isHighlighted ? "★" : "☆";
-    public Brush HighlightBrush => _isHighlighted ? Brushes.Goldenrod : Brushes.Gray;
-    
-    public event PropertyChangedEventHandler? PropertyChanged;
-    
-    protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-/// <summary>
-/// TreeViewで使用する階層構造のノードクラス
-/// </summary>
-public class CounterTreeNode : INotifyPropertyChanged
-{
-    private bool? _isChecked = false;
-    private CounterTreeNode? _parent;
-    
-    public string DisplayName { get; set; } = string.Empty;
-    public string FullPath { get; set; } = string.Empty;
-    public ObservableCollection<CounterTreeNode> Children { get; set; } = new();
-    public NodeType Type { get; set; } = NodeType.Counter;
-    public bool IsWildCard { get; set; } = false;
-    
-    public bool IsLeaf => Children.Count == 0;
-    public Visibility CheckBoxVisibility => Visibility.Visible; // 全階層でチェックボックス表示
-    
-    /// <summary>
-    /// 三状態チェックボックスかどうか（親ノードの場合はtrue）
-    /// </summary>
-    public bool IsThreeState => !IsLeaf;
-    
-    // 階層レベルに応じた表示プロパティ
-    public string FontWeight => Type == NodeType.Object ? "Bold" : "Normal";
-    public string TextColor => Type switch
-    {
-        NodeType.Object => "DarkBlue",
-        NodeType.Instance when IsWildCard => "Purple", // ワイルドカードインスタンスは紫色
-        NodeType.Instance => "DarkGreen", 
-        NodeType.Counter when IsWildCard => "Purple", // ワイルドカードカウンターは紫色
-        _ => "Black"
-    };
-    
-    public string CountDisplay => Type == NodeType.Object ? $"({Children.Count} インスタンス)" :
-                                 Type == NodeType.Instance ? $"({Children.Count} カウンター)" : "";
-    
-    public Visibility CountVisibility => Type != NodeType.Counter ? Visibility.Visible : Visibility.Collapsed;
-    
-    /// <summary>
-    /// 親ノードの設定
-    /// </summary>
-    public CounterTreeNode? Parent
-    {
-        get => _parent;
-        set => _parent = value;
-    }
-    
-    /// <summary>
-    /// 三状態チェックボックス対応のIsCheckedプロパティ
-    /// true: 全選択, false: 全解除, null: 部分選択
-    /// </summary>
-    public bool? IsChecked
-    {
-        get => _isChecked;
-        set
-        {
-            if (_isChecked != value)
-            {
-                SetIsCheckedInternal(value, true, true);
-            }
-        }
-    }
-    
-    /// <summary>
-    /// IsChecked状態を内部的に設定（イベント通知と親子更新制御）
-    /// </summary>
-    private void SetIsCheckedInternal(bool? value, bool updateChildren, bool updateParent)
-    {
-        if (_isChecked == value) return;
-        
-        _isChecked = value;
-        OnPropertyChanged(nameof(IsChecked));
-        
-        // 子ノードへの伝播（親ノードからの変更でnull以外の値の場合のみ）
-        if (updateChildren && value.HasValue)
-        {
-            foreach (var child in Children)
-            {
-                child.SetIsCheckedInternal(value.Value, true, false);
-            }
-        }
-        
-        // 親ノードの状態更新
-        if (updateParent && _parent != null)
-        {
-            _parent.UpdateParentStateFromChild();
-        }
-    }
-    
-    /// <summary>
-    /// 子ノードの状態変更に基づいて親ノードの状態を更新
-    /// </summary>
-    public void UpdateParentStateFromChild()
-    {
-        if (Children.Count == 0) return; // リーフノードの場合は何もしない
-        
-        var checkedCount = 0;
-        var uncheckedCount = 0;
-        var indeterminateCount = 0;
-        
-        foreach (var child in Children)
-        {
-            switch (child.IsChecked)
-            {
-                case true:
-                    checkedCount++;
-                    break;
-                case false:
-                    uncheckedCount++;
-                    break;
-                case null:
-                    indeterminateCount++;
-                    break;
-            }
-        }
-        
-        bool? newState;
-        
-        // 中間状態の子ノードが存在する場合は即座に部分選択
-        if (indeterminateCount > 0)
-        {
-            newState = null;
-        }
-        // 全ての子ノードが選択されている場合
-        else if (checkedCount == Children.Count)
-        {
-            newState = true;
-        }
-        // 全ての子ノードが未選択の場合
-        else if (uncheckedCount == Children.Count)
-        {
-            newState = false;
-        }
-        // その他（一部選択）の場合
-        else
-        {
-            newState = null;
-        }
-        
-        // 状態が変更された場合のみ更新
-        if (_isChecked != newState)
-        {
-            SetIsCheckedInternal(newState, false, true);
-        }
-    }
-    
-    /// <summary>
-    /// 公開用の親ノード状態更新メソッド
-    /// </summary>
-    public void UpdateParentState()
-    {
-        UpdateParentStateFromChild();
-    }
-    
-    /// <summary>
-    /// 選択されているリーフ（カウンター）ノードを取得
-    /// ワイルドカードカウンターは除外し、実際のカウンターのみを返す
-    /// </summary>
-    public IEnumerable<CounterTreeNode> GetSelectedCounters()
-    {
-        if (IsLeaf && IsChecked == true && !IsWildCard)
-        {
-            yield return this;
-        }
-        
-        foreach (var child in Children)
-        {
-            foreach (var selectedCounter in child.GetSelectedCounters())
-            {
-                yield return selectedCounter;
-            }
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-    
-    protected virtual void OnPropertyChanged(string propertyName)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-    
-
-}
-
-/// <summary>
-/// グラフタイプの列挙型
-/// </summary>
-public enum ChartType
-{
-    LineChart,        // 折れ線グラフ
-    StackedAreaChart  // 積み重ね面グラフ
-}
-
-/// <summary>
-/// カウンター値の表示モード
-/// </summary>
-public enum CounterValueMode
-{
-    RawValue,          // 生値
-    DeltaFromPrevious  // 1つ前との差分
-}
-
-public enum NodeType
-{
-    Object,
-    Instance,
-    Counter
-}
-
-/// <summary>
-/// パフォーマンスデータポイント
-/// </summary>
-public class PerformanceDataPoint
-{
-    public string Counter { get; set; } = string.Empty;
-    public double Value { get; set; }
-    public DateTime Timestamp { get; set; }
-    public string FormattedValue { get; set; } = string.Empty;
-    public string Unit { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// ログメッセージエントリ
-/// </summary>
-public class LogEntry : INotifyPropertyChanged
-{
-    public DateTime Timestamp { get; set; }
-    public LogLevel Level { get; set; }
-    public string Message { get; set; } = string.Empty;
-    public string FormattedTimestamp => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
-    public string LevelDisplay => Level.ToString();
-    public System.Windows.Media.Brush TextColor => Level switch
-    {
-        LogLevel.Error => System.Windows.Media.Brushes.Red,
-        LogLevel.Warning => System.Windows.Media.Brushes.Orange,
-        LogLevel.Info => System.Windows.Media.Brushes.Blue,
-        LogLevel.Success => System.Windows.Media.Brushes.Green,
-        _ => System.Windows.Media.Brushes.Black
-    };
-    
-    public event PropertyChangedEventHandler? PropertyChanged;
-    protected virtual void OnPropertyChanged(string propertyName)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-}
-
-/// <summary>
-/// ログレベル列挙体
-/// </summary>
-public enum LogLevel
-{
-    Info,
-    Success,
-    Warning,
-    Error
-}
-
-/// <summary>
-/// カウンター統計情報
-/// </summary>
-public class CounterStatistics
-{
-    public string CounterName { get; set; } = string.Empty;
-    public int DataPointCount { get; set; }
-    public double Average { get; set; }
-    public double Maximum { get; set; }
-    public double Minimum { get; set; }
-    public double StandardDeviation { get; set; }
-    public DateTime FirstTimestamp { get; set; }
-    public DateTime LastTimestamp { get; set; }
-    public string Unit { get; set; } = string.Empty;
-    
-    public string FormattedAverage => $"{Average:N2} {Unit}".Trim();
-    public string FormattedMaximum => $"{Maximum:N2} {Unit}".Trim();
-    public string FormattedMinimum => $"{Minimum:N2} {Unit}".Trim();
-    public string FormattedStandardDeviation => $"{StandardDeviation:N2} {Unit}".Trim();
-}
-
-/// <summary>
 /// Interaction logic for MainWindow.xaml
 /// </summary>
 public partial class MainWindow : Window
@@ -445,6 +64,11 @@ public partial class MainWindow : Window
     private readonly HashSet<string> _highlightedLegendCounterPaths = new(StringComparer.Ordinal);
     private const float DefaultLineWidth = 2f;
     private const float HighlightedLineWidth = 4f;
+    private const float StackedAreaOutlineWidth = 1f;
+    private const double StatisticsPanelMinHeight = 80;
+    private const double StatisticsPanelMaxHeight = 450;
+    private const double BottomPanelMinHeight = 100;
+    private const double BottomPanelMaxHeight = 750;
     
     // グラフリサイズハンドル関連
     private bool _isResizing = false;
@@ -454,6 +78,12 @@ public partial class MainWindow : Window
     // カウンター選択エリアの表示制御
     private bool _isCounterPanelVisible = true;
     private GridLength _lastCounterPanelWidth = new(350);
+    private bool _isLegendPanelCollapsed = false;
+    private GridLength _lastLegendPanelWidth = new(250);
+    private bool _isStatisticsPanelCollapsed = false;
+    private GridLength _lastStatisticsPanelHeight = new(170);
+    private bool _isBottomPanelCollapsed = false;
+    private GridLength _lastBottomPanelHeight = new(400);
     private GridLength _lastScalePanelWidth = new(230);
     private bool _isScalePanelCollapsed = false;
     private bool _isManualYAxisRangeEnabled = false;
@@ -475,6 +105,9 @@ public partial class MainWindow : Window
         
         // 凡例の初期化
         InitializeLegend();
+        InitializeLegendPanelControls();
+        InitializeStatisticsPanelControls();
+        InitializeBottomPanelControls();
         
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
@@ -506,6 +139,7 @@ public partial class MainWindow : Window
         // Y軸の初期範囲を設定
         PerformanceChart.Plot.Axes.Left.Min = 0;
         PerformanceChart.Plot.Axes.Left.Max = 100;
+        PerformanceChart.Plot.Axes.Left.IsVisible = true;
         
         // ユーザー操作後も現在データに応じたY軸範囲を維持
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
@@ -638,13 +272,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 現在の値モードに応じたY軸ラベルを取得
+    /// 現在の設定に応じたY軸ラベルを取得
     /// </summary>
     private string GetCurrentYAxisLabel()
     {
-        return _currentValueMode == CounterValueMode.DeltaFromPrevious
-            ? "Delta (Prev)"
-            : string.Empty;
+        return string.Empty;
+    }
+
+    private bool HasVisibleChartData()
+    {
+        return _chartSeries.Any() || _areaChartSeries.Any();
+    }
+
+    private bool HasChartPanelContext()
+    {
+        return HasVisibleChartData() || _legendItems.Any();
     }
 
     /// <summary>
@@ -781,7 +423,7 @@ public partial class MainWindow : Window
             RefreshChartWithCurrentType();
             RefreshAllDataTabsForCurrentMode();
 
-            var modeDisplayName = _currentValueMode == CounterValueMode.DeltaFromPrevious ? "前回差分" : "生値";
+            var modeDisplayName = _currentValueMode == CounterValueMode.DeltaFromPrevious ? "差分" : "Raw";
             AddOperationLog(LogLevel.Info, $"値モードを「{modeDisplayName}」に変更しました。");
         }
         catch (Exception ex)
@@ -885,7 +527,308 @@ public partial class MainWindow : Window
         CounterPanelToggleButton.ToolTip = _isCounterPanelVisible
             ? "クリックでカウンター選択エリアを非表示にします"
             : "クリックでカウンター選択エリアを表示します";
-        CounterPanelGridSplitter.Visibility = _isCounterPanelVisible ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// 凡例表示エリア制御の初期化
+    /// </summary>
+    private void InitializeLegendPanelControls()
+    {
+        if (LegendColumn.Width.Value > 0)
+        {
+            _lastLegendPanelWidth = LegendColumn.Width;
+        }
+
+        UpdateLegendPanelControls(hasChartData: HasChartPanelContext());
+    }
+
+    /// <summary>
+    /// 凡例表示エリアの表示/非表示切替
+    /// </summary>
+    private void LegendPanelToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _isLegendPanelCollapsed = !_isLegendPanelCollapsed;
+            UpdateLegendPanelControls(hasChartData: HasChartPanelContext());
+            AddOperationLog(LogLevel.Info, _isLegendPanelCollapsed
+                ? "凡例を非表示にしました。"
+                : "凡例を表示しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in LegendPanelToggleButton_Click: {ex.Message}");
+            LogError($"凡例表示切替エラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 凡例表示エリア制御UIの表示状態を更新する
+    /// </summary>
+    private void UpdateLegendPanelControls(bool hasChartData)
+    {
+        if (!hasChartData)
+        {
+            LegendDividerHost.Visibility = Visibility.Collapsed;
+
+            if (LegendColumn.Width.Value > 0)
+            {
+                _lastLegendPanelWidth = LegendColumn.Width;
+            }
+
+            LegendGroupBox.Visibility = Visibility.Collapsed;
+            LegendColumn.MinWidth = 0;
+            LegendColumn.Width = new GridLength(0);
+            LegendSplitterColumn.Width = new GridLength(0);
+            return;
+        }
+
+        LegendDividerHost.Visibility = Visibility.Visible;
+        LegendPanelToggleButton.Content = _isLegendPanelCollapsed ? "◀" : "▶";
+        LegendPanelToggleButton.ToolTip = _isLegendPanelCollapsed
+            ? "クリックで凡例を表示します"
+            : "クリックで凡例を非表示にします";
+
+        if (_isLegendPanelCollapsed)
+        {
+            if (LegendColumn.Width.Value > 0)
+            {
+                _lastLegendPanelWidth = LegendColumn.Width;
+            }
+
+            LegendGroupBox.Visibility = Visibility.Collapsed;
+            LegendColumn.MinWidth = 0;
+            LegendColumn.Width = new GridLength(0);
+            LegendSplitterColumn.Width = new GridLength(22);
+            return;
+        }
+
+        LegendGroupBox.Visibility = Visibility.Visible;
+        LegendColumn.MinWidth = 150;
+        LegendSplitterColumn.Width = new GridLength(22);
+
+        if (LegendColumn.Width.Value <= 0)
+        {
+            LegendColumn.Width = _lastLegendPanelWidth.Value > 0 ? _lastLegendPanelWidth : new GridLength(250);
+        }
+    }
+
+    /// <summary>
+    /// 統計情報エリア制御の初期化
+    /// </summary>
+    private void InitializeStatisticsPanelControls()
+    {
+        if (StatisticsAreaRowDefinition.Height.Value > 0)
+        {
+            _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
+        }
+
+        UpdateStatisticsPanelControls(hasChartData: HasChartPanelContext());
+    }
+
+    /// <summary>
+    /// 統計情報エリアの表示/非表示切替
+    /// </summary>
+    private void StatisticsPanelToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _isStatisticsPanelCollapsed = !_isStatisticsPanelCollapsed;
+            UpdateStatisticsPanelControls(hasChartData: HasChartPanelContext());
+            AddOperationLog(LogLevel.Info, _isStatisticsPanelCollapsed
+                ? "統計情報エリアを最小化しました。"
+                : "統計情報エリアを表示しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in StatisticsPanelToggleButton_Click: {ex.Message}");
+            LogError($"統計情報エリア表示切替エラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 統計情報エリア制御UIの表示状態を更新する
+    /// </summary>
+    private void UpdateStatisticsPanelControls(bool hasChartData)
+    {
+        if (!hasChartData)
+        {
+            if (StatisticsAreaRowDefinition.Height.Value > 0)
+            {
+                _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
+            }
+
+            StatisticsDividerBorder.Visibility = Visibility.Collapsed;
+            StatisticsGridSplitter.Visibility = Visibility.Collapsed;
+            StatisticsPanelToggleButton.Visibility = Visibility.Collapsed;
+            StatisticsBorder.Visibility = Visibility.Collapsed;
+            StatisticsDividerRowDefinition.Height = new GridLength(0);
+            StatisticsAreaRowDefinition.MinHeight = 0;
+            StatisticsAreaRowDefinition.Height = new GridLength(0);
+            return;
+        }
+
+        StatisticsDividerBorder.Visibility = Visibility.Visible;
+        StatisticsPanelToggleButton.Visibility = Visibility.Visible;
+        StatisticsDividerRowDefinition.Height = new GridLength(22);
+        StatisticsPanelToggleButton.Content = _isStatisticsPanelCollapsed ? "▲" : "▼";
+        StatisticsPanelToggleButton.ToolTip = _isStatisticsPanelCollapsed
+            ? "クリックで統計情報エリアを表示します"
+            : "クリックで統計情報エリアを最小化します";
+
+        if (_isStatisticsPanelCollapsed)
+        {
+            if (StatisticsAreaRowDefinition.Height.Value > 0)
+            {
+                _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
+            }
+
+            StatisticsGridSplitter.Visibility = Visibility.Collapsed;
+            StatisticsBorder.Visibility = Visibility.Collapsed;
+            StatisticsAreaRowDefinition.MinHeight = 0;
+            StatisticsAreaRowDefinition.Height = new GridLength(0);
+            return;
+        }
+
+        StatisticsGridSplitter.Visibility = Visibility.Visible;
+        StatisticsBorder.Visibility = Visibility.Visible;
+        StatisticsAreaRowDefinition.MinHeight = StatisticsPanelMinHeight;
+        StatisticsAreaRowDefinition.MaxHeight = StatisticsPanelMaxHeight;
+
+        if (StatisticsAreaRowDefinition.Height.Value <= 0)
+        {
+            StatisticsAreaRowDefinition.Height = _lastStatisticsPanelHeight.Value > 0 ? _lastStatisticsPanelHeight : new GridLength(170);
+        }
+    }
+
+    /// <summary>
+    /// 下部データテーブル / ログ表示エリア制御の初期化
+    /// </summary>
+    private void InitializeBottomPanelControls()
+    {
+        if (BottomPanelAreaRowDefinition.Height.Value > 0)
+        {
+            _lastBottomPanelHeight = BottomPanelAreaRowDefinition.Height;
+        }
+
+        UpdateBottomPanelControls();
+    }
+
+    /// <summary>
+    /// 下部データテーブル / ログ表示エリアの表示/非表示切替
+    /// </summary>
+    private void BottomPanelToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            _isBottomPanelCollapsed = !_isBottomPanelCollapsed;
+            UpdateBottomPanelControls();
+            AddOperationLog(LogLevel.Info, _isBottomPanelCollapsed
+                ? "データテーブル / ログ表示エリアを最小化しました。"
+                : "データテーブル / ログ表示エリアを表示しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in BottomPanelToggleButton_Click: {ex.Message}");
+            LogError($"データテーブル / ログ表示エリア表示切替エラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 下部データテーブル / ログ表示エリア制御UIの表示状態を更新する
+    /// </summary>
+    private void UpdateBottomPanelControls()
+    {
+        BottomPanelToggleButton.Content = _isBottomPanelCollapsed ? "▲" : "▼";
+        BottomPanelToggleButton.ToolTip = _isBottomPanelCollapsed
+            ? "クリックでデータテーブル / ログ表示エリアを表示します"
+            : "クリックでデータテーブル / ログ表示エリアを最小化します";
+        BottomPanelGridSplitter.Visibility = _isBottomPanelCollapsed ? Visibility.Collapsed : Visibility.Visible;
+
+        if (_isBottomPanelCollapsed)
+        {
+            if (BottomPanelAreaRowDefinition.Height.Value > 0)
+            {
+                _lastBottomPanelHeight = BottomPanelAreaRowDefinition.Height;
+            }
+
+            BottomPanelGrid.Visibility = Visibility.Collapsed;
+            BottomPanelAreaRowDefinition.MinHeight = 0;
+            BottomPanelAreaRowDefinition.Height = new GridLength(0);
+            return;
+        }
+
+        BottomPanelGrid.Visibility = Visibility.Visible;
+        BottomPanelAreaRowDefinition.MinHeight = BottomPanelMinHeight;
+        BottomPanelAreaRowDefinition.MaxHeight = BottomPanelMaxHeight;
+
+        if (BottomPanelAreaRowDefinition.Height.Value <= 0)
+        {
+            BottomPanelAreaRowDefinition.Height = _lastBottomPanelHeight.Value > 0 ? _lastBottomPanelHeight : new GridLength(400);
+        }
+    }
+
+    /// <summary>
+    /// すべてのトグル対応エリアの状態を一括設定する
+    /// </summary>
+    private void SetAllTogglePanelsCollapsed(bool collapsed)
+    {
+        if (collapsed)
+        {
+            HideCounterPanel();
+        }
+        else
+        {
+            ShowCounterPanel();
+        }
+
+        var hasChartData = HasChartPanelContext();
+
+        _isLegendPanelCollapsed = collapsed;
+        UpdateLegendPanelControls(hasChartData);
+
+        _isStatisticsPanelCollapsed = collapsed;
+        UpdateStatisticsPanelControls(hasChartData);
+
+        _isScalePanelCollapsed = collapsed;
+        UpdateScaleControlVisibility();
+
+        _isBottomPanelCollapsed = collapsed;
+        UpdateBottomPanelControls();
+    }
+
+    /// <summary>
+    /// トグル対応エリアをすべて折りたたむ
+    /// </summary>
+    private void CollapseAllPanelsMenu_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SetAllTogglePanelsCollapsed(collapsed: true);
+            AddOperationLog(LogLevel.Info, "トグル対応エリアを一括で折りたたみました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in CollapseAllPanelsMenu_Click: {ex.Message}");
+            LogError($"一括折りたたみエラー: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// トグル対応エリアをすべて展開する
+    /// </summary>
+    private void ExpandAllPanelsMenu_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SetAllTogglePanelsCollapsed(collapsed: false);
+            AddOperationLog(LogLevel.Info, "トグル対応エリアを一括で展開しました。");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error in ExpandAllPanelsMenu_Click: {ex.Message}");
+            LogError($"一括展開エラー: {ex}");
+        }
     }
 
     /// <summary>
@@ -1775,6 +1718,36 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool TryHandleParentCounterNodeToggle(CheckBox checkBox)
+    {
+        if (checkBox.Tag is not CounterTreeNode node || node.IsLeaf)
+        {
+            return false;
+        }
+
+        node.ToggleFromUserInteraction();
+        UpdateRelogCommandDisplay();
+        return true;
+    }
+
+    private void CounterCheckBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is CheckBox checkBox && TryHandleParentCounterNodeToggle(checkBox))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void CounterCheckBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if ((e.Key == Key.Space || e.Key == Key.Enter) &&
+            sender is CheckBox checkBox &&
+            TryHandleParentCounterNodeToggle(checkBox))
+        {
+            e.Handled = true;
+        }
+    }
+
     private void CounterCheckBox_Unchecked(object sender, RoutedEventArgs e)
     {
         try
@@ -1954,48 +1927,92 @@ public partial class MainWindow : Window
         UpdateScaleControlVisibility();
     }
 
+    private sealed class LineSeriesBuildResult
+    {
+        public LineSeriesBuildResult(
+            string counter,
+            string displayName,
+            List<PerformanceDataPoint> dataPoints,
+            double scale,
+            double[] xValues,
+            double[] yValues,
+            ScottPlot.Color lineColor,
+            System.Windows.Media.Color legendColor)
+        {
+            Counter = counter;
+            DisplayName = displayName;
+            DataPoints = dataPoints;
+            Scale = scale;
+            XValues = xValues;
+            YValues = yValues;
+            LineColor = lineColor;
+            LegendColor = legendColor;
+        }
+
+        public string Counter { get; }
+        public string DisplayName { get; }
+        public List<PerformanceDataPoint> DataPoints { get; }
+        public double Scale { get; }
+        public double[] XValues { get; }
+        public double[] YValues { get; }
+        public ScottPlot.Color LineColor { get; }
+        public System.Windows.Media.Color LegendColor { get; }
+    }
+
+    private LineSeriesBuildResult? BuildLineSeries(string counter)
+    {
+        var dataPoints = GetDisplayDataPoints(counter);
+        if (!dataPoints.Any())
+        {
+            return null;
+        }
+
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
+        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        var lineColor = GetOrCreateCounterColor(counter);
+
+        return new LineSeriesBuildResult(
+            counter,
+            GetCounterDisplayName(counter),
+            dataPoints,
+            scale,
+            xValues,
+            yValues,
+            lineColor,
+            ConvertToMediaColor(lineColor));
+    }
+
+    private void AddBuiltLineSeriesToChart(LineSeriesBuildResult lineSeries)
+    {
+        var scatter = PerformanceChart.Plot.Add.Scatter(lineSeries.XValues, lineSeries.YValues);
+        scatter.LegendText = lineSeries.DisplayName;
+        scatter.LineWidth = DefaultLineWidth;
+        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
+        scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
+        scatter.LineColor = lineSeries.LineColor; // 色を設定
+        scatter.IsVisible = _seriesVisibility.GetValueOrDefault(lineSeries.Counter, true);
+
+        _chartSeries[lineSeries.Counter] = scatter;
+        AddLegendItem(lineSeries.Counter, lineSeries.DisplayName, lineSeries.LegendColor);
+    }
+
     /// <summary>
     /// 折れ線グラフのシリーズを個別に追加
     /// </summary>
     private void AddLineChartSeries(string counter)
     {
-        var dataPoints = GetDisplayDataPoints(counter);
-        if (!dataPoints.Any())
+        var lineSeries = BuildLineSeries(counter);
+        if (lineSeries is null)
         {
             return;
         }
-        
-        // 手動スケールを取得（デフォルトは1.0）
-        var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-        
-        // 最終スケール = 手動スケール
-        var finalScale = manualScale;
 
-        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
-        
-        System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Manual scale: {manualScale:F6}, Final scale: {finalScale:F6}");
-        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
-        
-        // 色を取得
-        var scottPlotColor = GetOrCreateCounterColor(counter);
-        var mediaColor = ConvertToMediaColor(scottPlotColor);
-        
-        // 新しいシリーズを作成（折れ線グラフとして）
-        var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
-        scatter.LegendText = GetCounterDisplayName(counter);
-        scatter.LineWidth = DefaultLineWidth;
-        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
-        scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
-        scatter.LineColor = scottPlotColor; // 色を設定
-        scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
-        
-        // シリーズを記録
-        _chartSeries[counter] = scatter;
-        
-        // 凡例アイテムを追加
-        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+        System.Diagnostics.Debug.WriteLine($"Original value range: {lineSeries.DataPoints.Min(dp => dp.Value)} to {lineSeries.DataPoints.Max(dp => dp.Value)}");
+        System.Diagnostics.Debug.WriteLine($"Manual scale: {lineSeries.Scale:F6}, Final scale: {lineSeries.Scale:F6}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {lineSeries.YValues.Min()} to {lineSeries.YValues.Max()}");
+
+        AddBuiltLineSeriesToChart(lineSeries);
 
         // 凡例ハイライト状態を反映
         ApplyLineSeriesHighlight(refresh: false);
@@ -2034,45 +2051,18 @@ public partial class MainWindow : Window
             return;
         }
         
-        // データポイントを準備
-        var dataPoints = GetDisplayDataPoints(counter);
-        if (!dataPoints.Any())
+        var lineSeries = BuildLineSeries(counter);
+        if (lineSeries is null)
         {
             System.Diagnostics.Debug.WriteLine($"No data points for counter: {counter}");
             return;
         }
-        
-        // 手動スケールを取得（デフォルトは1.0）
-        var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-        
-        // 最終スケール = 手動スケール
-        var finalScale = manualScale;
-        System.Diagnostics.Debug.WriteLine($"Manual scale: {manualScale:F6}, Final scale: {finalScale:F6} for counter: {counter}");
-        
-        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
-        
-        System.Diagnostics.Debug.WriteLine($"Original value range: {dataPoints.Min(dp => dp.Value)} to {dataPoints.Max(dp => dp.Value)}");
-        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {yValues.Min()} to {yValues.Max()}");
-        
-        // 色を取得
-        var scottPlotColor = GetOrCreateCounterColor(counter);
-        var mediaColor = ConvertToMediaColor(scottPlotColor);
-        
-        // 新しいシリーズを作成（折れ線グラフとして）
-        var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
-        scatter.LegendText = GetCounterDisplayName(counter);
-        scatter.LineWidth = DefaultLineWidth;
-        scatter.MarkerSize = 0; // マーカーを非表示にしてパフォーマンス向上
-        scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
-        scatter.LineColor = scottPlotColor; // 色を設定
-        scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
-        
-        // シリーズを記録
-        _chartSeries[counter] = scatter;
-        
-        // 凡例アイテムを追加
-        AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
+
+        System.Diagnostics.Debug.WriteLine($"Manual scale: {lineSeries.Scale:F6}, Final scale: {lineSeries.Scale:F6} for counter: {counter}");
+        System.Diagnostics.Debug.WriteLine($"Original value range: {lineSeries.DataPoints.Min(dp => dp.Value)} to {lineSeries.DataPoints.Max(dp => dp.Value)}");
+        System.Diagnostics.Debug.WriteLine($"Display position range (scaled): {lineSeries.YValues.Min()} to {lineSeries.YValues.Max()}");
+
+        AddBuiltLineSeriesToChart(lineSeries);
 
         // 凡例ハイライト状態を反映
         ApplyLineSeriesHighlight(refresh: false);
@@ -2200,6 +2190,7 @@ public partial class MainWindow : Window
             PerformanceChart.Plot.XLabel("時間");
             PerformanceChart.Plot.YLabel(GetCurrentYAxisLabel());
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
+            PerformanceChart.Plot.Axes.Left.IsVisible = true;
             
             // 凡例を無効化（独立した凡例コンポーネントを使用）
             PerformanceChart.Plot.Legend.IsVisible = false;
@@ -2259,35 +2250,14 @@ public partial class MainWindow : Window
         
         foreach (var counter in selectedCounters)
         {
-            var dataPoints = GetDisplayDataPoints(counter);
-            if (!dataPoints.Any())
+            var lineSeries = BuildLineSeries(counter);
+            if (lineSeries is null)
             {
                 continue;
             }
-            
-            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-            var finalScale = manualScale;
-            
-            var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-            var yValues = dataPoints.Select(dp => dp.Value * finalScale).ToArray();
-            
-            // 色を取得
-            var scottPlotColor = GetOrCreateCounterColor(counter);
-            var mediaColor = ConvertToMediaColor(scottPlotColor);
-            
-            var scatter = PerformanceChart.Plot.Add.Scatter(xValues, yValues);
-            scatter.LegendText = GetCounterDisplayName(counter);
-            scatter.LineWidth = DefaultLineWidth;
-            scatter.MarkerSize = 0;
-            scatter.LineStyle.Width = DefaultLineWidth;
-            scatter.LineColor = scottPlotColor; // 色を設定
-            scatter.IsVisible = _seriesVisibility.GetValueOrDefault(counter, true);
-            
-            _chartSeries[counter] = scatter;
-            
-            // 凡例アイテムを追加
-            AddLegendItem(counter, GetCounterDisplayName(counter), mediaColor);
-            
+
+            AddBuiltLineSeriesToChart(lineSeries);
+
             System.Diagnostics.Debug.WriteLine($"Added line series for: {counter}");
         }
 
@@ -2403,6 +2373,9 @@ public partial class MainWindow : Window
             fillY.LegendText = GetCounterDisplayName(counter);
             var scottPlotColor = counterColors[counter];
             fillY.FillStyle.Color = scottPlotColor;
+            fillY.LineColor = scottPlotColor;
+            fillY.LineWidth = StackedAreaOutlineWidth;
+            fillY.LineStyle.Width = StackedAreaOutlineWidth;
             fillY.IsVisible = true;
             
             _areaChartSeries[counter] = fillY;
@@ -2503,9 +2476,11 @@ public partial class MainWindow : Window
     private void UpdateChartVisibility()
     {
         // シリーズがある場合はメッセージを非表示、ない場合は表示
-        var hasData = _chartSeries.Any() || _areaChartSeries.Any();
-        NoDataMessagePanel.Visibility = hasData ? Visibility.Collapsed : Visibility.Visible;
-        System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasData={hasData}");
+        var hasVisibleData = HasVisibleChartData();
+        var hasPanelContext = HasChartPanelContext();
+        NoDataMessagePanel.Visibility = hasVisibleData ? Visibility.Collapsed : Visibility.Visible;
+        UpdateLegendPanelControls(hasPanelContext);
+        System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasVisibleData={hasVisibleData}, hasPanelContext={hasPanelContext}");
         
         // 統計情報表示の更新
         UpdateStatisticsDisplay();
@@ -2518,22 +2493,24 @@ public partial class MainWindow : Window
     {
         try
         {
-            var hasData = _chartSeries.Any() || _areaChartSeries.Any();
-            StatisticsBorder.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
-            
+            var hasVisibleData = HasVisibleChartData();
+            var hasPanelContext = HasChartPanelContext();
+            UpdateStatisticsPanelControls(hasPanelContext);
+             
             // グラフコントロールパネルの表示制御
-            GraphControlPanel.Visibility = hasData ? Visibility.Visible : Visibility.Collapsed;
-            
+            GraphControlPanel.Visibility = hasPanelContext ? Visibility.Visible : Visibility.Collapsed;
+            GraphControlPanel.IsEnabled = hasVisibleData;
+             
             // グラフメニューの有効/無効制御
-            GraphMenu.IsEnabled = hasData;
-            
+            GraphMenu.IsEnabled = hasVisibleData;
+             
             // コンテキストメニューの有効/無効制御
             if (ContextMenuCopyGraph != null)
             {
-                ContextMenuCopyGraph.IsEnabled = hasData;
+                ContextMenuCopyGraph.IsEnabled = hasVisibleData;
             }
-            
-            if (!hasData)
+             
+            if (!hasVisibleData)
             {
                 StatisticsDataGrid.ItemsSource = null;
                 return;
@@ -3060,11 +3037,6 @@ public partial class MainWindow : Window
         {
             return "不明";
         }
-    }
-
-    private void SelectAll_Click(object sender, RoutedEventArgs e)
-    {
-        SetAllCheckBoxes(true);
     }
 
     private void UnselectAll_Click(object sender, RoutedEventArgs e)
@@ -4066,7 +4038,7 @@ public partial class MainWindow : Window
             return;
         }
         
-        bool hasChartData = _chartSeries.Any() || _areaChartSeries.Any();
+        bool hasChartData = HasChartPanelContext();
         if (!hasChartData)
         {
             ScaleControlGroupBox.Visibility = Visibility.Collapsed;
@@ -4088,7 +4060,6 @@ public partial class MainWindow : Window
         ScalePanelToggleButton.ToolTip = _isScalePanelCollapsed
             ? "クリックでスケール設定エリアを表示します"
             : "クリックでスケール設定エリアを非表示にします";
-        ScalePanelGridSplitter.Visibility = _isScalePanelCollapsed ? Visibility.Collapsed : Visibility.Visible;
 
         if (_isScalePanelCollapsed)
         {
