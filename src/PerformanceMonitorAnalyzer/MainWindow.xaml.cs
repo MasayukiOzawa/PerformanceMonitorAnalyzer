@@ -52,6 +52,7 @@ public partial class MainWindow : Window
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
     private bool _isInitializingBulkScaleComboBox = false;
+    private bool _isSynchronizingModeControls = false;
     
     // パターン管理機能
     private CounterPatternManager? _patternManager;
@@ -402,7 +403,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (sender is not RadioButton radioButton)
+            if (_isSynchronizingModeControls || sender is not RadioButton radioButton)
             {
                 return;
             }
@@ -413,18 +414,7 @@ public partial class MainWindow : Window
                 _ => CounterValueMode.RawValue
             };
 
-            if (_currentValueMode == newValueMode)
-            {
-                return;
-            }
-
-            _currentValueMode = newValueMode;
-
-            RefreshChartWithCurrentType();
-            RefreshAllDataTabsForCurrentMode();
-
-            var modeDisplayName = _currentValueMode == CounterValueMode.DeltaFromPrevious ? "差分" : "Raw";
-            AddOperationLog(LogLevel.Info, $"値モードを「{modeDisplayName}」に変更しました。");
+            ApplyValueMode(newValueMode, refreshDisplays: true, logChange: true);
         }
         catch (Exception ex)
         {
@@ -769,6 +759,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 下部のデータテーブル / ログ表示エリアを必要に応じて再表示する
+    /// </summary>
+    private void EnsureBottomPanelVisible()
+    {
+        if (!_isBottomPanelCollapsed)
+        {
+            return;
+        }
+
+        _isBottomPanelCollapsed = false;
+        UpdateBottomPanelControls();
+    }
+
+    /// <summary>
     /// すべてのトグル対応エリアの状態を一括設定する
     /// </summary>
     private void SetAllTogglePanelsCollapsed(bool collapsed)
@@ -858,30 +862,118 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (sender is RadioButton radioButton)
+            if (_isSynchronizingModeControls || sender is not RadioButton radioButton)
             {
-                var newChartType = radioButton.Name switch
-                {
-                    "LineChartRadio" => ChartType.LineChart,
-                    "StackedAreaChartRadio" => ChartType.StackedAreaChart,
-                    _ => ChartType.LineChart
-                };
-
-                if (_currentChartType != newChartType)
-                {
-                    _currentChartType = newChartType;
-                    System.Diagnostics.Debug.WriteLine($"Chart type changed to: {_currentChartType}");
-                    
-                    // 選択されているカウンターでチャートを再描画
-                    RefreshChartWithCurrentType();
-                }
+                return;
             }
+
+            var newChartType = radioButton.Name switch
+            {
+                "LineChartRadio" => ChartType.LineChart,
+                "StackedAreaChartRadio" => ChartType.StackedAreaChart,
+                _ => ChartType.LineChart
+            };
+
+            ApplyChartType(newChartType, refreshChart: true);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in ChartType_Changed: {ex.Message}");
             LogError($"グラフタイプ変更エラー: {ex}");
         }
+    }
+
+    private bool ApplyChartType(ChartType newChartType, bool refreshChart)
+    {
+        if (_currentChartType == newChartType)
+        {
+            SyncChartTypeRadioButtons();
+            return false;
+        }
+
+        _currentChartType = newChartType;
+        SyncChartTypeRadioButtons();
+        System.Diagnostics.Debug.WriteLine($"Chart type changed to: {_currentChartType}");
+
+        if (refreshChart)
+        {
+            RefreshChartWithCurrentType();
+        }
+
+        return true;
+    }
+
+    private bool ApplyValueMode(CounterValueMode newValueMode, bool refreshDisplays, bool logChange)
+    {
+        if (_currentValueMode == newValueMode)
+        {
+            SyncValueModeRadioButtons();
+            return false;
+        }
+
+        _currentValueMode = newValueMode;
+        SyncValueModeRadioButtons();
+
+        if (refreshDisplays)
+        {
+            RefreshChartWithCurrentType();
+            RefreshAllDataTabsForCurrentMode();
+        }
+
+        if (logChange)
+        {
+            AddOperationLog(LogLevel.Info, $"値モードを「{GetValueModeDisplayName(_currentValueMode)}」に変更しました。");
+        }
+
+        return true;
+    }
+
+    private void SyncChartTypeRadioButtons()
+    {
+        if (LineChartRadio == null || StackedAreaChartRadio == null)
+        {
+            return;
+        }
+
+        _isSynchronizingModeControls = true;
+        try
+        {
+            LineChartRadio.IsChecked = _currentChartType == ChartType.LineChart;
+            StackedAreaChartRadio.IsChecked = _currentChartType == ChartType.StackedAreaChart;
+        }
+        finally
+        {
+            _isSynchronizingModeControls = false;
+        }
+    }
+
+    private void SyncValueModeRadioButtons()
+    {
+        if (RawValueModeRadio == null || DeltaValueModeRadio == null)
+        {
+            return;
+        }
+
+        _isSynchronizingModeControls = true;
+        try
+        {
+            RawValueModeRadio.IsChecked = _currentValueMode == CounterValueMode.RawValue;
+            DeltaValueModeRadio.IsChecked = _currentValueMode == CounterValueMode.DeltaFromPrevious;
+        }
+        finally
+        {
+            _isSynchronizingModeControls = false;
+        }
+    }
+
+    private static string GetChartTypeDisplayName(ChartType chartType)
+    {
+        return chartType == ChartType.StackedAreaChart ? "積み重ね面グラフ" : "折れ線グラフ";
+    }
+
+    private static string GetValueModeDisplayName(CounterValueMode valueMode)
+    {
+        return valueMode == CounterValueMode.DeltaFromPrevious ? "差分" : "Raw";
     }
 
     /// <summary>
@@ -1485,9 +1577,12 @@ public partial class MainWindow : Window
             if (objectName.Contains('(') && objectName.Contains(')'))
             {
                 var startIndex = objectName.IndexOf('(');
-                var endIndex = objectName.IndexOf(')');
-                instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
-                objectName = objectName.Substring(0, startIndex);
+                var endIndex = objectName.LastIndexOf(')');
+                if (startIndex >= 0 && endIndex > startIndex)
+                {
+                    instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
+                    objectName = objectName.Substring(0, startIndex);
+                }
             }
             
             // 階層構造を構築
@@ -2716,6 +2811,55 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// 指定されたカウンターのデータテーブルタブを表示し、必要に応じて下部エリアを展開する
+    /// </summary>
+    private void ShowDataTablesForCounters(IEnumerable<string> counters)
+    {
+        var loadedCounters = counters
+            .Where(counter => _counterData.ContainsKey(counter))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (!loadedCounters.Any())
+        {
+            return;
+        }
+
+        EnsureBottomPanelVisible();
+
+        var loadedCounterSet = new HashSet<string>(loadedCounters, StringComparer.Ordinal);
+        var tabsToRemove = DataTabControl.Items
+            .Cast<TabItem>()
+            .Where(tab => tab.Tag is string counter && !loadedCounterSet.Contains(counter))
+            .ToList();
+
+        foreach (var tabToRemove in tabsToRemove)
+        {
+            DataTabControl.Items.Remove(tabToRemove);
+        }
+
+        var currentSelectedCounter = (DataTabControl.SelectedItem as TabItem)?.Tag as string;
+
+        foreach (var counter in loadedCounters)
+        {
+            AddCounterTab(counter);
+        }
+
+        var preferredCounter = !string.IsNullOrEmpty(currentSelectedCounter) && loadedCounterSet.Contains(currentSelectedCounter)
+            ? currentSelectedCounter
+            : loadedCounters[0];
+
+        var preferredTab = DataTabControl.Items
+            .Cast<TabItem>()
+            .FirstOrDefault(tab => string.Equals(tab.Tag as string, preferredCounter, StringComparison.Ordinal));
+
+        if (preferredTab != null)
+        {
+            DataTabControl.SelectedItem = preferredTab;
+        }
+    }
+
     private void RemoveCounterTab(string counter)
     {
         var tabToRemove = DataTabControl.Items.Cast<TabItem>()
@@ -3092,13 +3236,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 全てのカウンターのチェックを外す
-            SetAllCheckBoxes(false);
-            
             // 全てのデータタブを削除（ログタブは別のTabControlにあるため影響なし）
+            // カウンターの選択状態やグラフ表示は保持する
             DataTabControl.Items.Clear();
             
-            AddOperationLog(LogLevel.Success, "全てのデータテーブルタブが閉じられました。");
+            AddOperationLog(LogLevel.Success, "全てのデータテーブルタブを閉じました。カウンターの選択状態は保持されています。");
         }
         catch (Exception ex)
         {
@@ -3434,7 +3576,8 @@ public partial class MainWindow : Window
             }
             
             await ExecuteRelogForSelectedCounters(selectedCounters, selectedStartTime, selectedEndTime, progress);
-            ResetBulkScaleToDefaultAfterCounterLoad();
+            ResetBulkScaleSelectorAfterCounterLoad();
+            ShowDataTablesForCounters(selectedCounters);
 
             var timeRangeMessage = _timeRangeDetected
                 ? $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}"
@@ -3900,6 +4043,26 @@ public partial class MainWindow : Window
         return false;
     }
 
+    private static string FormatScaleValue(double scale)
+    {
+        return scale.ToString("0.###############", CultureInfo.InvariantCulture);
+    }
+
+    private static void EnsureScaleComboBoxContainsScale(ComboBox scaleComboBox, double scale)
+    {
+        if (TrySelectScaleComboBoxItem(scaleComboBox, scale))
+        {
+            return;
+        }
+
+        var scaleLabel = FormatScaleValue(scale);
+        scaleComboBox.Items.Add(new ComboBoxItem
+        {
+            Content = scaleLabel,
+            Tag = scaleLabel
+        });
+    }
+
     /// <summary>
     /// 表示中のカウンタースケールプルダウンを指定スケールに同期
     /// </summary>
@@ -3981,6 +4144,7 @@ public partial class MainWindow : Window
 
         // 現在のスケール値を選択
         var currentScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        EnsureScaleComboBoxContainsScale(scaleComboBox, currentScale);
         var selected = TrySelectScaleComboBoxItem(scaleComboBox, currentScale);
         if (!selected)
         {
@@ -4150,9 +4314,9 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 選択カウンター読み込み後に一括スケールを既定値(1.0)へ戻して適用
+    /// 選択カウンター読み込み後に一括スケールのUI選択だけを既定値(1.0)へ戻す
     /// </summary>
-    private void ResetBulkScaleToDefaultAfterCounterLoad()
+    private void ResetBulkScaleSelectorAfterCounterLoad()
     {
         const double defaultScale = 1.0;
 
@@ -4169,31 +4333,7 @@ public partial class MainWindow : Window
             }
         }
 
-        var currentCounters = GetCurrentChartCounters();
-        if (!currentCounters.Any())
-        {
-            return;
-        }
-
-        foreach (var counter in currentCounters)
-        {
-            _counterScales[counter] = defaultScale;
-        }
-
-        if (_currentChartType == ChartType.LineChart)
-        {
-            foreach (var counter in currentCounters)
-            {
-                RefreshCounterInChart(counter);
-            }
-        }
-        else
-        {
-            RefreshChartWithCurrentType();
-        }
-
         UpdateScaleControlVisibility();
-        SyncVisibleCounterScaleComboBoxes(defaultScale);
     }
 
     /// <summary>
@@ -4424,12 +4564,22 @@ public partial class MainWindow : Window
                 objNode.UpdateParentStateFromChild();
             }
 
+            var chartTypeChanged = ApplyChartType(pattern.GraphType, refreshChart: false);
+            var valueModeChanged = ApplyValueMode(pattern.ValueMode, refreshDisplays: false, logChange: false);
+            if (chartTypeChanged || valueModeChanged)
+            {
+                RefreshChartWithCurrentType();
+                RefreshAllDataTabsForCurrentMode();
+            }
+
             // パターン適用後の選択状態でrelog表示を更新
             UpdateRelogCommandDisplay();
 
             // 結果の表示
             var message = $"パターン「{pattern.Name}」を適用しました。\n" +
-                         $"✅ 適用されたカウンター: {appliedCounters.Count}個";
+                         $"✅ 適用されたカウンター: {appliedCounters.Count}個\n" +
+                         $"📊 グラフタイプ: {GetChartTypeDisplayName(pattern.GraphType)}\n" +
+                         $"📉 値モード: {GetValueModeDisplayName(pattern.ValueMode)}";
             
             if (notFoundCounters.Any())
             {
@@ -4469,7 +4619,7 @@ public partial class MainWindow : Window
             if (exactMatch != null)
             {
                 exactMatch.IsChecked = true;
-                _counterScales[counterPattern] = scale;
+                _counterScales[exactMatch.FullPath] = scale;
                 return true;
             }
 
@@ -4507,6 +4657,11 @@ public partial class MainWindow : Window
                 {
                     foreach (var counterNode in instNode.Children)
                     {
+                        if (counterNode.IsWildCard)
+                        {
+                            continue;
+                        }
+
                         if (counterNode.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
                         {
                             return counterNode;
@@ -4520,60 +4675,33 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// パターンマッチングでカウンターノードを検索（ワイルドカード対応）
+    /// \Object(instance)\* のような指定で該当オブジェクト配下の全カウンターを選択できる。
     /// </summary>
     private async Task<List<CounterTreeNode>> FindCountersByPatternAsync(string pattern)
     {
         return await Task.Run(() =>
         {
             var matches = new List<CounterTreeNode>();
-            
-            // ワイルドカード文字を正規表現に変換
-            var regexPattern = pattern
-                .Replace("*", ".*")
-                .Replace("?", ".")
-                .Replace(@"\", @"\\")
-                .Replace("(", @"\(")
-                .Replace(")", @"\)")
-                .Replace("[", @"\[")
-                .Replace("]", @"\]");
-            
-            try
+
+            foreach (var objNode in _counterTreeNodes)
             {
-                var regex = new System.Text.RegularExpressions.Regex(regexPattern, 
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                
-                foreach (var objNode in _counterTreeNodes)
+                foreach (var instNode in objNode.Children)
                 {
-                    foreach (var instNode in objNode.Children)
+                    foreach (var counterNode in instNode.Children)
                     {
-                        foreach (var counterNode in instNode.Children)
+                        if (counterNode.IsWildCard)
                         {
-                            if (regex.IsMatch(counterNode.FullPath))
-                            {
-                                matches.Add(counterNode);
-                            }
+                            continue;
+                        }
+
+                        if (CounterPathPatternMatcher.MatchesPattern(pattern, counterNode.FullPath))
+                        {
+                            matches.Add(counterNode);
                         }
                     }
                 }
             }
-            catch (Exception)
-            {
-                // 正規表現エラーの場合は部分文字列マッチで代替
-                foreach (var objNode in _counterTreeNodes)
-                {
-                    foreach (var instNode in objNode.Children)
-                    {
-                        foreach (var counterNode in instNode.Children)
-                        {
-                            if (counterNode.FullPath.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                            {
-                                matches.Add(counterNode);
-                            }
-                        }
-                    }
-                }
-            }
-            
+
             return matches;
         });
     }

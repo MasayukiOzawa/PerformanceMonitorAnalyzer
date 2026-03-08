@@ -176,20 +176,40 @@ LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (
 ### 検証（追加）
 - `dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
 
-## 追補: 選択カウンター読み込み時の一括スケール初期化
+## 追補: 選択カウンター読み込み時の一括スケールUI初期化
 
 ### 追加で発生した問題
-- 「選択されたカウンターを読み込み」を実行した際、直前の一括スケール値が残るため、新規読み込み時の比較基準が一定にならない。
+- 「選択されたカウンターを読み込み」を実行した際、一括スケールのUI選択は初期値へ戻したい一方で、パターンや個別設定で指定したカウンタースケールまで `1.0` に上書きされてしまう。
 
 ### 対応内容
-- `ExecuteSelectedCounters_Click` の読み込み完了後に `ResetBulkScaleToDefaultAfterCounterLoad()` を呼び出すよう変更。
-- `ResetBulkScaleToDefaultAfterCounterLoad()` で以下を実施:
+- `ExecuteSelectedCounters_Click` の読み込み完了後に `ResetBulkScaleSelectorAfterCounterLoad()` を呼び出すよう変更。
+- `ResetBulkScaleSelectorAfterCounterLoad()` で以下を実施:
   - 一括スケールのプルダウン選択を `1.0` に更新
-  - 現在表示中カウンターの `_counterScales` を `1.0` に上書き
-  - チャートを再描画し、下部の個別スケールプルダウン表示も `1.0` に同期
+  - 現在表示中カウンターの `_counterScales` は保持
+  - 下部の個別スケールプルダウンは保持されたスケール値をそのまま表示
+
+## 追補: 選択カウンター読み込み後のデータテーブル再表示
+
+### 追加で発生した問題
+- 下部のデータテーブル / ログ領域を折りたたんだ状態で「選択されたカウンターを読み込み」を実行しても、読込済みのカウンタータブが見えず、処理結果をすぐ確認しづらい。
+
+### 対応内容
+- `ShowDataTablesForCounters(IEnumerable<string>)` を追加し、読み込み完了後に読込済みの選択カウンターに対応するデータテーブルタブを必ず表示するようにした。
+- 下部領域が折りたたまれている場合は `EnsureBottomPanelVisible()` で自動再表示する。
+- 既存タブのうち今回未選択のものは除外し、読込済みの選択カウンターだけがタブに並ぶよう整理した。
 
 ### 検証（追加2）
-- 実行中プロセス停止後、`dotnet build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+- 実行中プロセス停止後、`dotnet build --nologo -v q -r win-x64 -p:OutputPath=%TEMP%\copilot-pattern-scale-preserve-build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj` でビルド成功。
+- `dotnet test --nologo -v q -p:OutputPath=%TEMP%\copilot-pattern-scale-preserve-test -p:SelfContained=false -p:UseAppHost=false tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj` でテスト成功。
+
+## 追補: 「すべてのタブを閉じる」でチェック状態を保持
+
+### 追加で発生した問題
+- 「すべてのタブを閉じる」を実行すると、データテーブルタブを閉じるだけでなく、選択済みカウンターのチェックまで外れてしまう。
+
+### 対応内容
+- `CloseAllTabs_Click()` から `SetAllCheckBoxes(false)` を削除し、データテーブルタブのみを閉じる動作へ変更した。
+- 操作ログは「タブを閉じたが、カウンターの選択状態は保持される」ことが分かる文言に更新した。
 
 ## 追補: Process `% Processor Time` が同値化して見える問題の是正
 
