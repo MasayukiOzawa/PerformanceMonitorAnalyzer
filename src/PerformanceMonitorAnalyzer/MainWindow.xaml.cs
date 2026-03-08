@@ -45,10 +45,6 @@ public partial class MainWindow : Window
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
     
-    // サポートされるスケール値
-    private readonly double[] SupportedScales = { 1000000000.0, 100000000.0, 10000000.0, 1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001, 0.000000001 };
-    private static readonly string[] ScaleValueItems = { "1000000000", "100000000", "10000000", "1000000", "100000", "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001", "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001" };
-    
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
     private bool _isInitializingBulkScaleComboBox = false;
@@ -3399,8 +3395,6 @@ public partial class MainWindow : Window
             ApplyFallbackTimeRange($"PDH APIによる時間範囲検出に失敗: {ex.Message}");
             return true;
         }
-        
-        return false;
     }
 
     /// <summary>
@@ -3976,18 +3970,12 @@ public partial class MainWindow : Window
         _isInitializingBulkScaleComboBox = true;
         BulkScaleComboBox.Items.Clear();
 
-        foreach (var scaleValue in ScaleValueItems)
-        {
-            BulkScaleComboBox.Items.Add(new ComboBoxItem
-            {
-                Content = scaleValue,
-                Tag = scaleValue
-            });
-        }
+        AddSupportedScaleItems(BulkScaleComboBox);
 
+        var defaultScaleLabel = ScaleCatalog.GetLabel(1.0);
         var defaultItem = BulkScaleComboBox.Items
             .OfType<ComboBoxItem>()
-            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "1.0", StringComparison.Ordinal));
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), defaultScaleLabel, StringComparison.Ordinal));
         if (defaultItem != null)
         {
             BulkScaleComboBox.SelectedItem = defaultItem;
@@ -4024,6 +4012,23 @@ public partial class MainWindow : Window
             : _areaChartSeries.Keys.OrderBy(c => c).ToList();
     }
 
+    private static ComboBoxItem CreateScaleComboBoxItem(string scaleLabel)
+    {
+        return new ComboBoxItem
+        {
+            Content = scaleLabel,
+            Tag = scaleLabel
+        };
+    }
+
+    private static void AddSupportedScaleItems(ComboBox comboBox)
+    {
+        foreach (var scaleOption in ScaleCatalog.SupportedOptions)
+        {
+            comboBox.Items.Add(CreateScaleComboBoxItem(scaleOption.Label));
+        }
+    }
+
     /// <summary>
     /// カウンター別スケール設定コントロールを作成
     /// </summary>
@@ -4045,7 +4050,7 @@ public partial class MainWindow : Window
 
     private static string FormatScaleValue(double scale)
     {
-        return scale.ToString("0.###############", CultureInfo.InvariantCulture);
+        return ScaleCatalog.GetLabel(scale);
     }
 
     private static void EnsureScaleComboBoxContainsScale(ComboBox scaleComboBox, double scale)
@@ -4056,11 +4061,7 @@ public partial class MainWindow : Window
         }
 
         var scaleLabel = FormatScaleValue(scale);
-        scaleComboBox.Items.Add(new ComboBoxItem
-        {
-            Content = scaleLabel,
-            Tag = scaleLabel
-        });
+        scaleComboBox.Items.Add(CreateScaleComboBoxItem(scaleLabel));
     }
 
     /// <summary>
@@ -4133,14 +4134,7 @@ public partial class MainWindow : Window
         };
 
         // スケール値を追加
-        foreach (var scaleValue in ScaleValueItems)
-        {
-            scaleComboBox.Items.Add(new ComboBoxItem 
-            { 
-                Content = scaleValue, 
-                Tag = scaleValue 
-            });
-        }
+        AddSupportedScaleItems(scaleComboBox);
 
         // 現在のスケール値を選択
         var currentScale = _counterScales.GetValueOrDefault(counter, 1.0);
