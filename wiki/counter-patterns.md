@@ -7,14 +7,15 @@
 ## 機能の特徴
 
 ### 🎯 事前定義パターン
-- **6つの定義済みパターン**: 様々な分析シナリオに対応
+- **同梱の3つの定義済みパターン**: 基本システム監視 / 詳細システム監視 / SQLサーバー監視
 - **ワンクリック適用**: パターン選択による瞬時のカウンター選択
 - **目的別最適化**: 分析目的に応じた最適なカウンター組み合わせ
 
 ### ⚙️ 柔軟な設定
-- **YAML設定ファイル**: `counter-patterns.yaml` による設定管理
+- **YAML設定ファイル**: `config/counter-patterns.yaml` による設定管理
 - **カスタマイズ可能**: 独自パターンの追加・編集
-- **スケール設定**: カウンターごとのスケール値指定
+- **スケール設定**: カウンターごとの任意の `scale` 値指定（省略時は `1.0`）
+- **表示モード設定**: パターンごとに `graphType` / `valueMode` を指定して適用時のグラフ表示を固定
 - **有効無効切り替え**: パターン内の個別カウンターの制御
 
 ### 🔍 インテリジェント検索
@@ -59,23 +60,16 @@
 - `\PhysicalDisk(_Total)\Disk Reads/sec` - ディスク読み取り
 - `\PhysicalDisk(_Total)\Disk Writes/sec` - ディスク書き込み
 
-### 2. ネットワーク監視
-**目的**: ネットワークトラフィックの分析
-**カウンター**:
-- `\Network Interface(*)\Bytes Total/sec` - 総バイト数/秒
-- `\Network Interface(*)\Packets Total/sec` - 総パケット数/秒
-- `\Network Interface(*)\Current Bandwidth` - 現在の帯域幅
-
-### 3. 詳細システム監視
+### 2. 詳細システム監視
 **目的**: 詳細なシステム分析
 **カウンター**:
 - `\System\Context Switches/sec` - コンテキストスイッチ/秒
 - `\System\System Calls/sec` - システムコール/秒
-- `\Process(_Total)\Working Set` - プロセス作業セット
-- `\Process(_Total)\Private Bytes` - プライベートバイト
+- `\Process(_Total)\Working Set` - プロセス作業セット（既定設定で `scale: 0.000001` を使用）
+- `\Process(_Total)\Private Bytes` - プライベートバイト（既定設定で `scale: 0.000001` を使用）
 - `\Paging File(_Total)\% Usage` - ページファイル使用率
 
-### 4. SQLサーバー監視
+### 3. SQLサーバー監視
 **目的**: SQL Serverパフォーマンスの分析
 **カウンター**:
 - `\SQLServer:General Statistics\User Connections` - ユーザー接続数
@@ -83,26 +77,6 @@
 - `\SQLServer:SQL Statistics\Batch Requests/sec` - バッチリクエスト/秒
 - `\SQLServer:SQL Statistics\SQL Compilations/sec` - SQLコンパイル/秒
 - `\SQLServer:Locks(_Total)\Lock Waits/sec` - ロック待機/秒
-
-### 5. Webサーバー監視
-**目的**: IIS Webサーバーの分析
-**カウンター**:
-- `\Web Service(_Total)\Current Connections` - 現在の接続数
-- `\Web Service(_Total)\Get Requests/sec` - GETリクエスト/秒
-- `\Web Service(_Total)\Post Requests/sec` - POSTリクエスト/秒
-- `\Web Service(_Total)\Bytes Total/sec` - 総バイト/秒
-- `\ASP.NET Applications(__Total__)\Requests/Sec` - ASP.NET リクエスト/秒
-
-### 6. 高負荷診断
-**目的**: システム高負荷時の詳細診断
-**カウンター**:
-- `\Processor(*)\% Processor Time` - 全CPUの使用率
-- `\Process(*)\% Processor Time` - 全プロセスのCPU使用率
-- `\Memory\Pages/sec` - ページ/秒
-- `\Memory\Page Faults/sec` - ページフォルト/秒
-- `\PhysicalDisk(*)\Avg. Disk Queue Length` - 平均ディスクキュー長
-- `\PhysicalDisk(*)\% Disk Time` - ディスク時間率
-- `\System\Processor Queue Length` - プロセッサキュー長
 
 ## カスタムパターンの作成
 
@@ -116,19 +90,43 @@ config/counter-patterns.yaml
 パターン → パターン設定ファイルを開く
 ```
 
-### YAML形式の例（新しい配列形式）
+### YAML形式の例（配列形式）
 ```yaml
 patterns:
   - name: マイカスタムパターン
     description: 独自の監視項目
+    graphType: stackedAreaChart
+    valueMode: deltaFromPrevious
     counters:
       - name: \カウンター\パス1
         enabled: true
       - name: \カウンター\パス2
         enabled: true
+        scale: 0.25
 ```
 
-> **注意**: scaleプロパティはYAMLから削除されました（2024-12更新）。スケール値は既存のスケール管理システムで設定してください。
+- `scale` は任意項目です。指定した場合はその値が読み込まれ、未指定の場合は既定値 `1.0` が使用されます。
+- `scale` には正の有限値を指定してください。`0` 以下や無効値は `1.0` に補正されます。
+- `graphType` は `lineChart` または `stackedAreaChart`、`valueMode` は `rawValue` または `deltaFromPrevious` を指定できます。省略時は `lineChart` / `rawValue` です。
+
+### 同梱設定ファイルの例
+```yaml
+patterns:
+  - name: 詳細システム監視
+    description: 詳細なシステム分析のための監視項目
+    graphType: lineChart
+    valueMode: rawValue
+    counters:
+      - name: \System\Context Switches/sec
+        enabled: true
+        scale: 1.0
+      - name: \Process(_Total)\Working Set
+        enabled: true
+        scale: 0.000001
+```
+
+- 現行の同梱 `config\counter-patterns.yaml` では、等倍のカウンターにも `scale: 1.0` を明示しています。
+- パターン適用時はカウンター選択だけでなく、指定された `graphType` / `valueMode` もメイン画面へ反映されます。
 
 ### 設定の再読み込み
 ```
@@ -146,8 +144,11 @@ patterns:
 counters:
   - name: \Processor(*)\% Processor Time  # 全CPUコア
   - name: \Network Interface(*)\*         # 全ネットワークカウンター
+  - name: \SQLServer:Batch_Resp_Statistics(Elapsed_Time:Total(ms))\*  # 該当オブジェクト配下の全カウンター
   - name: \Process(?)\Working Set         # 単一文字プロセス名
 ```
+
+- `\オブジェクト(インスタンス)\*` 形式を指定すると、そのオブジェクト配下にある全カウンターを一括選択できます。
 
 ## 分析ワークフローの例
 
@@ -162,8 +163,8 @@ counters:
 ### 2. 詳細分析フロー
 ```
 1. 問題領域に応じて専門パターンを選択
-   - CPU問題 → 「高負荷診断」
-   - ネットワーク → 「ネットワーク監視」
+   - CPU / メモリ / ディスク → 「基本システム監視」
+   - プロセス詳細 → 「詳細システム監視」
    - SQL Server → 「SQLサーバー監視」
 2. 詳細データを分析
 3. 必要に応じて個別カウンターを追加
@@ -217,4 +218,4 @@ counters:
 
 ---
 
-最終更新: 2024年12月19日
+最終更新: 2026年3月8日

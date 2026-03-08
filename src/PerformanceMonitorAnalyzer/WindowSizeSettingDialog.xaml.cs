@@ -8,6 +8,9 @@ namespace PerformanceMonitorAnalyzer
     /// </summary>
     public partial class WindowSizeSettingDialog : Window
     {
+        private static readonly DialogSizeInputHelper.ValidationOptions WindowSizeValidationOptions =
+            new(400, 3840, 300, 2160, DialogSizeInputHelper.NumericMode.DecimalAllowed);
+
         #region プロパティ
 
         /// <summary>
@@ -39,15 +42,6 @@ namespace PerformanceMonitorAnalyzer
         /// 選択されたウィンドウ状態
         /// </summary>
         public WindowState SelectedWindowState { get; private set; }
-
-        #endregion
-
-        #region 定数
-
-        private const double MIN_WIDTH = 400;
-        private const double MAX_WIDTH = 3840;
-        private const double MIN_HEIGHT = 300;
-        private const double MAX_HEIGHT = 2160;
 
         #endregion
 
@@ -115,14 +109,16 @@ namespace PerformanceMonitorAnalyzer
         /// </summary>
         private void PresetSize_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is string sizeString)
+            if (sender is Button button &&
+                button.Tag is string sizeString &&
+                DialogSizeInputHelper.TryParsePreset(
+                    sizeString,
+                    DialogSizeInputHelper.NumericMode.DecimalAllowed,
+                    out string widthText,
+                    out string heightText))
             {
-                var sizes = sizeString.Split(',');
-                if (sizes.Length == 2)
-                {
-                    WidthTextBox.Text = sizes[0];
-                    HeightTextBox.Text = sizes[1];
-                }
+                WidthTextBox.Text = widthText;
+                HeightTextBox.Text = heightText;
             }
         }
 
@@ -139,16 +135,21 @@ namespace PerformanceMonitorAnalyzer
                 // サイズの検証と取得
                 if (SelectedWindowState == WindowState.Normal)
                 {
-                    if (TryParseAndValidateSize(WidthTextBox.Text, HeightTextBox.Text, out double width, out double height))
+                    var validation = DialogSizeInputHelper.Evaluate(
+                        WidthTextBox.Text,
+                        HeightTextBox.Text,
+                        WindowSizeValidationOptions);
+
+                    if (validation.State == DialogSizeInputHelper.ValidationState.Valid)
                     {
-                        NewWidth = width;
-                        NewHeight = height;
+                        NewWidth = validation.Width;
+                        NewHeight = validation.Height;
                     }
                     else
                     {
                         MessageBox.Show(
                             $"無効なサイズが指定されました。\n\n" +
-                            $"有効範囲: 幅 {MIN_WIDTH}-{MAX_WIDTH}、高さ {MIN_HEIGHT}-{MAX_HEIGHT}",
+                            $"有効範囲: 幅 {WindowSizeValidationOptions.MinWidth:F0}-{WindowSizeValidationOptions.MaxWidth:F0}、高さ {WindowSizeValidationOptions.MinHeight:F0}-{WindowSizeValidationOptions.MaxHeight:F0}",
                             "入力エラー",
                             MessageBoxButton.OK,
                             MessageBoxImage.Warning);
@@ -227,18 +228,20 @@ namespace PerformanceMonitorAnalyzer
                     _ => "通常"
                 };
 
-                if (selectedState == WindowState.Normal && 
-                    TryParseAndValidateSize(WidthTextBox.Text, HeightTextBox.Text, out double width, out double height))
+                if (selectedState == WindowState.Normal)
                 {
-                    PreviewText.Text = $"新しいサイズ: {width:F0}×{height:F0} ({stateText})";
-                }
-                else if (selectedState != WindowState.Normal)
-                {
-                    PreviewText.Text = $"新しいサイズ: {stateText}";
+                    var validation = DialogSizeInputHelper.Evaluate(
+                        WidthTextBox.Text,
+                        HeightTextBox.Text,
+                        WindowSizeValidationOptions);
+
+                    PreviewText.Text = validation.State == DialogSizeInputHelper.ValidationState.Valid
+                        ? $"新しいサイズ: {validation.Width:F0}×{validation.Height:F0} ({stateText})"
+                        : $"新しいサイズ: 無効な値 ({stateText})";
                 }
                 else
                 {
-                    PreviewText.Text = $"新しいサイズ: 無効な値 ({stateText})";
+                    PreviewText.Text = $"新しいサイズ: {stateText}";
                 }
             }
             catch (Exception ex)
@@ -268,29 +271,6 @@ namespace PerformanceMonitorAnalyzer
             {
                 return WindowState.Normal;
             }
-        }
-
-        /// <summary>
-        /// サイズの解析と検証
-        /// </summary>
-        private bool TryParseAndValidateSize(string widthText, string heightText, out double width, out double height)
-        {
-            width = 0;
-            height = 0;
-
-            // 数値解析
-            if (!double.TryParse(widthText, out width) || !double.TryParse(heightText, out height))
-            {
-                return false;
-            }
-
-            // 範囲チェック
-            if (width < MIN_WIDTH || width > MAX_WIDTH || height < MIN_HEIGHT || height > MAX_HEIGHT)
-            {
-                return false;
-            }
-
-            return true;
         }
 
         #endregion

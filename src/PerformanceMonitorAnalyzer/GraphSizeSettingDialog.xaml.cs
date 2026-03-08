@@ -9,6 +9,9 @@ namespace PerformanceMonitorAnalyzer
     /// </summary>
     public partial class GraphSizeSettingDialog : Window
     {
+        private static readonly DialogSizeInputHelper.ValidationOptions GraphSizeValidationOptions =
+            new(200, 3840, 150, 2160, DialogSizeInputHelper.NumericMode.IntegerOnly, allowAuto: true);
+
         /// <summary>
         /// 設定されたグラフの幅
         /// </summary>
@@ -160,20 +163,19 @@ namespace PerformanceMonitorAnalyzer
         {
             try
             {
-                if (sender is Button button && button.Tag is string sizeStr)
+                if (sender is Button button &&
+                    button.Tag is string sizeStr &&
+                    WidthTextBox != null &&
+                    HeightTextBox != null &&
+                    DialogSizeInputHelper.TryParsePreset(
+                        sizeStr,
+                        DialogSizeInputHelper.NumericMode.IntegerOnly,
+                        out string widthText,
+                        out string heightText))
                 {
-                    var sizes = sizeStr.Split(',');
-                    if (sizes.Length == 2 && 
-                        int.TryParse(sizes[0], out int width) && 
-                        int.TryParse(sizes[1], out int height))
-                    {
-                        if (WidthTextBox != null && HeightTextBox != null)
-                        {
-                            WidthTextBox.Text = width.ToString();
-                            HeightTextBox.Text = height.ToString();
-                            UpdatePreview();
-                        }
-                    }
+                    WidthTextBox.Text = widthText;
+                    HeightTextBox.Text = heightText;
+                    UpdatePreview();
                 }
             }
             catch (Exception ex)
@@ -193,31 +195,27 @@ namespace PerformanceMonitorAnalyzer
                 if (PreviewText == null || WidthTextBox == null || HeightTextBox == null)
                     return;
 
-                // 自動サイズの場合
-                if (WidthTextBox.Text == "自動" && HeightTextBox.Text == "自動")
+                var validation = DialogSizeInputHelper.Evaluate(
+                    WidthTextBox.Text,
+                    HeightTextBox.Text,
+                    GraphSizeValidationOptions);
+
+                if (validation.State == DialogSizeInputHelper.ValidationState.Auto)
                 {
                     PreviewText.Text = "新しいサイズ: 自動 (親コンテナに合わせて調整)";
                     PreviewText.Foreground = System.Windows.Media.Brushes.DarkGreen;
                     return;
                 }
 
-                if (int.TryParse(WidthTextBox.Text, out int width) && 
-                    int.TryParse(HeightTextBox.Text, out int height))
+                if (validation.State == DialogSizeInputHelper.ValidationState.Valid)
                 {
-                    // 有効範囲をチェック
-                    bool isValidWidth = width >= 200 && width <= 3840;
-                    bool isValidHeight = height >= 150 && height <= 2160;
-                    
-                    if (isValidWidth && isValidHeight)
-                    {
-                        PreviewText.Text = $"新しいサイズ: {width}×{height}";
-                        PreviewText.Foreground = System.Windows.Media.Brushes.DarkBlue;
-                    }
-                    else
-                    {
-                        PreviewText.Text = $"無効なサイズ: {width}×{height} (範囲外)";
-                        PreviewText.Foreground = System.Windows.Media.Brushes.Red;
-                    }
+                    PreviewText.Text = $"新しいサイズ: {validation.Width:F0}×{validation.Height:F0}";
+                    PreviewText.Foreground = System.Windows.Media.Brushes.DarkBlue;
+                }
+                else if (validation.State == DialogSizeInputHelper.ValidationState.OutOfRange)
+                {
+                    PreviewText.Text = $"無効なサイズ: {validation.Width:F0}×{validation.Height:F0} (範囲外)";
+                    PreviewText.Foreground = System.Windows.Media.Brushes.Red;
                 }
                 else
                 {
@@ -244,37 +242,33 @@ namespace PerformanceMonitorAnalyzer
                     return;
                 }
 
-                // 自動サイズの場合
-                if (WidthTextBox.Text == "自動" && HeightTextBox.Text == "自動")
-                {
-                    GraphWidth = double.NaN; // 自動サイズを示すためにNaNを使用
-                    GraphHeight = double.NaN;
-                    IsApplied = true;
-                    DialogResult = true;
-                    return;
-                }
+                var validation = DialogSizeInputHelper.Evaluate(
+                    WidthTextBox.Text,
+                    HeightTextBox.Text,
+                    GraphSizeValidationOptions);
 
-                if (int.TryParse(WidthTextBox.Text, out int width) && 
-                    int.TryParse(HeightTextBox.Text, out int height))
+                switch (validation.State)
                 {
-                    // 有効範囲をチェック
-                    if (width >= 200 && width <= 3840 && height >= 150 && height <= 2160)
-                    {
-                        GraphWidth = width;
-                        GraphHeight = height;
+                    case DialogSizeInputHelper.ValidationState.Auto:
+                        GraphWidth = double.NaN; // 自動サイズを示すためにNaNを使用
+                        GraphHeight = double.NaN;
                         IsApplied = true;
                         DialogResult = true;
-                    }
-                    else
-                    {
+                        return;
+                    case DialogSizeInputHelper.ValidationState.Valid:
+                        GraphWidth = validation.Width;
+                        GraphHeight = validation.Height;
+                        IsApplied = true;
+                        DialogResult = true;
+                        return;
+                    case DialogSizeInputHelper.ValidationState.OutOfRange:
                         MessageBox.Show("サイズが有効範囲外です。\n\n有効範囲: 幅 200-3840、高さ 150-2160", 
                             "入力エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("無効な数値が入力されています。\n正しい数値を入力してください。", 
-                        "入力エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    default:
+                        MessageBox.Show("無効な数値が入力されています。\n正しい数値を入力してください。", 
+                            "入力エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
                 }
             }
             catch (Exception ex)

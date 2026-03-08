@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -18,14 +19,99 @@ public class CounterPatternConfig
 /// </summary>
 public class CounterPattern
 {
+    public const string DefaultGraphTypeConfigValue = "lineChart";
+    public const string DefaultValueModeConfigValue = "rawValue";
+
     [YamlMember(Alias = "name")]
     public string Name { get; set; } = string.Empty;
     
     [YamlMember(Alias = "description")]
     public string Description { get; set; } = string.Empty;
+
+    [YamlIgnore]
+    public ChartType GraphType { get; set; } = ChartType.LineChart;
+
+    [YamlIgnore]
+    public CounterValueMode ValueMode { get; set; } = CounterValueMode.RawValue;
+
+    [DefaultValue(DefaultGraphTypeConfigValue)]
+    [YamlMember(Alias = "graphType")]
+    public string GraphTypeName
+    {
+        get => GetGraphTypeConfigValue(GraphType);
+        set => GraphType = ParseGraphType(value);
+    }
+
+    [DefaultValue(DefaultValueModeConfigValue)]
+    [YamlMember(Alias = "valueMode")]
+    public string ValueModeName
+    {
+        get => GetValueModeConfigValue(ValueMode);
+        set => ValueMode = ParseValueMode(value);
+    }
     
     [YamlMember(Alias = "counters")]
     public List<CounterDefinition> Counters { get; set; } = new();
+
+    public void Normalize()
+    {
+        Name ??= string.Empty;
+        Description ??= string.Empty;
+        Counters ??= new List<CounterDefinition>();
+
+        GraphType = GraphType switch
+        {
+            ChartType.StackedAreaChart => ChartType.StackedAreaChart,
+            _ => ChartType.LineChart
+        };
+
+        ValueMode = ValueMode switch
+        {
+            CounterValueMode.DeltaFromPrevious => CounterValueMode.DeltaFromPrevious,
+            _ => CounterValueMode.RawValue
+        };
+    }
+
+    private static ChartType ParseGraphType(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "line" => ChartType.LineChart,
+            "linechart" => ChartType.LineChart,
+            "line-chart" => ChartType.LineChart,
+            "stackedarea" => ChartType.StackedAreaChart,
+            "stacked-area" => ChartType.StackedAreaChart,
+            "stackedareachart" => ChartType.StackedAreaChart,
+            "stacked-area-chart" => ChartType.StackedAreaChart,
+            "area" => ChartType.StackedAreaChart,
+            _ => ChartType.LineChart
+        };
+    }
+
+    private static CounterValueMode ParseValueMode(string? value)
+    {
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "delta" => CounterValueMode.DeltaFromPrevious,
+            "deltafromprevious" => CounterValueMode.DeltaFromPrevious,
+            "delta-from-previous" => CounterValueMode.DeltaFromPrevious,
+            "deltafrompreviousvalue" => CounterValueMode.DeltaFromPrevious,
+            "raw" => CounterValueMode.RawValue,
+            "rawvalue" => CounterValueMode.RawValue,
+            "raw-value" => CounterValueMode.RawValue,
+            _ => CounterValueMode.RawValue
+        };
+    }
+
+    private static string GetGraphTypeConfigValue(ChartType chartType)
+    {
+        return chartType == ChartType.StackedAreaChart ? "stackedAreaChart" : DefaultGraphTypeConfigValue;
+    }
+
+    private static string GetValueModeConfigValue(CounterValueMode valueMode)
+    {
+        return valueMode == CounterValueMode.DeltaFromPrevious ? "deltaFromPrevious" : DefaultValueModeConfigValue;
+    }
 }
 
 /// <summary>
@@ -33,14 +119,28 @@ public class CounterPattern
 /// </summary>
 public class CounterDefinition
 {
+    public const double DefaultScale = 1.0;
+
     [YamlMember(Alias = "name")]
     public string Name { get; set; } = string.Empty;
     
     [YamlMember(Alias = "enabled")]
     public bool Enabled { get; set; } = true;
     
-    // Scaleプロパティは削除しました（既存のスケール管理システムを使用）
-    public double Scale { get; set; } = 1.0;
+    /// <summary>
+    /// YAML の scale キー。省略時は 1.0 を使用する。
+    /// </summary>
+    [DefaultValue(DefaultScale)]
+    [YamlMember(Alias = "scale", DefaultValuesHandling = DefaultValuesHandling.OmitDefaults)]
+    public double Scale { get; set; } = DefaultScale;
+
+    public void Normalize()
+    {
+        if (Scale <= 0 || double.IsNaN(Scale) || double.IsInfinity(Scale))
+        {
+            Scale = DefaultScale;
+        }
+    }
 }
 
 /// <summary>
@@ -79,7 +179,8 @@ public class CounterPatternManager
                 .WithNamingConvention(CamelCaseNamingConvention.Instance)
                 .Build();
             
-            _config = deserializer.Deserialize<CounterPatternConfig>(yaml);
+            _config = deserializer.Deserialize<CounterPatternConfig>(yaml) ?? new CounterPatternConfig();
+            NormalizeConfig(_config);
             return true;
         }
         catch (Exception ex)
@@ -118,8 +219,8 @@ public class CounterPatternManager
                     {
                         new() { Name = @"\System\Context Switches/sec" },
                         new() { Name = @"\System\System Calls/sec" },
-                        new() { Name = @"\Process(_Total)\Working Set" },
-                        new() { Name = @"\Process(_Total)\Private Bytes" },
+                        new() { Name = @"\Process(_Total)\Working Set", Scale = 0.000001 },
+                        new() { Name = @"\Process(_Total)\Private Bytes", Scale = 0.000001 },
                         new() { Name = @"\Paging File(_Total)\% Usage" }
                     }
                 },
@@ -138,6 +239,8 @@ public class CounterPatternManager
                 }
             }
         };
+
+        NormalizeConfig(defaultConfig);
         
         var serializer = new SerializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
@@ -176,6 +279,22 @@ public class CounterPatternManager
     /// 設定ファイルのパスを取得
     /// </summary>
     public string ConfigFilePath => _configFilePath;
+
+    private static void NormalizeConfig(CounterPatternConfig config)
+    {
+        config.Patterns ??= new List<CounterPattern>();
+
+        foreach (var pattern in config.Patterns)
+        {
+            pattern.Normalize();
+
+            foreach (var counter in pattern.Counters)
+            {
+                counter.Name ??= string.Empty;
+                counter.Normalize();
+            }
+        }
+    }
     
     /// <summary>
     /// エラーログの出力

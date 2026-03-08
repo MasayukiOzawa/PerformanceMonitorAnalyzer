@@ -1,38 +1,59 @@
+# scale は省略可能です。省略時は 1.0 が使用されます。
+# graphType は lineChart / stackedAreaChart、valueMode は rawValue / deltaFromPrevious を指定できます。
 patterns:
   - name: 基本システム監視
     description: CPU、メモリ、ディスクの基本的な監視項目
+    graphType: lineChart
+    valueMode: rawValue
     counters:
       - name: \Processor(_Total)\% Processor Time
         enabled: true
+        scale: 1.0
       - name: \Memory\Available MBytes
         enabled: true
+        scale: 1.0
       - name: \PhysicalDisk(_Total)\Disk Reads/sec
         enabled: true
+        scale: 1.0
       - name: \PhysicalDisk(_Total)\Disk Writes/sec
         enabled: true
+        scale: 1.0
 
   - name: 詳細システム監視
     description: 詳細なシステム分析のための監視項目
+    graphType: lineChart
+    valueMode: rawValue
     counters:
       - name: \System\Context Switches/sec
         enabled: true
+        scale: 1.0
       - name: \System\System Calls/sec
         enabled: true
+        scale: 1.0
       - name: \Process(_Total)\Working Set
         enabled: true
+        scale: 0.000001
       - name: \Process(_Total)\Private Bytes
         enabled: true
+        scale: 0.000001
 
   - name: SQLサーバー監視
     description: SQL Serverパフォーマンスの監視項目
+    graphType: lineChart
+    valueMode: rawValue
     counters:
       - name: \SQLServer:General Statistics\User Connections
         enabled: true
+        scale: 1.0
       - name: \SQLServer:Buffer Manager\Buffer cache hit ratio
         enabled: true
+        scale: 1.0
       - name: \SQLServer:SQL Statistics\Batch Requests/sec
         enabled: true
+        scale: 1.0
       - name: \SQLServer:SQL Statistics\SQL Compilations/sec
         enabled: true
+        scale: 1.0
       - name: \SQLServer:Locks(_Total)\Lock Waits/sec
         enabled: true
+        scale: 1.0

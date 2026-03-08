@@ -1,72 +1,77 @@
-﻿<Window x:Class="PerformanceMonitorAnalyzer.GraphSizeSettingDialog"
+<Window x:Class="PerformanceMonitorAnalyzer.GraphSizeSettingDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="グラフサイズ設定" Height="280" Width="400"
-        ResizeMode="NoResize" WindowStartupLocation="CenterOwner">
-    <Grid Margin="15">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        Background="{StaticResource AppBackgroundBrush}">
+    <Grid Background="{StaticResource AppBackgroundBrush}">
+        <Border Margin="12" Style="{StaticResource CardBorderStyle}" Padding="24">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-        <!-- タイトル -->
-        <TextBlock Grid.Row="0" Text="📊 グラフサイズ設定" FontSize="14" FontWeight="Bold" 
-                   Margin="0,0,0,15" HorizontalAlignment="Center"/>
+                <!-- タイトル -->
+                <TextBlock Grid.Row="0" Text="📊 グラフサイズ設定" FontSize="18" FontWeight="Bold" 
+                           Margin="0,0,0,18" HorizontalAlignment="Center" Foreground="{StaticResource AccentBrush}"/>
 
-        <!-- 現在のサイズ表示 -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,15" HorizontalAlignment="Center">
-            <TextBlock Text="現在のサイズ: " VerticalAlignment="Center"/>
-            <TextBlock x:Name="CurrentSizeText" Text="800×400" 
-                       FontWeight="Bold" Foreground="DarkBlue" VerticalAlignment="Center"/>
-        </StackPanel>
+                <!-- 現在のサイズ表示 -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,18" HorizontalAlignment="Center">
+                    <TextBlock Text="現在のサイズ: " VerticalAlignment="Center"/>
+                    <TextBlock x:Name="CurrentSizeText" Text="800×400" 
+                               FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
 
-        <!-- サイズ指定 -->
-        <Grid Grid.Row="2" Margin="0,0,0,15">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+                <!-- サイズ指定 -->
+                <Grid Grid.Row="2" Margin="0,0,0,18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="幅:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBox Grid.Row="0" Grid.Column="1" x:Name="WidthTextBox" Text="800" 
-                     VerticalAlignment="Center" Margin="0,0,15,0" Padding="5,3"
-                     TextChanged="SizeTextBox_TextChanged"/>
-            <TextBlock Grid.Row="0" Grid.Column="2" Text="高さ:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-            <TextBox Grid.Row="0" Grid.Column="3" x:Name="HeightTextBox" Text="400" 
-                     VerticalAlignment="Center" Padding="5,3"
-                     TextChanged="SizeTextBox_TextChanged"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="幅:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="WidthTextBox" Text="800" 
+                             VerticalAlignment="Center" Margin="0,0,15,0" Padding="5,3"
+                             TextChanged="SizeTextBox_TextChanged"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="高さ:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="3" x:Name="HeightTextBox" Text="400" 
+                             VerticalAlignment="Center" Padding="5,3"
+                             TextChanged="SizeTextBox_TextChanged"/>
 
-            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Text="範囲: 幅 200-3840、高さ 150-2160" 
-                       FontSize="10" Foreground="Gray" Margin="0,8,0,8" TextAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Text="範囲: 幅 200-3840、高さ 150-2160" 
+                               FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,8" TextAlignment="Center"/>
 
-            <!-- プリセットボタン -->
-            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" 
-                        HorizontalAlignment="Center" Margin="0,5,0,0">
-                <Button Content="自動サイズ" Click="AutoSize_Click" Margin="2" Padding="6,2" FontSize="10" Background="LightGreen"/>
-                <Button Content="最大化" Click="MaximizeSize_Click" Margin="2" Padding="6,2" FontSize="10" Background="LightCoral"/>
-                <Button Content="800×400" Click="PresetSize_Click" Tag="800,400" Margin="2" Padding="6,2" FontSize="10"/>
-                <Button Content="1000×500" Click="PresetSize_Click" Tag="1000,500" Margin="2" Padding="6,2" FontSize="10"/>
-                <Button Content="1200×600" Click="PresetSize_Click" Tag="1200,600" Margin="2" Padding="6,2" FontSize="10"/>
-            </StackPanel>
-        </Grid>
+                    <!-- プリセットボタン -->
+                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" 
+                                HorizontalAlignment="Center" Margin="0,5,0,0">
+                        <Button Content="自動サイズ" Click="AutoSize_Click" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource SuccessActionButtonStyle}"/>
+                        <Button Content="最大化" Click="MaximizeSize_Click" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource WarningActionButtonStyle}"/>
+                        <Button Content="800×400" Click="PresetSize_Click" Tag="800,400" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
+                        <Button Content="1000×500" Click="PresetSize_Click" Tag="1000,500" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
+                        <Button Content="1200×600" Click="PresetSize_Click" Tag="1200,600" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
+                    </StackPanel>
+                </Grid>
 
-        <!-- ボタン -->
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <TextBlock x:Name="PreviewText" Text="新しいサイズ: 800×400" 
-                       FontWeight="Bold" Foreground="DarkBlue" VerticalAlignment="Center" Margin="0,0,20,0"/>
-            <Button Content="適用" Click="Apply_Click" IsDefault="True" 
-                    Padding="15,6" Margin="0,0,10,0" Background="LightBlue"/>
-            <Button Content="キャンセル" Click="Cancel_Click" IsCancel="True" 
-                    Padding="15,6"/>
-        </StackPanel>
+                <!-- ボタン -->
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                    <TextBlock x:Name="PreviewText" Text="新しいサイズ: 800×400" 
+                               FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    <Button Content="適用" Click="Apply_Click" IsDefault="True" 
+                            Padding="15,6" Margin="0,0,10,0" Style="{StaticResource PrimaryActionButtonStyle}"/>
+                    <Button Content="キャンセル" Click="Cancel_Click" IsCancel="True" 
+                            Padding="15,6" Style="{StaticResource GhostButtonStyle}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

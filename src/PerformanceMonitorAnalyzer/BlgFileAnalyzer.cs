@@ -984,7 +984,7 @@ public class BlgFileAnalyzer : IDisposable
         }
         
         var startParen = objectPart.IndexOf('(');
-        var endParen = startParen >= 0 ? objectPart.IndexOf(')', startParen) : -1;
+        var endParen = startParen >= 0 ? objectPart.LastIndexOf(')') : -1;
         
         // 境界チェックを強化
         if (startParen >= 0 && endParen > startParen && endParen < objectPart.Length)
