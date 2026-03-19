@@ -6,6 +6,7 @@
         xmlns:scottplot="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized"
+        Icon="Assets/app-icon.ico"
         Background="{StaticResource AppBackgroundBrush}">
     <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
@@ -44,12 +45,6 @@
                     <MenuItem Header="表示(_V)">
                         <MenuItem Header="すべて折りたたむ(_C)" Click="CollapseAllPanelsMenu_Click"/>
                         <MenuItem Header="すべて展開する(_E)" Click="ExpandAllPanelsMenu_Click"/>
-                    </MenuItem>
-                    <MenuItem Header="グラフ(_G)" x:Name="GraphMenu" IsEnabled="False">
-                        <MenuItem Header="グラフをクリップボードにコピー(_C)" Click="CopyGraphToClipboard_Click" InputGestureText="Ctrl+C"/>
-                    </MenuItem>
-                    <MenuItem Header="ヘルプ(_H)">
-                        <MenuItem Header="バージョン情報(_A)"/>
                     </MenuItem>
                 </Menu>
             </DockPanel>
@@ -448,7 +443,12 @@
                                 Style="{StaticResource CardBorderStyle}"
                                 Background="{StaticResource SurfaceBrush}"
                                 Margin="12,12,6,12"
-                                Padding="12">
+                                Padding="12"
+                                AllowDrop="True"
+                                PreviewDragEnter="GraphContainer_PreviewDragEnter"
+                                PreviewDragOver="GraphContainer_PreviewDragOver"
+                                PreviewDragLeave="GraphContainer_PreviewDragLeave"
+                                PreviewDrop="GraphContainer_PreviewDrop">
                             <Grid>
                                 <scottplot:WpfPlot x:Name="PerformanceChart" 
                                                   Background="White">
@@ -465,6 +465,39 @@
                                         </ContextMenu>
                                     </scottplot:WpfPlot.ContextMenu>
                                 </scottplot:WpfPlot>
+
+                                <Border x:Name="GraphDropOverlay"
+                                        Visibility="Collapsed"
+                                        IsHitTestVisible="False"
+                                        Panel.ZIndex="5"
+                                        Margin="2"
+                                        CornerRadius="10"
+                                        BorderThickness="2"
+                                        BorderBrush="{StaticResource AccentBrush}"
+                                        Background="#D9EFF8FF">
+                                    <StackPanel HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Margin="24">
+                                        <TextBlock x:Name="GraphDropOverlayIcon"
+                                                   Text="📂"
+                                                   FontSize="28"
+                                                   HorizontalAlignment="Center"
+                                                   Margin="0,0,0,8"/>
+                                        <TextBlock x:Name="GraphDropOverlayTitle"
+                                                   Text="BLG ファイルをドロップして読み込み"
+                                                   FontSize="16"
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Margin="0,0,0,6"/>
+                                        <TextBlock x:Name="GraphDropOverlayDescription"
+                                                   Text=".blg ファイルを 1 つだけドロップできます"
+                                                   HorizontalAlignment="Center"
+                                                   TextAlignment="Center"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
                                 
                                 <!-- リサイズハンドル（右下角） -->
                                 <Border x:Name="ResizeHandle" 
@@ -633,12 +666,6 @@
                                 <Run Text="カウンター名" FontWeight="Bold"/>
                                 <Run Text="をクリックして詳細データを表示"/>
                             </TextBlock>
-                            <TextBlock Text="✨ グラフ機能が実装されました！"
-                                     HorizontalAlignment="Center"
-                                     FontSize="12"
-                                     Foreground="{StaticResource SuccessBrush}"
-                                     FontWeight="Bold"
-                                     Margin="5"/>
                         </StackPanel>
                      
                         <!-- グラフ操作ボタン -->
@@ -741,23 +768,60 @@
                                         BorderBrush="#DDD"
                                         FontSize="11"
                                         CanUserResizeColumns="True"
-                                        CanUserSortColumns="False"
+                                        CanUserSortColumns="True"
+                                        Sorting="StatisticsDataGrid_Sorting"
                                         SelectionMode="Single"
                                         Width="Auto"
                                         HorizontalAlignment="Stretch">
+                                    <DataGrid.Resources>
+                                        <DataTemplate x:Key="StatisticsSortableHeaderTemplate">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding}"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="SortIndicator"
+                                                           Grid.Column="1"
+                                                           Margin="6,0,0,0"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           VerticalAlignment="Center"
+                                                           Visibility="Collapsed"/>
+                                            </Grid>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
+                                                             Value="Ascending">
+                                                    <Setter TargetName="SortIndicator" Property="Text" Value="▲"/>
+                                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
+                                                             Value="Descending">
+                                                    <Setter TargetName="SortIndicator" Property="Text" Value="▼"/>
+                                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGrid.Resources>
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="カウンター名" 
-                                                           Binding="{Binding CounterName}" 
-                                                           Width="300" 
-                                                           MinWidth="200"
-                                                           MaxWidth="500"
-                                                           CanUserResize="True" />
+                                                            Binding="{Binding CounterName}" 
+                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            SortMemberPath="CounterName"
+                                                            Width="300" 
+                                                            MinWidth="200"
+                                                            MaxWidth="500"
+                                                            CanUserSort="True"
+                                                            CanUserResize="True" />
                                         <DataGridTextColumn Header="平均" 
-                                                           Binding="{Binding Average}" 
-                                                           Width="120"
-                                                           MinWidth="80"
-                                                           MaxWidth="200"
-                                                           CanUserResize="True">
+                                                            Binding="{Binding Average}" 
+                                                            SortMemberPath="AverageValue"
+                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            Width="120"
+                                                            MinWidth="80"
+                                                            MaxWidth="200"
+                                                            CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#008000"/>
@@ -767,11 +831,13 @@
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Header="最大" 
-                                                           Binding="{Binding Maximum}" 
-                                                           Width="120"
-                                                           MinWidth="80"
-                                                           MaxWidth="200"
-                                                           CanUserResize="True">
+                                                            Binding="{Binding Maximum}" 
+                                                            SortMemberPath="MaximumValue"
+                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            Width="120"
+                                                            MinWidth="80"
+                                                            MaxWidth="200"
+                                                            CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#B40000"/>
@@ -781,11 +847,13 @@
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
                                         <DataGridTextColumn Header="最小" 
-                                                           Binding="{Binding Minimum}" 
-                                                           Width="120"
-                                                           MinWidth="80"
-                                                           MaxWidth="200"
-                                                           CanUserResize="True">
+                                                            Binding="{Binding Minimum}" 
+                                                            SortMemberPath="MinimumValue"
+                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            Width="120"
+                                                            MinWidth="80"
+                                                            MaxWidth="200"
+                                                            CanUserResize="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="Foreground" Value="#0000B4"/>

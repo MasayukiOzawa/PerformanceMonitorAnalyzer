@@ -19,6 +19,14 @@ patterns:
         enabled: true
         scale: 1.0
 
+  - name: クエリ実行時間
+    graphType: stackedAreaChart
+    valueMode: deltaFromPrevious
+    counters:
+      - name: \SQLServer:Batch Resp Statistics(Elapsed Time:Total(ms))\*
+        enabled: true
+        scale: 1.0
+
   - name: 詳細システム監視
     description: 詳細なシステム分析のための監視項目
     graphType: lineChart

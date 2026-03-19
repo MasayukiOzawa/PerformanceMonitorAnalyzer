@@ -12,6 +12,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.Windows.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Text;
@@ -86,6 +87,8 @@ public partial class MainWindow : Window
     private bool _isManualYAxisRangeEnabled = false;
     private double _manualYAxisMin = 0;
     private double _manualYAxisMax = 100;
+    private string? _statisticsSortMemberPath;
+    private ListSortDirection? _statisticsSortDirection;
     
     
     // ログ機能
@@ -1206,21 +1209,16 @@ public partial class MainWindow : Window
 
         if (openFileDialog.ShowDialog() == true)
         {
-            try
-            {
-                await LoadBlgFileAsync(openFileDialog.FileName);
-            }
-            catch (Exception ex)
-            {
-                AddOperationLog(LogLevel.Error, $"ファイルの読み込みに失敗しました: {ex.Message}");
-                MessageBox.Show($"ファイルの読み込みに失敗しました: {ex.Message}", 
-                              "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                LogError($"Failed to load BLG file: {ex}");
-            }
+            await LoadBlgFileWithErrorHandlingAsync(openFileDialog.FileName, "選択したBLGファイル");
         }
     }
 
     public async Task LoadBlgFileFromCommandLineAsync(string fileName)
+    {
+        await LoadBlgFileWithErrorHandlingAsync(fileName, "コマンドライン引数で指定されたBLGファイル");
+    }
+
+    private async Task LoadBlgFileWithErrorHandlingAsync(string fileName, string loadSourceDescription)
     {
         try
         {
@@ -1228,11 +1226,150 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            AddOperationLog(LogLevel.Error, $"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}");
-            MessageBox.Show($"コマンドライン引数で指定されたBLGファイルの読み込みに失敗しました: {ex.Message}", 
+            AddOperationLog(LogLevel.Error, $"{loadSourceDescription}の読み込みに失敗しました: {ex.Message}");
+            MessageBox.Show($"{loadSourceDescription}の読み込みに失敗しました: {ex.Message}",
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to load BLG file from command line: {ex}");
+            LogError($"Failed to load BLG file ({loadSourceDescription}): {ex}");
         }
+    }
+
+    private void GraphContainer_PreviewDragEnter(object sender, DragEventArgs e)
+    {
+        UpdateGraphDropFeedback(e);
+    }
+
+    private void GraphContainer_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        UpdateGraphDropFeedback(e);
+    }
+
+    private void GraphContainer_PreviewDragLeave(object sender, DragEventArgs e)
+    {
+        SetGraphDropOverlay(GraphDropOverlayState.Hidden);
+        e.Handled = true;
+    }
+
+    private async void GraphContainer_PreviewDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        SetGraphDropOverlay(GraphDropOverlayState.Hidden);
+
+        if (!TryValidateGraphFileDrop(e.Data, out var filePath, out var validationMessage))
+        {
+            AddOperationLog(LogLevel.Warning, validationMessage);
+            MessageBox.Show(validationMessage, "ドラッグアンドドロップ", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        AddOperationLog(LogLevel.Info, $"グラフ領域へのドラッグアンドドロップでBLGファイルを読み込みます: {filePath}");
+        await LoadBlgFileWithErrorHandlingAsync(filePath, "ドラッグアンドドロップされたBLGファイル");
+    }
+
+    private void UpdateGraphDropFeedback(DragEventArgs e)
+    {
+        if (TryValidateGraphFileDrop(e.Data, out var filePath, out var validationMessage))
+        {
+            e.Effects = DragDropEffects.Copy;
+            SetGraphDropOverlay(
+                GraphDropOverlayState.Accept,
+                "BLG ファイルをドロップして読み込み",
+                $"ドロップして読み込み: {Path.GetFileName(filePath)}");
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+            SetGraphDropOverlay(
+                GraphDropOverlayState.Reject,
+                "このドロップは読み込めません",
+                validationMessage);
+        }
+
+        e.Handled = true;
+    }
+
+    private bool TryValidateGraphFileDrop(IDataObject? dataObject, out string filePath, out string validationMessage)
+    {
+        filePath = string.Empty;
+
+        if (ProgressGrid.Visibility == Visibility.Visible)
+        {
+            validationMessage = "現在別のファイル処理を実行中です。完了後に再度ドロップしてください。";
+            return false;
+        }
+
+        if (dataObject is null || !dataObject.GetDataPresent(DataFormats.FileDrop))
+        {
+            validationMessage = "BLG ファイルを 1 つだけドロップしてください。";
+            return false;
+        }
+
+        if (dataObject.GetData(DataFormats.FileDrop) is not string[] droppedFiles || droppedFiles.Length == 0)
+        {
+            validationMessage = "ドロップされたファイル情報を取得できませんでした。";
+            return false;
+        }
+
+        if (droppedFiles.Length != 1)
+        {
+            validationMessage = "同時に読み込める BLG ファイルは 1 つだけです。";
+            return false;
+        }
+
+        filePath = droppedFiles[0];
+
+        if (!string.Equals(Path.GetExtension(filePath), ".blg", StringComparison.OrdinalIgnoreCase))
+        {
+            validationMessage = "BLG ファイル (.blg) のみドロップできます。";
+            return false;
+        }
+
+        if (!File.Exists(filePath))
+        {
+            validationMessage = $"ドロップされたファイルが見つかりません: {filePath}";
+            return false;
+        }
+
+        validationMessage = string.Empty;
+        return true;
+    }
+
+    private void SetGraphDropOverlay(GraphDropOverlayState state, string? title = null, string? description = null)
+    {
+        if (state == GraphDropOverlayState.Hidden)
+        {
+            GraphDropOverlay.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        GraphDropOverlayTitle.Text = title ?? "BLG ファイルをドロップして読み込み";
+        GraphDropOverlayDescription.Text = description ?? ".blg ファイルを 1 つだけドロップできます";
+        GraphDropOverlay.Visibility = Visibility.Visible;
+
+        switch (state)
+        {
+            case GraphDropOverlayState.Accept:
+                GraphDropOverlayIcon.Text = "📂";
+                GraphDropOverlay.BorderBrush = (Brush)FindResource("AccentBrush");
+                GraphDropOverlay.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(217, 239, 248, 255));
+                GraphDropOverlayTitle.Foreground = (Brush)FindResource("TextPrimaryBrush");
+                GraphDropOverlayDescription.Foreground = (Brush)FindResource("TextSecondaryBrush");
+                break;
+
+            case GraphDropOverlayState.Reject:
+                GraphDropOverlayIcon.Text = "⚠";
+                GraphDropOverlay.BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(211, 47, 47));
+                GraphDropOverlay.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(224, 255, 235, 238));
+                GraphDropOverlayTitle.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(183, 28, 28));
+                GraphDropOverlayDescription.Foreground = (Brush)FindResource("TextSecondaryBrush");
+                break;
+        }
+    }
+
+    private enum GraphDropOverlayState
+    {
+        Hidden,
+        Accept,
+        Reject
     }
 
 
@@ -2592,9 +2729,6 @@ public partial class MainWindow : Window
             GraphControlPanel.Visibility = hasPanelContext ? Visibility.Visible : Visibility.Collapsed;
             GraphControlPanel.IsEnabled = hasVisibleData;
              
-            // グラフメニューの有効/無効制御
-            GraphMenu.IsEnabled = hasVisibleData;
-             
             // コンテキストメニューの有効/無効制御
             if (ContextMenuCopyGraph != null)
             {
@@ -2604,6 +2738,7 @@ public partial class MainWindow : Window
             if (!hasVisibleData)
             {
                 StatisticsDataGrid.ItemsSource = null;
+                QueueStatisticsSortIndicatorRefresh();
                 return;
             }
             
@@ -2630,10 +2765,16 @@ public partial class MainWindow : Window
                     }
                 }
             }
-            
+
+            statisticsItems = StatisticsGridSorter.SortItems(
+                statisticsItems,
+                _statisticsSortMemberPath,
+                _statisticsSortDirection);
+             
             // DataGridに統計情報を設定
             StatisticsDataGrid.ItemsSource = statisticsItems;
-            
+            QueueStatisticsSortIndicatorRefresh();
+             
             System.Diagnostics.Debug.WriteLine($"Statistics display updated for {statisticsItems.Count} counters");
         }
         catch (Exception ex)
@@ -2664,8 +2805,11 @@ public partial class MainWindow : Window
             {
                 CounterName = GetCounterDisplayName(counterName),
                 Average = avgFormatted,
+                AverageValue = statistics.Average,
                 Maximum = maxFormatted,
-                Minimum = minFormatted
+                MaximumValue = statistics.Maximum,
+                Minimum = minFormatted,
+                MinimumValue = statistics.Minimum
             };
         }
         catch (Exception ex)
@@ -2677,10 +2821,62 @@ public partial class MainWindow : Window
             {
                 CounterName = GetCounterDisplayName(counterName),
                 Average = "エラー",
+                AverageValue = double.NaN,
                 Maximum = "エラー",
-                Minimum = "エラー"
+                MaximumValue = double.NaN,
+                Minimum = "エラー",
+                MinimumValue = double.NaN
             };
         }
+    }
+
+    private void StatisticsDataGrid_Sorting(object sender, DataGridSortingEventArgs e)
+    {
+        var sortMemberPath = e.Column.SortMemberPath;
+        if (string.IsNullOrWhiteSpace(sortMemberPath))
+        {
+            return;
+        }
+
+        e.Handled = true;
+
+        var nextDirection = StatisticsGridSorter.GetNextSortDirection(
+            _statisticsSortMemberPath,
+            _statisticsSortDirection,
+            sortMemberPath);
+
+        _statisticsSortMemberPath = sortMemberPath;
+        _statisticsSortDirection = nextDirection;
+
+        if (StatisticsDataGrid.ItemsSource is not IEnumerable<CounterStatisticsItem> items)
+        {
+            QueueStatisticsSortIndicatorRefresh();
+            return;
+        }
+
+        StatisticsDataGrid.ItemsSource = StatisticsGridSorter.SortItems(
+            items,
+            _statisticsSortMemberPath,
+            _statisticsSortDirection);
+
+        QueueStatisticsSortIndicatorRefresh();
+    }
+
+    private void UpdateStatisticsSortIndicators()
+    {
+        foreach (var column in StatisticsDataGrid.Columns)
+        {
+            column.SortDirection = column.SortMemberPath == _statisticsSortMemberPath
+                ? _statisticsSortDirection
+                : null;
+        }
+    }
+
+    private void QueueStatisticsSortIndicatorRefresh()
+    {
+        Dispatcher.BeginInvoke(
+            UpdateStatisticsSortIndicators,
+            DispatcherPriority.Loaded);
     }
     
     /// <summary>
@@ -5101,7 +5297,7 @@ public partial class MainWindow : Window
         // Ctrl+C でグラフをクリップボードにコピー
         if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            if (GraphMenu.IsEnabled) // グラフが表示されている場合のみ実行
+            if (HasVisibleChartData()) // グラフが表示されている場合のみ実行
             {
                 CopyGraphToClipboardInternal();
                 e.Handled = true;
