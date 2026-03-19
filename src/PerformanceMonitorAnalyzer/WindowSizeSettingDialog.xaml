@@ -1,13 +1,15 @@
 <Window x:Class="PerformanceMonitorAnalyzer.WindowSizeSettingDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ウィンドウサイズ設定" Height="310" Width="400"
+        Title="ウィンドウサイズ設定" Width="430" MinWidth="430" MinHeight="360"
+        SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
         Background="{StaticResource AppBackgroundBrush}">
     <Grid Background="{StaticResource AppBackgroundBrush}">
         <Border Margin="12" Style="{StaticResource CardBorderStyle}" Padding="24">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -70,12 +72,21 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- プレビュー -->
+                <TextBlock Grid.Row="4"
+                           x:Name="PreviewText"
+                           Text="新しいサイズ: 1200×800 (通常)"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource AccentBrush}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,14"/>
+
                 <!-- ボタン -->
-                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-                    <TextBlock x:Name="PreviewText" Text="新しいサイズ: 1200×800 (通常)" 
-                               FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="適用" Click="Apply_Click" IsDefault="True" 
-                            Padding="15,6" Margin="0,0,10,0" Style="{StaticResource PrimaryActionButtonStyle}"/>
+                            MinWidth="120" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"/>
                     <Button Content="キャンセル" Click="Cancel_Click" IsCancel="True" 
                             Padding="15,6" Style="{StaticResource GhostButtonStyle}"/>
                 </StackPanel>

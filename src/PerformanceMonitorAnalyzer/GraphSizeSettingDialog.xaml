@@ -1,13 +1,15 @@
 <Window x:Class="PerformanceMonitorAnalyzer.GraphSizeSettingDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="グラフサイズ設定" Height="280" Width="400"
+        Title="グラフサイズ設定" Width="460" MinWidth="460" MinHeight="350"
+        SizeToContent="Height"
         ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
         Background="{StaticResource AppBackgroundBrush}">
     <Grid Background="{StaticResource AppBackgroundBrush}">
         <Border Margin="12" Style="{StaticResource CardBorderStyle}" Padding="24">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -52,22 +54,31 @@
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,8" TextAlignment="Center"/>
 
                     <!-- プリセットボタン -->
-                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" 
-                                HorizontalAlignment="Center" Margin="0,5,0,0">
+                    <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                               HorizontalAlignment="Center" Margin="0,5,0,0">
                         <Button Content="自動サイズ" Click="AutoSize_Click" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource SuccessActionButtonStyle}"/>
                         <Button Content="最大化" Click="MaximizeSize_Click" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource WarningActionButtonStyle}"/>
                         <Button Content="800×400" Click="PresetSize_Click" Tag="800,400" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
                         <Button Content="1000×500" Click="PresetSize_Click" Tag="1000,500" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
                         <Button Content="1200×600" Click="PresetSize_Click" Tag="1200,600" Margin="2" Padding="6,2" FontSize="10" Style="{StaticResource GhostButtonStyle}"/>
-                    </StackPanel>
+                    </WrapPanel>
                 </Grid>
 
+                <!-- プレビュー -->
+                <TextBlock Grid.Row="3"
+                           x:Name="PreviewText"
+                           Text="新しいサイズ: 800×400"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource AccentBrush}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,14"/>
+
                 <!-- ボタン -->
-                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-                    <TextBlock x:Name="PreviewText" Text="新しいサイズ: 800×400" 
-                               FontWeight="Bold" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="適用" Click="Apply_Click" IsDefault="True" 
-                            Padding="15,6" Margin="0,0,10,0" Style="{StaticResource PrimaryActionButtonStyle}"/>
+                            MinWidth="120" Margin="0,0,10,0" Style="{StaticResource SecondaryActionButtonStyle}"/>
                     <Button Content="キャンセル" Click="Cancel_Click" IsCancel="True" 
                             Padding="15,6" Style="{StaticResource GhostButtonStyle}"/>
                 </StackPanel>

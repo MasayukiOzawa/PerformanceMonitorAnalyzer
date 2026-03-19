@@ -22,6 +22,7 @@ public class BlgFileAnalyzer : IDisposable
         public string CounterName { get; set; } = string.Empty;
         public string InstanceName { get; set; } = string.Empty;
         public List<CounterDataPoint> DataPoints { get; set; } = new();
+        public bool WasCanceled { get; set; }
     }
 
     public class CounterDataPoint
@@ -34,7 +35,10 @@ public class BlgFileAnalyzer : IDisposable
     /// <summary>
     /// BLGファイルを開く
     /// </summary>
-    public async Task<bool> OpenBlgFileAsync(string filePath, IProgress<string>? progress = null)
+    public async Task<bool> OpenBlgFileAsync(
+        string filePath,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (!File.Exists(filePath))
         {
@@ -50,6 +54,7 @@ public class BlgFileAnalyzer : IDisposable
 
         return await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 _filePath = filePath;
@@ -131,13 +136,15 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"エラー: {ex.Message}");
                 throw;
             }
-        });
+        }, cancellationToken);
     }
 
     /// <summary>
     /// データソースの時間範囲を取得
     /// </summary>
-    public async Task<(DateTime startTime, DateTime endTime)> GetTimeRangeAsync(IProgress<string>? progress = null)
+    public async Task<(DateTime startTime, DateTime endTime)> GetTimeRangeAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_filePath))
         {
@@ -148,6 +155,7 @@ public class BlgFileAnalyzer : IDisposable
 
         return await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 uint bufferSize = (uint)Marshal.SizeOf<PdhApi.PDH_TIME_INFO>();
@@ -167,13 +175,15 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"時間範囲取得エラー: {ex.Message}");
                 throw;
             }
-        });
+        }, cancellationToken);
     }
 
     /// <summary>
     /// データソースのサンプリング間隔を取得
     /// </summary>
-    public async Task<TimeSpan> GetSamplingIntervalAsync(IProgress<string>? progress = null)
+    public async Task<TimeSpan> GetSamplingIntervalAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_filePath))
         {
@@ -184,11 +194,12 @@ public class BlgFileAnalyzer : IDisposable
 
         return await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 // 方法1: 実際のデータポイントから間隔を計算（より正確）
                 progress?.Report("実際のデータポイントから間隔を計算中...");
-                var actualInterval = CalculateIntervalFromActualData(progress);
+                var actualInterval = CalculateIntervalFromActualData(progress, cancellationToken);
                 
                 if (actualInterval != TimeSpan.Zero)
                 {
@@ -235,13 +246,15 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"サンプリング間隔取得エラー: {ex.Message}");
                 throw;
             }
-        });
+        }, cancellationToken);
     }
     
     /// <summary>
     /// 実際のデータポイントを使用してサンプリング間隔を計算
     /// </summary>
-    private TimeSpan CalculateIntervalFromActualData(IProgress<string>? progress = null)
+    private TimeSpan CalculateIntervalFromActualData(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         IntPtr query = IntPtr.Zero;
         IntPtr counter = IntPtr.Zero;
@@ -308,6 +321,7 @@ public class BlgFileAnalyzer : IDisposable
             
             for (int i = 0; i < 10; i++) // 最初の10個のサンプルを取得
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
                 
                 if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
@@ -366,6 +380,10 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"実データ検証: 十分なタイムスタンプを取得できませんでした (取得数: {timestamps.Count})");
                 return TimeSpan.Zero;
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -505,7 +523,10 @@ public class BlgFileAnalyzer : IDisposable
     /// PerformanceCounters リポジトリの PCReaderEnumerator パターンを使用
     /// SQLServerカウンター等の特殊ケースに対応
     /// </summary>
-    public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, IProgress<string>? progress = null)
+    public async Task<CounterInfo> LoadCounterDataAsync(
+        string counterPath,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_filePath))
         {
@@ -520,6 +541,7 @@ public class BlgFileAnalyzer : IDisposable
         {
             IntPtr query = IntPtr.Zero;
             IntPtr counter = IntPtr.Zero;
+            var dataPoints = new List<CounterDataPoint>();
             var counterInfo = new CounterInfo
             {
                 FullPath = fullCounterPath,
@@ -533,6 +555,7 @@ public class BlgFileAnalyzer : IDisposable
             
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // 詳細なデバッグ情報を提供
                 progress?.Report($"カウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
                 progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
@@ -607,13 +630,13 @@ public class BlgFileAnalyzer : IDisposable
                     throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
-                var dataPoints = new List<CounterDataPoint>();
                 int sampleCount = 0;
                 const int maxSamples = 100000; // 安全のため最大100,000サンプル
 
                 // BLGファイル内の全データポイントを反復処理
                 while (sampleCount < maxSamples)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
                     
                     if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
@@ -666,6 +689,13 @@ public class BlgFileAnalyzer : IDisposable
 
                 return counterInfo;
             }
+            catch (OperationCanceledException)
+            {
+                counterInfo.DataPoints = dataPoints;
+                counterInfo.WasCanceled = true;
+                progress?.Report($"カウンター '{counterPath}' の読み込みを中止しました。取得済み {dataPoints.Count} 件を返します。");
+                return counterInfo;
+            }
             catch (Exception ex)
             {
                 progress?.Report($"カウンターデータ読み込みエラー: {ex.Message}");
@@ -683,13 +713,18 @@ public class BlgFileAnalyzer : IDisposable
                     PdhApi.PdhCloseQuery(query);
                 }
             }
-        });
+        }, cancellationToken);
     }
 
     /// <summary>
     /// 時間制約付きでカウンターデータを読み込み
     /// </summary>
-    public async Task<CounterInfo> LoadCounterDataAsync(string counterPath, DateTime? startTime, DateTime? endTime, IProgress<string>? progress = null)
+    public async Task<CounterInfo> LoadCounterDataAsync(
+        string counterPath,
+        DateTime? startTime,
+        DateTime? endTime,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_filePath))
         {
@@ -708,6 +743,7 @@ public class BlgFileAnalyzer : IDisposable
         {
             IntPtr query = IntPtr.Zero;
             IntPtr counter = IntPtr.Zero;
+            var dataPoints = new List<CounterDataPoint>();
             var counterInfo = new CounterInfo
             {
                 FullPath = fullCounterPath,
@@ -721,6 +757,7 @@ public class BlgFileAnalyzer : IDisposable
 
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 // 詳細なデバッグ情報を提供
                 progress?.Report($"時間制約付きカウンターパス解析: '{counterPath}' -> '{fullCounterPath}'");
                 progress?.Report($"オブジェクト名: '{counterInfo.ObjectName}', カウンター名: '{counterInfo.CounterName}', インスタンス名: '{counterInfo.InstanceName}'");
@@ -813,13 +850,13 @@ public class BlgFileAnalyzer : IDisposable
                     throw new Exception($"初回データ収集に失敗: {PdhApi.GetErrorMessage(result)} (0x{result:X8})");
                 }
 
-                var dataPoints = new List<CounterDataPoint>();
                 int sampleCount = 0;
                 const int maxSamples = 100000; // 安全のため最大100,000サンプル
 
                 // BLGファイル内の全データポイントを反復処理
                 while (sampleCount < maxSamples)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     result = PdhApi.PdhCollectQueryDataWithTime(query, out long timestamp);
                     
                     if (result == PdhApi.PDH_NO_MORE_DATA || result == PdhApi.PDH_NO_DATA)
@@ -884,6 +921,13 @@ public class BlgFileAnalyzer : IDisposable
 
                 return counterInfo;
             }
+            catch (OperationCanceledException)
+            {
+                counterInfo.DataPoints = dataPoints;
+                counterInfo.WasCanceled = true;
+                progress?.Report($"カウンター '{counterPath}' の読み込みを中止しました。取得済み {dataPoints.Count} 件を返します。");
+                return counterInfo;
+            }
             catch (Exception ex)
             {
                 progress?.Report($"カウンターデータ読み込みエラー: {ex.Message}");
@@ -901,7 +945,7 @@ public class BlgFileAnalyzer : IDisposable
                     PdhApi.PdhCloseQuery(query);
                 }
             }
-        });
+        }, cancellationToken);
     }
 
     private static string ExtractObjectName(string counterPath)
@@ -1088,7 +1132,9 @@ public class BlgFileAnalyzer : IDisposable
     /// <summary>
     /// 利用可能なパフォーマンスオブジェクトを列挙
     /// </summary>
-    public async Task<List<string>> EnumerateObjectsAsync(IProgress<string>? progress = null)
+    public async Task<List<string>> EnumerateObjectsAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (_dataSource == IntPtr.Zero)
         {
@@ -1099,6 +1145,7 @@ public class BlgFileAnalyzer : IDisposable
 
         return await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var objects = new List<string>();
@@ -1145,7 +1192,7 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"オブジェクト列挙エラー: {ex.Message}");
                 throw;
             }
-        });
+        }, cancellationToken);
     }
 
     /// <summary>
@@ -1238,7 +1285,9 @@ public class BlgFileAnalyzer : IDisposable
     /// 指定されたオブジェクトのカウンターとインスタンスを列挙
     /// </summary>
     public async Task<(List<string> counters, List<string> instances)> EnumerateCountersAndInstancesAsync(
-        string objectName, IProgress<string>? progress = null)
+        string objectName,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (_dataSource == IntPtr.Zero)
         {
@@ -1249,6 +1298,7 @@ public class BlgFileAnalyzer : IDisposable
 
         return await Task.Run(() =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 // BLGファイル内のマシン名を取得
@@ -1356,18 +1406,20 @@ public class BlgFileAnalyzer : IDisposable
                 progress?.Report($"カウンター列挙エラー: {ex.Message}");
                 throw;
             }
-        });
+        }, cancellationToken);
     }
 
     /// <summary>
     /// 全てのカウンターパスを生成
     /// </summary>
-    public async Task<List<string>> GenerateAllCounterPathsAsync(IProgress<string>? progress = null)
+    public async Task<List<string>> GenerateAllCounterPathsAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         progress?.Report("全カウンターパスを生成中...");
 
         var allPaths = new List<string>();
-        var objects = await EnumerateObjectsAsync(progress);
+        var objects = await EnumerateObjectsAsync(progress, cancellationToken);
 
         progress?.Report($"見つかったオブジェクト数: {objects.Count}");
         
@@ -1378,10 +1430,16 @@ public class BlgFileAnalyzer : IDisposable
         
         foreach (var objectName in objects)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                progress?.Report("中止要求を受け付けました。ここまでのカウンターパスを反映します。");
+                break;
+            }
+
             try
             {
                 progress?.Report($"処理中のオブジェクト: {objectName}");
-                var (counters, instances) = await EnumerateCountersAndInstancesAsync(objectName, progress);
+                var (counters, instances) = await EnumerateCountersAndInstancesAsync(objectName, progress, cancellationToken);
 
                 var pathsForThisObject = 0;
                 foreach (var counterName in counters)
@@ -1408,6 +1466,11 @@ public class BlgFileAnalyzer : IDisposable
                 }
                 
                 progress?.Report($"{objectName}: {counters.Count}カウンター × {Math.Max(1, instances.Count)}インスタンス = {pathsForThisObject}パス");
+            }
+            catch (OperationCanceledException)
+            {
+                progress?.Report("中止要求を受け付けました。ここまでのカウンターパスを反映します。");
+                break;
             }
             catch (Exception ex)
             {

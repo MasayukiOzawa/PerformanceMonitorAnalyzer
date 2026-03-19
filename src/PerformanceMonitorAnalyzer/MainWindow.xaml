@@ -90,9 +90,24 @@
             <Border Grid.RowSpan="2" Style="{StaticResource InlinePanelBorderStyle}"/>
             <TextBlock Grid.Row="0" x:Name="ProgressStatusText" Text="ファイルを読み込み中..." 
                        Margin="16,14,16,8" FontWeight="Bold"/>
-            <ProgressBar Grid.Row="1" x:Name="LoadingProgressBar" 
-                         Margin="16,0,16,16" 
-                         IsIndeterminate="True"/>
+            <Grid Grid.Row="1" Margin="16,0,16,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar Grid.Column="0"
+                             x:Name="LoadingProgressBar"
+                             Margin="0,0,12,0"
+                             IsIndeterminate="True"/>
+                <Button Grid.Column="1"
+                        x:Name="CancelLoadingButton"
+                        Content="読み込みを中止"
+                        Click="CancelLoadingButton_Click"
+                        Style="{StaticResource DangerActionButtonStyle}"
+                        Padding="12,4"
+                        MinWidth="120"
+                        IsEnabled="False"/>
+            </Grid>
         </Grid>
 
         <!-- 上部: カウンター選択とグラフ表示 -->

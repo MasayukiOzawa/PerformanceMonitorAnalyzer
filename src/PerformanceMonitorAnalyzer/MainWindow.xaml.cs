@@ -97,6 +97,27 @@ public partial class MainWindow : Window
     // ログ機能
     private readonly ObservableCollection<LogEntry> _operationLogs = new();
     private readonly ObservableCollection<LogEntry> _errorLogs = new();
+    private readonly DispatcherTimer _progressStatusTimer;
+    private BufferedProgressReporter? _progressStatusReporter;
+    private string? _lastRenderedProgressMessage;
+    private CancellationTokenSource? _loadingCancellationTokenSource;
+    private LoadingOperationKind _currentLoadingOperation = LoadingOperationKind.None;
+
+    private enum LoadingOperationKind
+    {
+        None,
+        BlgFile,
+        CounterData
+    }
+
+    private sealed class CounterLoadExecutionResult
+    {
+        public required IReadOnlyList<string> LoadedCounters { get; init; }
+        public required IReadOnlyList<string> Errors { get; init; }
+        public required int ProcessedCount { get; init; }
+        public required int SuccessCount { get; init; }
+        public required bool WasCanceled { get; init; }
+    }
 
     public MainWindow()
     {
@@ -127,6 +148,96 @@ public partial class MainWindow : Window
         
         // ログタブの初期化
         InitializeLogTabs();
+
+        _progressStatusTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(150)
+        };
+        _progressStatusTimer.Tick += ProgressStatusTimer_Tick;
+    }
+
+    private void ProgressStatusTimer_Tick(object? sender, EventArgs e)
+    {
+        UpdateProgressStatusFromBuffer();
+    }
+
+    private BufferedProgressReporter StartProgressStatusUpdates(string initialMessage)
+    {
+        _progressStatusReporter = new BufferedProgressReporter(initialMessage);
+        _lastRenderedProgressMessage = null;
+        UpdateProgressStatusFromBuffer();
+        _progressStatusTimer.Start();
+        return _progressStatusReporter;
+    }
+
+    private void StopProgressStatusUpdates()
+    {
+        UpdateProgressStatusFromBuffer();
+        _progressStatusTimer.Stop();
+        _progressStatusReporter = null;
+        _lastRenderedProgressMessage = null;
+    }
+
+    private void UpdateProgressStatusFromBuffer()
+    {
+        var latestMessage = _progressStatusReporter?.LatestMessage;
+        if (string.IsNullOrWhiteSpace(latestMessage) ||
+            string.Equals(latestMessage, _lastRenderedProgressMessage, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastRenderedProgressMessage = latestMessage;
+        ProgressStatusText.Text = latestMessage;
+    }
+
+    private CancellationToken BeginLoadingOperation(LoadingOperationKind operationKind, string initialMessage)
+    {
+        _loadingCancellationTokenSource?.Dispose();
+        _loadingCancellationTokenSource = new CancellationTokenSource();
+        _currentLoadingOperation = operationKind;
+        CancelLoadingButton.IsEnabled = true;
+        StartProgressStatusUpdates(initialMessage);
+        return _loadingCancellationTokenSource.Token;
+    }
+
+    private void CompleteLoadingOperation()
+    {
+        StopProgressStatusUpdates();
+        CancelLoadingButton.IsEnabled = false;
+        _loadingCancellationTokenSource?.Dispose();
+        _loadingCancellationTokenSource = null;
+        _currentLoadingOperation = LoadingOperationKind.None;
+    }
+
+    private void CancelLoadingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loadingCancellationTokenSource is null || _loadingCancellationTokenSource.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _loadingCancellationTokenSource.Cancel();
+        CancelLoadingButton.IsEnabled = false;
+        _progressStatusReporter?.Report("中止を要求中...");
+        UpdateProgressStatusFromBuffer();
+
+        var logMessage = _currentLoadingOperation switch
+        {
+            LoadingOperationKind.BlgFile => "BLGファイル読み込みの中止を要求しました。取得済みの情報を反映します。",
+            LoadingOperationKind.CounterData => "カウンターデータ読み込みの中止を要求しました。取得済みのデータを反映します。",
+            _ => "読み込み処理の中止を要求しました。"
+        };
+
+        AddOperationLog(LogLevel.Warning, logMessage);
+    }
+
+    private void SetSelectedCounterLoadUiState(bool isLoading)
+    {
+        CounterTreeView.IsEnabled = !isLoading;
+        StartTimeSlider.IsEnabled = !isLoading;
+        EndTimeSlider.IsEnabled = !isLoading;
+        ExecuteButton.IsEnabled = !isLoading && !string.IsNullOrEmpty(_currentBlgFile);
     }
 
     private void InitializeChart()
@@ -1302,6 +1413,12 @@ public partial class MainWindow : Window
 
     private async Task LoadBlgFileWithErrorHandlingAsync(string fileName, string loadSourceDescription)
     {
+        if (ProgressGrid.Visibility == Visibility.Visible)
+        {
+            AddOperationLog(LogLevel.Warning, "現在別の読み込み処理を実行中です。完了後に再度実行してください。");
+            return;
+        }
+
         try
         {
             await LoadBlgFileAsync(fileName);
@@ -1458,6 +1575,7 @@ public partial class MainWindow : Window
 
     private async Task LoadBlgFileAsync(string fileName)
     {
+        var cancellationToken = BeginLoadingOperation(LoadingOperationKind.BlgFile, "BLGファイルを解析中...");
         _currentBlgFile = fileName;
         
         // ファイル名をフルパスで表示
@@ -1501,25 +1619,38 @@ public partial class MainWindow : Window
 
         try
         {
-            // BLGファイルを非同期で解析
-            var progress = new Progress<string>(status => 
+            var progress = _progressStatusReporter!;
+            List<string> counters;
+            var loadCanceled = false;
+
+            try
             {
-                ProgressStatusText.Text = status;
-                LogError($"Progress: {status}"); // デバッグ用ログ追加
-            });
-            
-            var counters = await ParseBlgFileAsync(fileName, progress);
+                counters = await ParseBlgFileAsync(fileName, progress, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                counters = new List<string>();
+                loadCanceled = true;
+            }
             
             LogError($"ParseBlgFileAsync completed with {counters.Count} counters"); // デバッグ用ログ
             
             if (counters.Count == 0)
             {
+                if (loadCanceled || cancellationToken.IsCancellationRequested)
+                {
+                    AddOperationLog(LogLevel.Warning, "BLGファイルの読み込みを中止しました。読み込めたカウンターはありません。");
+                    return;
+                }
+
                 throw new Exception("BLGファイルからカウンターを取得できませんでした。ファイルが破損しているか、対応していない形式の可能性があります。");
             }
             
-            // 階層構造を作成（UIスレッドで実行）
-            ProgressStatusText.Text = "カウンター階層を構築中...";
-            BuildCounterTree(counters);
+            progress.Report((loadCanceled || cancellationToken.IsCancellationRequested)
+                ? "取得済みカウンターを画面へ反映中..."
+                : "カウンター階層を構築中...");
+            var treeNodes = await Task.Run(() => CounterTreeBuilder.Build(counters));
+            ApplyCounterTreeNodes(treeNodes);
 
             // コンピューター名を表示（最初のカウンターから抽出）
             if (counters.Count > 0)
@@ -1542,8 +1673,10 @@ public partial class MainWindow : Window
                 SamplingIntervalDisplay.Visibility = Visibility.Visible;
             }
 
-            // 時間範囲を検出
-            ProgressStatusText.Text = "時間範囲を検出中...";
+            // キャンセル時も、読めた分をそのまま使えるように最低限のメタ情報は確定させる
+            progress.Report((loadCanceled || cancellationToken.IsCancellationRequested)
+                ? "取得済み情報を最終反映中..."
+                : "時間範囲を検出中...");
             var timeRangeDetected = await DetectTimeRangeAsync(fileName, progress);
             if (!timeRangeDetected)
             {
@@ -1565,13 +1698,26 @@ public partial class MainWindow : Window
                 ? $"⏱️ 取得間隔: {FormatSamplingInterval(_samplingInterval)}"
                 : "⚠️ 取得間隔の検出に失敗しました";
             
-            AddOperationLog(LogLevel.Success, $"BLGファイルが読み込まれました。\n" +
-                           $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
-                           $"🏷️  インスタンス: {totalInstances}個\n" +
-                           $"📈 カウンター: {totalCounters}個\n" +
-                           $"{timeRangeInfo}\n" +
-                           $"{samplingIntervalInfo}\n" +
-                           $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。");
+            if (loadCanceled || cancellationToken.IsCancellationRequested)
+            {
+                AddOperationLog(LogLevel.Warning, $"BLGファイルの読み込みを中止しました。\n" +
+                               $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
+                               $"🏷️  インスタンス: {totalInstances}個\n" +
+                               $"📈 カウンター: {totalCounters}個\n" +
+                               $"{timeRangeInfo}\n" +
+                               $"{samplingIntervalInfo}\n" +
+                               $"取得済みのカウンター情報のみ反映しています。");
+            }
+            else
+            {
+                AddOperationLog(LogLevel.Success, $"BLGファイルが読み込まれました。\n" +
+                               $"📊 パフォーマンスオブジェクト: {_counterTreeNodes.Count}個\n" +
+                               $"🏷️  インスタンス: {totalInstances}個\n" +
+                               $"📈 カウンター: {totalCounters}個\n" +
+                               $"{timeRangeInfo}\n" +
+                               $"{samplingIntervalInfo}\n" +
+                               $"カウンターを選択して「🚀 選択されたカウンターを読み込み」ボタンを押してください。");
+            }
         }
         catch (Exception ex)
         {
@@ -1583,12 +1729,13 @@ public partial class MainWindow : Window
         }
         finally
         {
+            CompleteLoadingOperation();
             // プログレスバーを非表示
             ProgressGrid.Visibility = Visibility.Collapsed;
         }
     }
 
-    private async Task<List<string>> ParseBlgFileAsync(string fileName, IProgress<string>? progress)
+    private async Task<List<string>> ParseBlgFileAsync(string fileName, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         progress?.Report("BLGファイルの解析を開始中...");
         
@@ -1598,10 +1745,10 @@ public partial class MainWindow : Window
             throw new PlatformNotSupportedException("このアプリケーションはWindows環境でのみ動作します。");
         }
         
-        return await ParseBlgFileWithPdhApiAsync(fileName, progress);
+        return await ParseBlgFileWithPdhApiAsync(fileName, progress, cancellationToken);
     }
 
-    private async Task<List<string>> ParseBlgFileWithPdhApiAsync(string fileName, IProgress<string>? progress)
+    private async Task<List<string>> ParseBlgFileWithPdhApiAsync(string fileName, IProgress<string>? progress, CancellationToken cancellationToken)
     {
         var counters = new List<string>();
         BlgFileAnalyzer? analyzer = null;
@@ -1614,7 +1761,7 @@ public partial class MainWindow : Window
             analyzer = new BlgFileAnalyzer();
             
             // BLGファイルを開く
-            var opened = await analyzer.OpenBlgFileAsync(fileName, progress);
+            var opened = await analyzer.OpenBlgFileAsync(fileName, progress, cancellationToken);
             if (!opened)
             {
                 throw new Exception("BLGファイルを開くことができませんでした。");
@@ -1643,12 +1790,16 @@ public partial class MainWindow : Window
             // BLGファイルからサンプリング間隔を取得
             try
             {
-                _samplingInterval = await analyzer.GetSamplingIntervalAsync(progress);
+                _samplingInterval = await analyzer.GetSamplingIntervalAsync(progress, cancellationToken);
                 LogError($"Sampling interval extracted from BLG file: {_samplingInterval}");
                 if (_samplingInterval == TimeSpan.Zero)
                 {
                     LogError("警告: 取得間隔が0です。単一サンプルまたはデータが不足している可能性があります。");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -1657,7 +1808,7 @@ public partial class MainWindow : Window
             }
             
             // 全てのカウンターパスを生成
-            counters = await analyzer.GenerateAllCounterPathsAsync(progress);
+            counters = await analyzer.GenerateAllCounterPathsAsync(progress, cancellationToken);
             
             LogError($"PDH API parsing completed with {counters.Count} counters");
             
@@ -1672,6 +1823,10 @@ public partial class MainWindow : Window
                 LogError("No valid counters found in BLG file");
                 throw new Exception("BLGファイルからカウンターを取得できませんでした。");
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -1750,229 +1905,13 @@ public partial class MainWindow : Window
     }
     */
 
-    private void BuildCounterTree(List<string> counters)
+    private void ApplyCounterTreeNodes(IReadOnlyList<CounterTreeNode> rootNodes)
     {
-        LogError($"Building counter tree with {counters.Count} counters");
-        
-        // 最初のいくつかのカウンターをログ出力
-        if (counters.Count > 0)
-        {
-            var sampleCounters = counters.Take(10).ToList();
-            LogError($"Sample counters: {string.Join(", ", sampleCounters)}");
-        }
-        
-        // カウンターを解析してオブジェクト別にグループ化
-        var objectGroups = new Dictionary<string, Dictionary<string, List<string>>>();
-        
-        foreach (var counter in counters)
-        {
-            // パフォーマンスカウンターのパス解析: \\ComputerName\ObjectName(InstanceName)\CounterName または \ObjectName(InstanceName)\CounterName
-            var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-            
-            string objectName, counterName;
-            
-            if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
-            {
-                objectName = parts[1];
-                counterName = parts[2];
-            }
-            else if (parts.Length >= 2) // \オブジェクト\カウンター の場合（ローカルコンピューター）
-            {
-                objectName = parts[0];
-                counterName = parts[1];
-            }
-            else
-            {
-                LogError($"Skipping invalid counter path: {counter}");
-                continue;
-            }
-            
-            // インスタンス名を抽出
-            var instanceName = "(なし)";
-            if (objectName.Contains('(') && objectName.Contains(')'))
-            {
-                var startIndex = objectName.IndexOf('(');
-                var endIndex = objectName.LastIndexOf(')');
-                if (startIndex >= 0 && endIndex > startIndex)
-                {
-                    instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
-                    objectName = objectName.Substring(0, startIndex);
-                }
-            }
-            
-            // 階層構造を構築
-            if (!objectGroups.ContainsKey(objectName))
-            {
-                objectGroups[objectName] = new Dictionary<string, List<string>>();
-                LogError($"Created new object group: {objectName}");
-            }
-            
-            if (!objectGroups[objectName].ContainsKey(instanceName))
-            {
-                objectGroups[objectName][instanceName] = new List<string>();
-            }
-            
-            objectGroups[objectName][instanceName].Add(counter);
-        }
-        
-        LogError($"Created {objectGroups.Count} object groups");
-        
-        // 各オブジェクトグループの詳細をログ出力
-        foreach (var objGroup in objectGroups)
-        {
-            var totalCounters = objGroup.Value.Sum(x => x.Value.Count);
-            LogError($"Object '{objGroup.Key}' has {objGroup.Value.Count} instances, total counters: {totalCounters}");
-            
-            // LogicalDiskの詳細を特に出力
-            if (objGroup.Key == "LogicalDisk")
-            {
-                foreach (var instGroup in objGroup.Value)
-                {
-                    LogError($"  LogicalDisk instance '{instGroup.Key}' has {instGroup.Value.Count} counters");
-                }
-            }
-        }
-        
-        // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
-        _counterTreeNodes.Clear();
-        
-        // 凡例をクリア（新しいファイル読み込み時）
-        ClearLegendItems();
-        
-        foreach (var objectGroup in objectGroups.OrderBy(x => x.Key))
-        {
-            var objectNode = new CounterTreeNode
-            {
-                DisplayName = objectGroup.Key,
-                FullPath = "",
-                Type = NodeType.Object
-            };
-            
-            // 複数のインスタンスがある場合、最初に "*" ノードを追加
-            bool hasMultipleInstances = objectGroup.Value.Count > 1 || 
-                                      (objectGroup.Value.Count == 1 && !objectGroup.Value.Keys.First().Equals("(なし)"));
-            
-            if (hasMultipleInstances)
-            {
-                // すべてのカウンター名を収集（重複を除去）
-                var allCounterNames = new HashSet<string>();
-                foreach (var instanceGroup in objectGroup.Value)
-                {
-                    foreach (var counter in instanceGroup.Value)
-                    {
-                        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-                        string counterName;
-                        
-                        if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
-                        {
-                            counterName = parts[2];
-                        }
-                        else if (parts.Length >= 2) // \オブジェクト\カウンター の場合
-                        {
-                            counterName = parts[1];
-                        }
-                        else
-                        {
-                            counterName = counter;
-                        }
-                        
-                        allCounterNames.Add(counterName);
-                    }
-                }
-                
-                // "*" インスタンスノードを作成
-                var wildcardInstanceNode = new CounterTreeNode
-                {
-                    DisplayName = "*",
-                    FullPath = "",
-                    Type = NodeType.Instance,
-                    IsWildCard = true
-                };
-                
-                // "*" ノード下に各カウンターを追加
-                foreach (var counterName in allCounterNames.OrderBy(x => x))
-                {
-                    var wildcardCounterNode = new CounterTreeNode
-                    {
-                        DisplayName = counterName,
-                        FullPath = $"WILDCARD:{objectGroup.Key}:*:{counterName}",
-                        Type = NodeType.Counter,
-                        Parent = wildcardInstanceNode,
-                        IsWildCard = true
-                    };
-                    
-                    wildcardInstanceNode.Children.Add(wildcardCounterNode);
-                }
-                
-                wildcardInstanceNode.Parent = objectNode;
-                objectNode.Children.Add(wildcardInstanceNode);
-            }
-            
-            // 通常のインスタンスノードを追加
-            foreach (var instanceGroup in objectGroup.Value.OrderBy(x => x.Key))
-            {
-                var instanceNode = new CounterTreeNode
-                {
-                    DisplayName = instanceGroup.Key == "(なし)" ? "(総合)" : instanceGroup.Key,
-                    FullPath = "",
-                    Type = NodeType.Instance
-                };
-                
-                foreach (var counter in instanceGroup.Value.OrderBy(x => x))
-                {
-                    var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-                    string counterName;
-                    
-                    if (parts.Length >= 3) // \\コンピューター名\オブジェクト\カウンター の場合
-                    {
-                        counterName = parts[2];
-                    }
-                    else if (parts.Length >= 2) // \オブジェクト\カウンター の場合
-                    {
-                        counterName = parts[1];
-                    }
-                    else
-                    {
-                        counterName = counter;
-                    }
-                    
-                    var counterNode = new CounterTreeNode
-                    {
-                        DisplayName = counterName,
-                        FullPath = counter,
-                        Type = NodeType.Counter,
-                        Parent = instanceNode  // 親の設定
-                    };
-                    
-                    instanceNode.Children.Add(counterNode);
-                }
-                
-                instanceNode.Parent = objectNode;  // 親の設定
-                objectNode.Children.Add(instanceNode);
-            }
-            
-            _counterTreeNodes.Add(objectNode);
-        }
-        
-        LogError($"Counter tree built with {_counterTreeNodes.Count} root nodes");
-        
-        // 各ルートノードの詳細をログ出力
-        foreach (var objNode in _counterTreeNodes)
-        {
-            var totalCounters = objNode.Children.Sum(inst => inst.Children.Count);
-            LogError($"Tree node '{objNode.DisplayName}' has {objNode.Children.Count} child instances, {totalCounters} total counters");
-            
-            // LogicalDiskノードの詳細
-            if (objNode.DisplayName == "LogicalDisk")
-            {
-                foreach (var instNode in objNode.Children)
-                {
-                    LogError($"  LogicalDisk instance '{instNode.DisplayName}' has {instNode.Children.Count} counters");
-                }
-            }
-        }
-        
-        LogError("TreeView structure updated via ObservableCollection");
+        _counterTreeNodes = new ObservableCollection<CounterTreeNode>(rootNodes);
+        CounterTreeView.ItemsSource = _counterTreeNodes;
+
+        var totalCounters = _counterTreeNodes.Sum(objectNode => objectNode.Children.Sum(instanceNode => instanceNode.Children.Count));
+        LogError($"Counter tree applied with {_counterTreeNodes.Count} root nodes and {totalCounters} counters");
     }
 
     private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
@@ -2386,10 +2325,7 @@ public partial class MainWindow : Window
         UpdateChartXAxisRange();
         
         PerformanceChart.Refresh();
-        
-        // データテーブルタブを作成（チェックボックス経由）
-        AddCounterTab(counter);
-        
+
         // グラフが表示されたらメッセージを非表示
         UpdateChartVisibility();
         
@@ -3773,11 +3709,10 @@ public partial class MainWindow : Window
         {
             // プログレスバーを表示
             ProgressGrid.Visibility = Visibility.Visible;
-            ProgressStatusText.Text = $"選択されたカウンター ({selectedCounters.Count}個) を処理中...";
+            var cancellationToken = BeginLoadingOperation(LoadingOperationKind.CounterData, $"選択されたカウンター ({selectedCounters.Count}個) を処理中...");
+            var progress = _progressStatusReporter!;
             
-            ExecuteButton.IsEnabled = false;
-            
-            var progress = new Progress<string>(status => ProgressStatusText.Text = status);
+            SetSelectedCounterLoadUiState(true);
             
             // 選択された時間範囲を計算（時間範囲未検出時は全期間扱い）
             DateTime selectedStartTime;
@@ -3797,17 +3732,35 @@ public partial class MainWindow : Window
                 selectedEndTime = _fileEndTime;
             }
             
-            await ExecuteRelogForSelectedCounters(selectedCounters, selectedStartTime, selectedEndTime, progress);
-            ResetBulkScaleSelectorAfterCounterLoad();
-            ShowDataTablesForCounters(selectedCounters);
+            var executionResult = await ExecuteRelogForSelectedCounters(
+                selectedCounters,
+                selectedStartTime,
+                selectedEndTime,
+                progress,
+                cancellationToken);
+
+            if (executionResult.SuccessCount > 0)
+            {
+                ResetBulkScaleSelectorAfterCounterLoad();
+            }
 
             var timeRangeMessage = _timeRangeDetected
                 ? $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}"
                 : "時間範囲: 全期間（時間範囲の自動検出なし）";
 
-            AddOperationLog(LogLevel.Success, $"カウンターデータの読み込みが完了しました。\n" +
-                           $"処理されたカウンター数: {selectedCounters.Count}個\n" +
-                           $"{timeRangeMessage}");
+            if (executionResult.WasCanceled)
+            {
+                AddOperationLog(LogLevel.Warning, $"カウンターデータの読み込みを中止しました。\n" +
+                               $"処理済みカウンター数: {executionResult.ProcessedCount}個\n" +
+                               $"描画対象カウンター数: {executionResult.SuccessCount}個\n" +
+                               $"{timeRangeMessage}");
+            }
+            else
+            {
+                AddOperationLog(LogLevel.Success, $"カウンターデータの読み込みが完了しました。\n" +
+                               $"処理されたカウンター数: {selectedCounters.Count}個\n" +
+                               $"{timeRangeMessage}");
+            }
         }
         catch (Exception ex)
         {
@@ -3818,8 +3771,9 @@ public partial class MainWindow : Window
         }
         finally
         {
+            CompleteLoadingOperation();
             ProgressGrid.Visibility = Visibility.Collapsed;
-            ExecuteButton.IsEnabled = true;
+            SetSelectedCounterLoadUiState(false);
         }
     }
 
@@ -3841,10 +3795,68 @@ public partial class MainWindow : Window
         return selected;
     }
 
+    private void ReplaceCounterData(
+        IEnumerable<string> countersToReplace,
+        IReadOnlyDictionary<string, List<PerformanceDataPoint>> loadedCounterData)
+    {
+        foreach (var counter in countersToReplace.Distinct(StringComparer.Ordinal))
+        {
+            _counterData.Remove(counter);
+        }
+
+        foreach (var pair in loadedCounterData)
+        {
+            _counterData[pair.Key] = pair.Value;
+        }
+    }
+
+    private async Task ApplyLoadedCounterIncrementallyAsync(
+        string counterPath,
+        List<PerformanceDataPoint> dataPoints)
+    {
+        await Dispatcher.InvokeAsync(() =>
+        {
+            ReplaceCounterData(
+                [counterPath],
+                new Dictionary<string, List<PerformanceDataPoint>>(StringComparer.Ordinal)
+                {
+                    [counterPath] = dataPoints
+                });
+
+            EnsureBottomPanelVisible();
+
+            var preferredSelectedCounter = string.IsNullOrWhiteSpace(_selectedDataTableCounter)
+                ? counterPath
+                : _selectedDataTableCounter;
+            SyncDataTableCounters(GetOpenDataTableCounters().Append(counterPath), preferredSelectedCounter);
+
+            if (_currentChartType == ChartType.StackedAreaChart)
+            {
+                RefreshChartWithCurrentType();
+            }
+            else if (_chartSeries.ContainsKey(counterPath))
+            {
+                RefreshCounterInChart(counterPath);
+            }
+            else
+            {
+                AddLineChartSeries(counterPath);
+            }
+
+            UpdateScaleControlVisibility();
+            UpdateChartVisibility();
+        }, DispatcherPriority.Background);
+    }
+
     /// <summary>
     /// 選択されたカウンターに対してPDH APIを使用してデータを読み込み
     /// </summary>
-    private async Task ExecuteRelogForSelectedCounters(List<string> counters, DateTime startTime, DateTime endTime, IProgress<string>? progress)
+    private async Task<CounterLoadExecutionResult> ExecuteRelogForSelectedCounters(
+        List<string> counters,
+        DateTime startTime,
+        DateTime endTime,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -3878,7 +3890,7 @@ public partial class MainWindow : Window
             
             
             using var analyzer = new BlgFileAnalyzer();
-            var opened = await analyzer.OpenBlgFileAsync(_currentBlgFile!, progress);
+            var opened = await analyzer.OpenBlgFileAsync(_currentBlgFile!, progress).ConfigureAwait(false);
             
             if (!opened)
             {
@@ -3893,10 +3905,18 @@ public partial class MainWindow : Window
             int processedCount = 0;
             int successCount = 0;
             var errors = new List<string>();
+            var loadedCounterData = new Dictionary<string, List<PerformanceDataPoint>>(StringComparer.Ordinal);
+            var loadCanceled = false;
 
             // 各カウンターのデータを読み込み
             foreach (var counterPath in counters)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    loadCanceled = true;
+                    break;
+                }
+
                 try
                 {
                     progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
@@ -3905,57 +3925,39 @@ public partial class MainWindow : Window
                     BlgFileAnalyzer.CounterInfo counterInfo;
                     if (useTimeConstraints)
                     {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress);
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress);
+                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress, cancellationToken).ConfigureAwait(false);
                     }
                     
-                    if (counterInfo.DataPoints.Count > 0)
+                    var mappingResult = CounterLoadDataMapper.Map(
+                        counterPath,
+                        counterInfo,
+                        EstimateUnit,
+                        FormatValueWithUnit);
+
+                    if (mappingResult.DataPoints.Count > 0)
                     {
-                        var dataPoints = new List<PerformanceDataPoint>();
-                        
-                        foreach (var dataPoint in counterInfo.DataPoints)
-                        {
-                            // NaN値をスキップ
-                            if (double.IsNaN(dataPoint.Value))
-                                continue;
-                            
-                            var unit = EstimateUnit(counterPath);
-                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
-                            
-                            dataPoints.Add(new PerformanceDataPoint
-                            {
-                                Counter = counterPath,
-                                Value = dataPoint.Value,
-                                Timestamp = dataPoint.Timestamp,
-                                FormattedValue = formattedValue,
-                                Unit = unit
-                            });
-                        }
-                        
-                        if (dataPoints.Count > 0)
-                        {
-                            _counterData[counterPath] = dataPoints;
-                            successCount++;
-                            
-                            // UIスレッドでデータテーブルを更新
-                            await Dispatcher.InvokeAsync(() =>
-                            {
-                                // グラフとデータテーブルの両方を更新
-                                AddCounterToChart(counterPath);
-                            });
-                        }
-                        else
-                        {
-                            errors.Add($"{counterPath}: 有効なデータポイントが見つかりませんでした");
-                        }
+                        loadedCounterData[counterPath] = mappingResult.DataPoints;
+                        successCount++;
+                        progress?.Report($"カウンターを画面へ反映中: {counterPath}");
+                        await ApplyLoadedCounterIncrementallyAsync(counterPath, mappingResult.DataPoints).ConfigureAwait(false);
                     }
-                    else
+                    else if (mappingResult.ErrorMessage is not null)
                     {
-                        errors.Add($"{counterPath}: データポイントが見つかりませんでした");
+                        errors.Add(mappingResult.ErrorMessage);
                     }
+
+                    if (counterInfo.WasCanceled)
+                    {
+                        loadCanceled = true;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    loadCanceled = true;
                 }
                 catch (Exception ex)
                 {
@@ -3964,6 +3966,11 @@ public partial class MainWindow : Window
                 }
                 
                 processedCount++;
+
+                if (loadCanceled)
+                {
+                    break;
+                }
                 
                 // 進行状況を操作ログに出力
                 if (processedCount % 10 == 0 || processedCount == counters.Count) // 10個ごと、または最後に出力
@@ -3998,12 +4005,23 @@ public partial class MainWindow : Window
             if (successCount > 0)
             {
                 LogInfo($"PDH APIによるデータ読み込み完了。成功: {successCount}/{processedCount}");
-                progress?.Report("データテーブルへの読み込み完了");
+                progress?.Report(loadCanceled
+                    ? "中止時点までのデータを反映しました"
+                    : "カウンターデータの反映が完了しました");
             }
-            else
+            else if (!loadCanceled)
             {
                 throw new Exception($"すべてのカウンターの読み込みに失敗しました。エラー: {errors.Count}");
             }
+
+            return new CounterLoadExecutionResult
+            {
+                ProcessedCount = processedCount,
+                SuccessCount = successCount,
+                Errors = errors,
+                LoadedCounters = loadedCounterData.Keys.ToList(),
+                WasCanceled = loadCanceled
+            };
         }
         catch (Exception ex)
         {
