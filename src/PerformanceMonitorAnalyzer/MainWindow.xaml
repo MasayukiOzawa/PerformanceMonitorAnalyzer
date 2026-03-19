@@ -8,6 +8,37 @@
         Title="Performance Monitor Analyzer" Height="800" Width="1200" WindowState="Maximized"
         Icon="Assets/app-icon.ico"
         Background="{StaticResource AppBackgroundBrush}">
+    <Window.Resources>
+        <DataTemplate x:Key="SortableDataGridHeaderTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding}"
+                           VerticalAlignment="Center"/>
+                <TextBlock x:Name="SortIndicator"
+                           Grid.Column="1"
+                           Margin="6,0,0,0"
+                           FontSize="10"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
+                             Value="Ascending">
+                    <Setter TargetName="SortIndicator" Property="Text" Value="▲"/>
+                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
+                             Value="Descending">
+                    <Setter TargetName="SortIndicator" Property="Text" Value="▼"/>
+                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </Window.Resources>
     <Grid Background="{StaticResource AppBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -773,41 +804,10 @@
                                         SelectionMode="Single"
                                         Width="Auto"
                                         HorizontalAlignment="Stretch">
-                                    <DataGrid.Resources>
-                                        <DataTemplate x:Key="StatisticsSortableHeaderTemplate">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding}"
-                                                           VerticalAlignment="Center"/>
-                                                <TextBlock x:Name="SortIndicator"
-                                                           Grid.Column="1"
-                                                           Margin="6,0,0,0"
-                                                           FontSize="10"
-                                                           Foreground="{StaticResource TextMutedBrush}"
-                                                           VerticalAlignment="Center"
-                                                           Visibility="Collapsed"/>
-                                            </Grid>
-                                            <DataTemplate.Triggers>
-                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
-                                                             Value="Ascending">
-                                                    <Setter TargetName="SortIndicator" Property="Text" Value="▲"/>
-                                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridColumnHeader}, Path=SortDirection}"
-                                                             Value="Descending">
-                                                    <Setter TargetName="SortIndicator" Property="Text" Value="▼"/>
-                                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible"/>
-                                                </DataTrigger>
-                                            </DataTemplate.Triggers>
-                                        </DataTemplate>
-                                    </DataGrid.Resources>
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="カウンター名" 
                                                             Binding="{Binding CounterName}" 
-                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            HeaderTemplate="{StaticResource SortableDataGridHeaderTemplate}"
                                                             SortMemberPath="CounterName"
                                                             Width="300" 
                                                             MinWidth="200"
@@ -817,7 +817,7 @@
                                         <DataGridTextColumn Header="平均" 
                                                             Binding="{Binding Average}" 
                                                             SortMemberPath="AverageValue"
-                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            HeaderTemplate="{StaticResource SortableDataGridHeaderTemplate}"
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
@@ -833,7 +833,7 @@
                                         <DataGridTextColumn Header="最大" 
                                                             Binding="{Binding Maximum}" 
                                                             SortMemberPath="MaximumValue"
-                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            HeaderTemplate="{StaticResource SortableDataGridHeaderTemplate}"
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
@@ -849,7 +849,7 @@
                                         <DataGridTextColumn Header="最小" 
                                                             Binding="{Binding Minimum}" 
                                                             SortMemberPath="MinimumValue"
-                                                            HeaderTemplate="{StaticResource StatisticsSortableHeaderTemplate}"
+                                                            HeaderTemplate="{StaticResource SortableDataGridHeaderTemplate}"
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
@@ -969,8 +969,41 @@
                 <ColumnDefinition Width="700" MinWidth="150"/>
             </Grid.ColumnDefinitions>
             
-            <!-- 左側: データテーブル（タブ形式） -->
+            <!-- 左側: データテーブル（一覧 + 詳細） -->
             <GroupBox Grid.Column="0" Header="📊 データテーブル" Margin="0,0,8,0">
+                <GroupBox.Resources>
+                    <Style x:Key="DataTableCounterListBoxItemStyle" TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="10,8"/>
+                        <Setter Property="Margin" Value="0,0,0,6"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="ItemBorder"
+                                            Background="{StaticResource SurfaceAltBrush}"
+                                            BorderBrush="{StaticResource DividerBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{StaticResource SmallCornerRadius}"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Stretch"
+                                                          VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SurfaceBrush}"/>
+                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource CardBorderStrongBrush}"/>
+                                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource CardBorderStrongBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </GroupBox.Resources>
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -979,28 +1012,132 @@
                     
                     <!-- データテーブルの説明とコントロール -->
                     <Border Grid.Row="0" Margin="10" Style="{StaticResource SectionHeaderBorderStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,20,0">
-                                <Run Text="📈 カウンター選択方法: "/>
-                                <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                                <Run Text=" または "/>
-                                <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
-                            </TextBlock>
-                            <Button Content="すべてのタブを閉じる" 
-                                  Click="CloseAllTabs_Click" 
-                                  Style="{StaticResource GhostButtonStyle}"
-                                  Padding="8,2,8,2"
-                                  Margin="0,0,10,0"/>
-                            <Button Content="全データをCSV出力" 
-                                  Click="ExportAllDataToCsv_Click" 
-                                  Style="{StaticResource SecondaryActionButtonStyle}"
-                                  Padding="8,2,8,2"/>
-                        </StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Vertical" Margin="0,0,16,0">
+                                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
+                                    <Run Text="📈 カウンター選択方法: "/>
+                                    <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                    <Run Text=" または "/>
+                                    <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
+                                </TextBlock>
+                                <TextBlock x:Name="DataTableCountTextBlock"
+                                           Margin="0,4,0,0"
+                                           Style="{StaticResource SectionCaptionTextStyle}"
+                                           Text="表示中: 0 件"/>
+                            </StackPanel>
+                            <Button x:Name="CloseAllDataTablesButton"
+                                   Grid.Column="1"
+                                   Content="表示中一覧を閉じる" 
+                                   Click="CloseAllTabs_Click" 
+                                   Style="{StaticResource GhostButtonStyle}"
+                                   Padding="8,2,8,2"
+                                   Margin="0,0,10,0"/>
+                            <Button Grid.Column="2"
+                                   Content="全データをCSV出力" 
+                                   Click="ExportAllDataToCsv_Click" 
+                                   Style="{StaticResource SecondaryActionButtonStyle}"
+                                   Padding="8,2,8,2"/>
+                        </Grid>
                     </Border>
                     
-                    <TabControl x:Name="DataTabControl" Grid.Row="1">
-                        <!-- データタブは動的に追加される -->
-                    </TabControl>
+                    <Grid Grid.Row="1" Margin="10,0,10,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="260" MinWidth="180"/>
+                            <ColumnDefinition Width="5"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource CardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource CardCornerRadius}"
+                                Padding="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="表示中カウンター"
+                                           Style="{StaticResource SectionCaptionTextStyle}"/>
+                                <ListBox x:Name="DataCounterListBox"
+                                         Grid.Row="1"
+                                         Margin="0,8,0,0"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         SelectionChanged="DataCounterListBox_SelectionChanged"
+                                         ItemContainerStyle="{StaticResource DataTableCounterListBoxItemStyle}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding CounterPath}"/>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+
+                        <GridSplitter Grid.Column="1" 
+                                      Width="5" 
+                                      HorizontalAlignment="Stretch" 
+                                      VerticalAlignment="Stretch"
+                                      Background="{StaticResource DividerBrush}"
+                                      BorderBrush="{StaticResource CardBorderBrush}"
+                                      BorderThickness="1,0,1,0"
+                                      Cursor="SizeWE"
+                                      ShowsPreview="False"
+                                      ToolTip="ドラッグして一覧と詳細の幅を調整">
+                            <GridSplitter.Style>
+                                <Style TargetType="GridSplitter">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#D0D0D0"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </GridSplitter.Style>
+                        </GridSplitter>
+
+                        <Border Grid.Column="2"
+                                Margin="8,0,0,0"
+                                Background="{StaticResource SurfaceBrush}"
+                                BorderBrush="{StaticResource CardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{StaticResource CardCornerRadius}"
+                                Padding="8">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                    <TextBlock Text="選択中のデータ"
+                                               Style="{StaticResource SectionCaptionTextStyle}"/>
+                                    <TextBlock x:Name="SelectedDataCounterTextBlock"
+                                               Margin="0,4,0,0"
+                                               FontWeight="SemiBold"
+                                               Text="表示対象がありません"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                <Grid Grid.Row="1">
+                                    <TextBlock x:Name="DataTableEmptyStateTextBlock"
+                                               Text="表示中のデータテーブルはありません。"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               TextAlignment="Center"/>
+                                    <ContentControl x:Name="DataTableDetailContent"
+                                                    Visibility="Collapsed"/>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
             </GroupBox>
             

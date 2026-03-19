@@ -89,6 +89,9 @@ public partial class MainWindow : Window
     private double _manualYAxisMax = 100;
     private string? _statisticsSortMemberPath;
     private ListSortDirection? _statisticsSortDirection;
+    private readonly ObservableCollection<DataTableCounterItem> _openDataTableCounters = new();
+    private string? _selectedDataTableCounter;
+    private bool _isUpdatingDataTableSelection;
     
     
     // ログ機能
@@ -108,6 +111,7 @@ public partial class MainWindow : Window
         InitializeLegendPanelControls();
         InitializeStatisticsPanelControls();
         InitializeBottomPanelControls();
+        InitializeDataTablePanel();
         
         // キーボードショートカットの設定
         this.KeyDown += MainWindow_KeyDown;
@@ -359,40 +363,118 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 値モード変更時に全データタブを再生成
+    /// データテーブル領域の初期化
+    /// </summary>
+    private void InitializeDataTablePanel()
+    {
+        DataCounterListBox.ItemsSource = _openDataTableCounters;
+        UpdateDataTableCounterSummary();
+        UpdateDataTableDetail(null);
+    }
+
+    /// <summary>
+    /// 値モード変更時に現在のデータテーブル詳細を再生成
     /// </summary>
     private void RefreshAllDataTabsForCurrentMode()
     {
-        var currentTabCounters = DataTabControl.Items
-            .Cast<TabItem>()
-            .Select(tab => tab.Tag as string)
-            .Where(counter => !string.IsNullOrEmpty(counter))
-            .Cast<string>()
-            .ToList();
+        if (_openDataTableCounters.Count == 0)
+        {
+            UpdateDataTableDetail(null);
+            return;
+        }
 
-        if (!currentTabCounters.Any())
+        SyncDataTableCounters(GetOpenDataTableCounters(), _selectedDataTableCounter);
+    }
+
+    private List<string> GetOpenDataTableCounters()
+    {
+        return _openDataTableCounters
+            .Select(item => item.CounterPath)
+            .ToList();
+    }
+
+    private void ClearDataTableDisplay()
+    {
+        ApplyDataTableSelectionSnapshot(new DataTableSelectionSnapshot(Array.Empty<string>(), null));
+    }
+
+    private void SyncDataTableCounters(IEnumerable<string> counters, string? preferredSelectedCounter = null)
+    {
+        var snapshot = DataTableSelectionState.Synchronize(
+            GetOpenDataTableCounters(),
+            counters,
+            preferredSelectedCounter ?? _selectedDataTableCounter);
+
+        ApplyDataTableSelectionSnapshot(snapshot);
+    }
+
+    private void ApplyDataTableSelectionSnapshot(DataTableSelectionSnapshot snapshot)
+    {
+        _isUpdatingDataTableSelection = true;
+        try
+        {
+            _openDataTableCounters.Clear();
+
+            foreach (var counter in snapshot.Counters)
+            {
+                _openDataTableCounters.Add(new DataTableCounterItem(counter, GetCounterDisplayName(counter)));
+            }
+
+            _selectedDataTableCounter = snapshot.SelectedCounter;
+            DataCounterListBox.SelectedItem = _openDataTableCounters.FirstOrDefault(item =>
+                string.Equals(item.CounterPath, snapshot.SelectedCounter, StringComparison.Ordinal));
+        }
+        finally
+        {
+            _isUpdatingDataTableSelection = false;
+        }
+
+        UpdateDataTableCounterSummary();
+        UpdateDataTableDetail(_selectedDataTableCounter);
+    }
+
+    private void UpdateDataTableCounterSummary()
+    {
+        var count = _openDataTableCounters.Count;
+        DataTableCountTextBlock.Text = $"表示中: {count} 件";
+        CloseAllDataTablesButton.IsEnabled = count > 0;
+    }
+
+    private void UpdateDataTableDetail(string? counter)
+    {
+        if (string.IsNullOrWhiteSpace(counter) || !_counterData.ContainsKey(counter))
+        {
+            SelectedDataCounterTextBlock.Text = _openDataTableCounters.Count == 0
+                ? "表示対象がありません"
+                : "左の一覧からカウンターを選択してください";
+            SelectedDataCounterTextBlock.ToolTip = null;
+            DataTableDetailContent.Content = null;
+            DataTableDetailContent.Visibility = Visibility.Collapsed;
+            DataTableEmptyStateTextBlock.Text = _openDataTableCounters.Count == 0
+                ? "表示中のデータテーブルはありません。"
+                : "左の一覧から表示したいカウンターを選択してください。";
+            DataTableEmptyStateTextBlock.Visibility = Visibility.Visible;
+            return;
+        }
+
+        _selectedDataTableCounter = counter;
+
+        SelectedDataCounterTextBlock.Text = GetCounterDisplayName(counter);
+        SelectedDataCounterTextBlock.ToolTip = counter;
+        DataTableDetailContent.Content = CreateDataTableDetailContent(counter, GetDisplayDataPoints(counter));
+        DataTableDetailContent.Visibility = Visibility.Visible;
+        DataTableEmptyStateTextBlock.Visibility = Visibility.Collapsed;
+    }
+
+    private void DataCounterListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingDataTableSelection)
         {
             return;
         }
 
-        var selectedCounter = (DataTabControl.SelectedItem as TabItem)?.Tag as string;
-
-        DataTabControl.Items.Clear();
-
-        foreach (var counter in currentTabCounters)
-        {
-            AddCounterTab(counter);
-        }
-
-        if (!string.IsNullOrEmpty(selectedCounter))
-        {
-            var selectedTab = DataTabControl.Items.Cast<TabItem>()
-                .FirstOrDefault(tab => string.Equals(tab.Tag as string, selectedCounter, StringComparison.Ordinal));
-            if (selectedTab != null)
-            {
-                DataTabControl.SelectedItem = selectedTab;
-            }
-        }
+        _selectedDataTableCounter = (DataCounterListBox.SelectedItem as DataTableCounterItem)?.CounterPath;
+        UpdateDataTableDetail(_selectedDataTableCounter);
     }
 
     /// <summary>
@@ -1402,7 +1484,7 @@ public partial class MainWindow : Window
         
         // UI状態をリセット
         _counterTreeNodes.Clear();
-        DataTabControl.Items.Clear();
+        ClearDataTableDisplay();
         _counterData.Clear();
         _counterLineColors.Clear();
         
@@ -2901,106 +2983,89 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var displayDataPoints = GetDisplayDataPoints(counter);
-
-            // 既存のタブがあるかチェック
-            var existingTab = DataTabControl.Items.Cast<TabItem>()
-                .FirstOrDefault(tab => (string)tab.Tag == counter);
-            if (existingTab != null)
-            {
-                System.Diagnostics.Debug.WriteLine($"Tab already exists for: {counter}");
-                DataTabControl.SelectedItem = existingTab;
-                return;
-            }
-
-            System.Diagnostics.Debug.WriteLine($"Creating new tab for: {counter}");
-
-            var tabItem = new TabItem
-            {
-                Header = GetCounterDisplayName(counter),
-                Tag = counter
-            };
-
-            // メインコンテナを作成
-            var mainGrid = new Grid();
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-            // データグリッドを作成
-            var dataGrid = new DataGrid
-            {
-                AutoGenerateColumns = false,
-                IsReadOnly = true,
-                ItemsSource = displayDataPoints,
-                AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
-                GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-                HeadersVisibility = DataGridHeadersVisibility.Column
-            };
-
-            System.Diagnostics.Debug.WriteLine($"Data points count: {displayDataPoints.Count}");
-
-            // 列を定義
-            dataGrid.Columns.Add(new DataGridTextColumn
-            {
-                Header = "時間",
-                Binding = new System.Windows.Data.Binding("Timestamp") 
-                { 
-                    StringFormat = "yyyy/MM/dd HH:mm:ss" 
-                },
-                Width = 150
-            });
-
-            dataGrid.Columns.Add(new DataGridTextColumn
-            {
-                Header = "値",
-                Binding = new System.Windows.Data.Binding("Value") 
-                { 
-                    StringFormat = "N2" 
-                },
-                Width = 100
-            });
-
-            dataGrid.Columns.Add(new DataGridTextColumn
-            {
-                Header = "フォーマット済み値",
-                Binding = new System.Windows.Data.Binding("FormattedValue"),
-                Width = 120
-            });
-
-            dataGrid.Columns.Add(new DataGridTextColumn
-            {
-                Header = "単位",
-                Binding = new System.Windows.Data.Binding("Unit"),
-                Width = 80
-            });
-
-            dataGrid.Columns.Add(new DataGridTextColumn
-            {
-                Header = "カウンター",
-                Binding = new System.Windows.Data.Binding("Counter"),
-                Width = DataGridLength.SizeToCells
-            });
-
-            Grid.SetRow(dataGrid, 0);
-            mainGrid.Children.Add(dataGrid);
-
-            // 統計情報パネルを作成
-            var statisticsPanel = CreateStatisticsPanel(counter, displayDataPoints);
-            Grid.SetRow(statisticsPanel, 1);
-            mainGrid.Children.Add(statisticsPanel);
-
-            tabItem.Content = mainGrid;
-            DataTabControl.Items.Add(tabItem);
-            DataTabControl.SelectedItem = tabItem;
-
-            System.Diagnostics.Debug.WriteLine($"Tab created and added successfully for: {counter}");
+            EnsureBottomPanelVisible();
+            SyncDataTableCounters(GetOpenDataTableCounters().Append(counter), counter);
+            System.Diagnostics.Debug.WriteLine($"Data table item synchronized for: {counter}");
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error in AddCounterTab: {ex.Message}");
-            AddOperationLog(LogLevel.Error, $"タブ作成でエラーが発生しました: {ex.Message}");
-            MessageBox.Show($"タブ作成でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            AddOperationLog(LogLevel.Error, $"データテーブル表示の更新でエラーが発生しました: {ex.Message}");
+            MessageBox.Show($"データテーブル表示の更新でエラーが発生しました: {ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private UIElement CreateDataTableDetailContent(string counter, List<PerformanceDataPoint> displayDataPoints)
+    {
+        var mainGrid = new Grid();
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var sortableHeaderTemplate = TryFindResource("SortableDataGridHeaderTemplate") as DataTemplate;
+
+        var dataGrid = new DataGrid
+        {
+            AutoGenerateColumns = false,
+            IsReadOnly = true,
+            ItemsSource = displayDataPoints,
+            AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
+            GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+            HeadersVisibility = DataGridHeadersVisibility.Column
+        };
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "時間",
+            HeaderTemplate = sortableHeaderTemplate,
+            Binding = new System.Windows.Data.Binding("Timestamp")
+            {
+                StringFormat = "yyyy/MM/dd HH:mm:ss"
+            },
+            Width = 150
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "値",
+            HeaderTemplate = sortableHeaderTemplate,
+            Binding = new System.Windows.Data.Binding("Value")
+            {
+                StringFormat = "N2"
+            },
+            Width = 100
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "フォーマット済み値",
+            HeaderTemplate = sortableHeaderTemplate,
+            Binding = new System.Windows.Data.Binding("FormattedValue"),
+            Width = 120
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "単位",
+            HeaderTemplate = sortableHeaderTemplate,
+            Binding = new System.Windows.Data.Binding("Unit"),
+            Width = 80
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "カウンター",
+            HeaderTemplate = sortableHeaderTemplate,
+            Binding = new System.Windows.Data.Binding("Counter"),
+            Width = DataGridLength.SizeToCells
+        });
+
+        Grid.SetRow(dataGrid, 0);
+        mainGrid.Children.Add(dataGrid);
+
+        var statisticsPanel = CreateStatisticsPanel(counter, displayDataPoints);
+        Grid.SetRow(statisticsPanel, 1);
+        mainGrid.Children.Add(statisticsPanel);
+
+        return mainGrid;
     }
 
     /// <summary>
@@ -3019,47 +3084,16 @@ public partial class MainWindow : Window
         }
 
         EnsureBottomPanelVisible();
-
-        var loadedCounterSet = new HashSet<string>(loadedCounters, StringComparer.Ordinal);
-        var tabsToRemove = DataTabControl.Items
-            .Cast<TabItem>()
-            .Where(tab => tab.Tag is string counter && !loadedCounterSet.Contains(counter))
-            .ToList();
-
-        foreach (var tabToRemove in tabsToRemove)
-        {
-            DataTabControl.Items.Remove(tabToRemove);
-        }
-
-        var currentSelectedCounter = (DataTabControl.SelectedItem as TabItem)?.Tag as string;
-
-        foreach (var counter in loadedCounters)
-        {
-            AddCounterTab(counter);
-        }
-
-        var preferredCounter = !string.IsNullOrEmpty(currentSelectedCounter) && loadedCounterSet.Contains(currentSelectedCounter)
-            ? currentSelectedCounter
-            : loadedCounters[0];
-
-        var preferredTab = DataTabControl.Items
-            .Cast<TabItem>()
-            .FirstOrDefault(tab => string.Equals(tab.Tag as string, preferredCounter, StringComparison.Ordinal));
-
-        if (preferredTab != null)
-        {
-            DataTabControl.SelectedItem = preferredTab;
-        }
+        SyncDataTableCounters(loadedCounters, _selectedDataTableCounter);
     }
 
     private void RemoveCounterTab(string counter)
     {
-        var tabToRemove = DataTabControl.Items.Cast<TabItem>()
-            .FirstOrDefault(tab => (string)tab.Tag == counter);
-        if (tabToRemove != null)
-        {
-            DataTabControl.Items.Remove(tabToRemove);
-        }
+        var remainingCounters = GetOpenDataTableCounters()
+            .Where(openCounter => !string.Equals(openCounter, counter, StringComparison.Ordinal))
+            .ToList();
+
+        SyncDataTableCounters(remainingCounters, _selectedDataTableCounter);
     }
 
     /// <summary>
@@ -3428,18 +3462,16 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 全てのデータタブを削除（ログタブは別のTabControlにあるため影響なし）
-            // カウンターの選択状態やグラフ表示は保持する
-            DataTabControl.Items.Clear();
+            ClearDataTableDisplay();
             
-            AddOperationLog(LogLevel.Success, "全てのデータテーブルタブを閉じました。カウンターの選択状態は保持されています。");
+            AddOperationLog(LogLevel.Success, "表示中のデータテーブル一覧を閉じました。カウンターの選択状態は保持されています。");
         }
         catch (Exception ex)
         {
-            AddOperationLog(LogLevel.Error, $"タブのクリアに失敗しました: {ex.Message}");
-            MessageBox.Show($"タブのクリアに失敗しました: {ex.Message}", 
+            AddOperationLog(LogLevel.Error, $"データテーブル一覧のクリアに失敗しました: {ex.Message}");
+            MessageBox.Show($"データテーブル一覧のクリアに失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to close all tabs: {ex}");
+            LogError($"Failed to clear data table list: {ex}");
         }
     }
 
