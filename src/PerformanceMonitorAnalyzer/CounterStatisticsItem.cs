@@ -9,4 +9,7 @@ public class CounterStatisticsItem
     public string Average { get; set; } = string.Empty;
     public string Maximum { get; set; } = string.Empty;
     public string Minimum { get; set; } = string.Empty;
+    public double AverageValue { get; set; }
+    public double MaximumValue { get; set; }
+    public double MinimumValue { get; set; }
 }
