@@ -264,83 +264,92 @@
                         <Button Content="すべて解除" Click="UnselectAll_Click" Style="{StaticResource GhostButtonStyle}"/>
                     </StackPanel>
                     
-                    <TextBlock Grid.Row="7" 
-                             Text="📈 表示したいカウンターをチェック:" 
-                             Margin="12,0,12,6" 
+                    <TextBlock Grid.Row="7"
+                             Text="📈 カウンターを追加:"
+                             Margin="12,0,12,6"
                              Style="{StaticResource SectionCaptionTextStyle}"/>
-                    
-                    <ScrollViewer Grid.Row="8" VerticalScrollBarVisibility="Auto" Margin="8,0,8,8">
-                        <TreeView x:Name="CounterTreeView" Margin="4">
-                            <TreeView.ItemTemplate>
-                                <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <CheckBox IsChecked="{Binding IsChecked}" 
-                                                IsThreeState="{Binding IsThreeState}"
-                                                PreviewMouseLeftButtonDown="CounterCheckBox_PreviewMouseLeftButtonDown"
-                                                PreviewKeyDown="CounterCheckBox_PreviewKeyDown"
-                                                Checked="CounterCheckBox_Checked"
-                                                Unchecked="CounterCheckBox_Unchecked"
-                                                Indeterminate="CounterCheckBox_Indeterminate"
-                                                Tag="{Binding}"
-                                                Visibility="{Binding CheckBoxVisibility}"
-                                                Margin="0,0,5,0"/>
-                                        <Image Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,3,0"/>
-                                        <TextBlock Text="{Binding DisplayName}" 
-                                                 Margin="0,0,0,0"
-                                                 FontWeight="{Binding FontWeight}">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{Binding TextColor}"/>
-                                                    <Style.Triggers>
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
-                                                        </MultiDataTrigger>
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="False"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}}"/>
-                                                        </MultiDataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                         <TextBlock Text="{Binding CountDisplay}" 
-                                                  Margin="5,0,0,0" 
-                                                  FontSize="10" 
-                                                  Visibility="{Binding CountVisibility}">
-                                             <TextBlock.Style>
-                                                 <Style TargetType="TextBlock">
-                                                     <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
-                                                     <Style.Triggers>
-                                                         <MultiDataTrigger>
-                                                             <MultiDataTrigger.Conditions>
-                                                                 <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                                                                 <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
-                                                             </MultiDataTrigger.Conditions>
-                                                             <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
-                                                         </MultiDataTrigger>
-                                                         <MultiDataTrigger>
-                                                             <MultiDataTrigger.Conditions>
-                                                                 <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True"/>
-                                                                 <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="False"/>
-                                                             </MultiDataTrigger.Conditions>
-                                                             <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}}"/>
-                                                         </MultiDataTrigger>
-                                                      </Style.Triggers>
-                                                  </Style>
-                                              </TextBlock.Style>
-                                          </TextBlock>
-                                    </StackPanel>
-                                </HierarchicalDataTemplate>
-                            </TreeView.ItemTemplate>
-                        </TreeView>
-                    </ScrollViewer>
+
+                    <Grid Grid.Row="8" x:Name="CounterSelectionControlsPanel" Margin="8,0,8,8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition x:Name="AvailableInstancesRowDefinition" Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <GroupBox Grid.Row="0" Header="オブジェクト" Margin="0,0,0,5">
+                            <ListBox x:Name="CounterObjectListBox"
+                                     SelectionChanged="CounterObjectListBox_SelectionChanged"
+                                     BorderThickness="0"
+                                     Margin="3"/>
+                        </GroupBox>
+
+                        <GroupBox Grid.Row="1" Header="カウンター" Margin="0,0,0,5">
+                            <ListBox x:Name="AvailableCountersListBox"
+                                     SelectionMode="Extended"
+                                     BorderThickness="0"
+                                     Margin="3">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding DisplayName}"
+                                                  IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Checked="CounterSelectorCheckBox_Changed"
+                                                  Unchecked="CounterSelectorCheckBox_Changed"
+                                                  Tag="{Binding}"
+                                                  ToolTip="{Binding CounterName}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </GroupBox>
+
+                        <GroupBox Grid.Row="2" x:Name="AvailableInstancesGroupBox" Header="インスタンス" Margin="0,0,0,5">
+                            <ListBox x:Name="AvailableInstancesListBox"
+                                     SelectionMode="Extended"
+                                     BorderThickness="0"
+                                     Margin="3">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding DisplayName}"
+                                                  IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  Checked="CounterSelectorCheckBox_Changed"
+                                                  Unchecked="CounterSelectorCheckBox_Changed"
+                                                  Tag="{Binding}"
+                                                  ToolTip="{Binding InstanceDisplayName}"/>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </GroupBox>
+
+                        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,5">
+                            <Button Content="追加(&gt;&gt;)"
+                                    Click="AddSelectedCounters_Click"
+                                    Padding="8,4"
+                                    Margin="0,0,5,0"/>
+                            <Button Content="削除(&lt;&lt;)"
+                                    Click="RemoveSelectedCounter_Click"
+                                    Padding="8,4"
+                                    Margin="0,0,5,0"/>
+                            <Button Content="クリア"
+                                    Click="ClearSelectedCounters_Click"
+                                    Padding="8,4"/>
+                        </StackPanel>
+
+                        <GroupBox Grid.Row="4" Header="追加されたカウンター">
+                            <ListView x:Name="SelectedCountersListView"
+                                      SelectionMode="Extended"
+                                      BorderThickness="0"
+                                      Margin="3">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="カウンター" DisplayMemberBinding="{Binding CounterName}" Width="130"/>
+                                        <GridViewColumn Header="親" DisplayMemberBinding="{Binding ObjectName}" Width="80"/>
+                                        <GridViewColumn Header="インスタンス" DisplayMemberBinding="{Binding InstanceDisplayName}" Width="90"/>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </GroupBox>
+                    </Grid>
                 </Grid>
             </GroupBox>
 
@@ -1036,9 +1045,9 @@
                             <StackPanel Orientation="Vertical" Margin="0,0,16,0">
                                 <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
                                     <Run Text="📈 カウンター選択方法: "/>
-                                    <Run Text="チェックボックスをクリック" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                    <Run Text="オブジェクト / カウンター / インスタンスを選択" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                                     <Run Text=" または "/>
-                                    <Run Text="カウンター名をクリック" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
+                                    <Run Text="追加済みカウンターを読み込み" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
                                 </TextBlock>
                                 <TextBlock x:Name="DataTableCountTextBlock"
                                            Margin="0,4,0,0"

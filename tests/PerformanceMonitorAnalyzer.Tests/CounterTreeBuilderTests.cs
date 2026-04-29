@@ -3,7 +3,7 @@ namespace PerformanceMonitorAnalyzer.Tests;
 public class CounterTreeBuilderTests
 {
     [Fact]
-    public void Build_UsesSummaryNodeForCountersWithoutInstance()
+    public void Build_UsesBlankInstanceNodeForCountersWithoutInstance()
     {
         var counters = new[]
         {
@@ -18,7 +18,7 @@ public class CounterTreeBuilderTests
         Assert.Single(objectNode.Children);
 
         var summaryNode = Assert.Single(objectNode.Children);
-        Assert.Equal("(総合)", summaryNode.DisplayName);
+        Assert.Equal(string.Empty, summaryNode.DisplayName);
         Assert.False(summaryNode.IsWildCard);
         Assert.Collection(
             summaryNode.Children,
@@ -66,7 +66,7 @@ public class CounterTreeBuilderTests
         Assert.Equal(new[] { "AObject", "ZObject" }, result.Select(node => node.DisplayName).ToArray());
 
         var aObjectSummary = Assert.Single(result[0].Children);
-        Assert.Equal("(総合)", aObjectSummary.DisplayName);
+        Assert.Equal(string.Empty, aObjectSummary.DisplayName);
         Assert.Equal(new[] { "A Counter", "C Counter" }, aObjectSummary.Children.Select(node => node.DisplayName).ToArray());
     }
 }

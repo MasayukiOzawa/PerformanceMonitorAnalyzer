@@ -52,7 +52,7 @@ public static class CounterTreeBuilder
             {
                 var instanceNode = new CounterTreeNode
                 {
-                    DisplayName = instanceGroup.Key == NoInstanceName ? SummaryInstanceDisplayName : instanceGroup.Key,
+                    DisplayName = instanceGroup.Key == NoInstanceName ? string.Empty : instanceGroup.Key,
                     FullPath = string.Empty,
                     Type = NodeType.Instance,
                     Parent = objectNode
@@ -79,7 +79,6 @@ public static class CounterTreeBuilder
     }
 
     private const string NoInstanceName = "(なし)";
-    private const string SummaryInstanceDisplayName = "(総合)";
 
     private static bool TryParseCounterPath(string counterPath, out string objectName, out string instanceName)
     {
