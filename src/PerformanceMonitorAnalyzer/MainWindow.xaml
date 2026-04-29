@@ -265,67 +265,28 @@
                     </StackPanel>
                     
                     <TextBlock Grid.Row="7"
-                             Text="📈 カウンターを追加:"
+                             Text="📈 カウンター:"
                              Margin="12,0,12,6"
                              Style="{StaticResource SectionCaptionTextStyle}"/>
 
                     <Grid Grid.Row="8" x:Name="CounterSelectionControlsPanel" Margin="8,0,8,8">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition x:Name="AvailableInstancesRowDefinition" Height="*"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <GroupBox Grid.Row="0" Header="オブジェクト" Margin="0,0,0,5">
-                            <ListBox x:Name="CounterObjectListBox"
-                                     SelectionChanged="CounterObjectListBox_SelectionChanged"
-                                     BorderThickness="0"
-                                     Margin="3"/>
-                        </GroupBox>
+                        <Button Grid.Row="0"
+                                x:Name="OpenCounterAddDialogButton"
+                                Content="カウンターを追加..."
+                                Click="OpenCounterAddDialog_Click"
+                                Style="{StaticResource SecondaryActionButtonStyle}"
+                                Padding="8,5"
+                                Margin="0,0,0,8"
+                                IsEnabled="False"
+                                HorizontalAlignment="Stretch"/>
 
-                        <GroupBox Grid.Row="1" Header="カウンター" Margin="0,0,0,5">
-                            <ListBox x:Name="AvailableCountersListBox"
-                                     SelectionMode="Extended"
-                                     BorderThickness="0"
-                                     Margin="3">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding DisplayName}"
-                                                  IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  Checked="CounterSelectorCheckBox_Changed"
-                                                  Unchecked="CounterSelectorCheckBox_Changed"
-                                                  Tag="{Binding}"
-                                                  ToolTip="{Binding CounterName}"/>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </GroupBox>
-
-                        <GroupBox Grid.Row="2" x:Name="AvailableInstancesGroupBox" Header="インスタンス" Margin="0,0,0,5">
-                            <ListBox x:Name="AvailableInstancesListBox"
-                                     SelectionMode="Extended"
-                                     BorderThickness="0"
-                                     Margin="3">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <CheckBox Content="{Binding DisplayName}"
-                                                  IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  Checked="CounterSelectorCheckBox_Changed"
-                                                  Unchecked="CounterSelectorCheckBox_Changed"
-                                                  Tag="{Binding}"
-                                                  ToolTip="{Binding InstanceDisplayName}"/>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </GroupBox>
-
-                        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,5">
-                            <Button Content="追加(&gt;&gt;)"
-                                    Click="AddSelectedCounters_Click"
-                                    Padding="8,4"
-                                    Margin="0,0,5,0"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,5">
                             <Button Content="削除(&lt;&lt;)"
                                     Click="RemoveSelectedCounter_Click"
                                     Padding="8,4"
@@ -335,7 +296,7 @@
                                     Padding="8,4"/>
                         </StackPanel>
 
-                        <GroupBox Grid.Row="4" Header="追加されたカウンター">
+                        <GroupBox Grid.Row="2" Header="追加されたカウンター">
                             <ListView x:Name="SelectedCountersListView"
                                       SelectionMode="Extended"
                                       BorderThickness="0"
@@ -714,13 +675,6 @@
                                      FontSize="16"
                                      Foreground="{StaticResource TextMutedBrush}"
                                      Margin="10"/>
-                            <TextBlock HorizontalAlignment="Center" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="5">
-                                <Run Text="💡 "/>
-                                <Run Text="チェックボックス" FontWeight="Bold"/>
-                                <Run Text=" または "/>
-                                <Run Text="カウンター名" FontWeight="Bold"/>
-                                <Run Text="をクリックして詳細データを表示"/>
-                            </TextBlock>
                         </StackPanel>
                      
                         <!-- グラフ操作ボタン -->
@@ -1045,7 +999,7 @@
                             <StackPanel Orientation="Vertical" Margin="0,0,16,0">
                                 <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
                                     <Run Text="📈 カウンター選択方法: "/>
-                                    <Run Text="オブジェクト / カウンター / インスタンスを選択" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                                    <Run Text="カウンターを追加... から選択" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                                     <Run Text=" または "/>
                                     <Run Text="追加済みカウンターを読み込み" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
                                 </TextBlock>

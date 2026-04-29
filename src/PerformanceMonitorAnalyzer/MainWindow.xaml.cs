@@ -29,11 +29,7 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
-    private readonly ObservableCollection<string> _counterObjectNames = new();
-    private readonly ObservableCollection<CounterSelectorItem> _availableCounterItems = new();
-    private readonly ObservableCollection<CounterSelectorItem> _availableInstanceItems = new();
     private readonly ObservableCollection<CounterSelectorItem> _selectedCounterItems = new();
-    private bool _isRefreshingCounterSelector;
     private DateTime _fileStartTime;
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
@@ -130,9 +126,6 @@ public partial class MainWindow : Window
         InitializeChart();
         InitializeBulkScaleComboBox();
         InitializeCounterPanelControls();
-        CounterObjectListBox.ItemsSource = _counterObjectNames;
-        AvailableCountersListBox.ItemsSource = _availableCounterItems;
-        AvailableInstancesListBox.ItemsSource = _availableInstanceItems;
         SelectedCountersListView.ItemsSource = _selectedCounterItems;
         
         // 凡例の初期化
@@ -243,9 +236,21 @@ public partial class MainWindow : Window
     private void SetSelectedCounterLoadUiState(bool isLoading)
     {
         CounterSelectionControlsPanel.IsEnabled = !isLoading;
+        OpenCounterAddDialogButton.IsEnabled = !isLoading && _counterTreeNodes.Count > 0;
         StartTimeSlider.IsEnabled = !isLoading;
         EndTimeSlider.IsEnabled = !isLoading;
-        ExecuteButton.IsEnabled = !isLoading && !string.IsNullOrEmpty(_currentBlgFile);
+        ExecuteButton.IsEnabled = !isLoading && CanExecuteSelectedCounters();
+    }
+
+    private bool CanExecuteSelectedCounters()
+    {
+        return !string.IsNullOrEmpty(_currentBlgFile) &&
+               _selectedCounterItems.Any(static item => !string.IsNullOrWhiteSpace(item.FullPath));
+    }
+
+    private void UpdateExecuteButtonState()
+    {
+        ExecuteButton.IsEnabled = _currentLoadingOperation == LoadingOperationKind.None && CanExecuteSelectedCounters();
     }
 
     private void InitializeChart()
@@ -1687,7 +1692,7 @@ public partial class MainWindow : Window
             var timeRangeDetected = await DetectTimeRangeAsync(fileName, progress);
             if (!timeRangeDetected)
             {
-                ExecuteButton.IsEnabled = true;
+                UpdateExecuteButtonState();
             }
 
             NoDataMessage.Visibility = Visibility.Collapsed;
@@ -1916,187 +1921,37 @@ public partial class MainWindow : Window
     {
         _counterTreeNodes = new ObservableCollection<CounterTreeNode>(rootNodes);
         _selectedCounterItems.Clear();
-        RefreshPerfMonCounterSelector();
+        OpenCounterAddDialogButton.IsEnabled = _counterTreeNodes.Count > 0;
+        UpdateExecuteButtonState();
+        UpdateRelogCommandDisplay();
         var totalCounters = _counterTreeNodes.Sum(objectNode => objectNode.Children.Sum(instanceNode => instanceNode.Children.Count));
         LogError($"Counter tree applied with {_counterTreeNodes.Count} root nodes and {totalCounters} counters");
     }
 
-    private void RefreshPerfMonCounterSelector()
+    private void OpenCounterAddDialog_Click(object sender, RoutedEventArgs e)
     {
-        _isRefreshingCounterSelector = true;
-        try
+        if (_counterTreeNodes.Count == 0)
         {
-            _counterObjectNames.Clear();
-            _availableCounterItems.Clear();
-            _availableInstanceItems.Clear();
-
-            foreach (var objectNode in _counterTreeNodes.OrderBy(static node => node.DisplayName, StringComparer.Ordinal))
-            {
-                _counterObjectNames.Add(objectNode.DisplayName);
-            }
-
-            CounterObjectListBox.SelectedIndex = _counterObjectNames.Count > 0 ? 0 : -1;
-        }
-        finally
-        {
-            _isRefreshingCounterSelector = false;
-        }
-
-        RefreshAvailableCounterSelectorItems();
-        UpdateRelogCommandDisplay();
-    }
-
-    private void CounterObjectListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isRefreshingCounterSelector)
-        {
+            AddOperationLog(LogLevel.Warning, "カウンターを追加するには、先にBLGファイルを開いてください。");
             return;
         }
 
-        RefreshAvailableCounterSelectorItems();
+        var dialog = new CounterAddDialog(_counterTreeNodes, AddSelectedCountersFromDialog)
+        {
+            Owner = this
+        };
+        dialog.ShowDialog();
     }
 
-    private void RefreshAvailableCounterSelectorItems()
+    private int AddSelectedCountersFromDialog(IReadOnlyList<string> counterPaths)
     {
-        _isRefreshingCounterSelector = true;
-        try
-        {
-            _availableCounterItems.Clear();
-            _availableInstanceItems.Clear();
-
-            var objectNode = GetSelectedCounterObjectNode();
-            if (objectNode is null)
-            {
-                return;
-            }
-
-            var actualInstanceNodes = GetActualInstanceNodes(objectNode, sortByDisplayName: true);
-            var visibleInstanceNodes = GetVisibleInstanceNodes(actualInstanceNodes);
-
-            var counterNames = actualInstanceNodes
-                .SelectMany(static instanceNode => instanceNode.Children)
-                .Where(static counterNode => !counterNode.IsWildCard)
-                .Select(static counterNode => counterNode.DisplayName)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(static name => name, StringComparer.Ordinal)
-                .ToList();
-
-            foreach (var counterName in counterNames)
-            {
-                _availableCounterItems.Add(new CounterSelectorItem
-                {
-                    DisplayName = counterName,
-                    ObjectName = objectNode.DisplayName,
-                    CounterName = counterName
-                });
-            }
-
-            SetAvailableInstancesVisibility(visibleInstanceNodes.Count > 0);
-
-            if (visibleInstanceNodes.Count > 1)
-            {
-                _availableInstanceItems.Add(new CounterSelectorItem
-                {
-                    DisplayName = "<すべてのインスタンス>",
-                    ObjectName = objectNode.DisplayName,
-                    IsAllInstances = true
-                });
-            }
-
-            foreach (var instanceNode in visibleInstanceNodes)
-            {
-                _availableInstanceItems.Add(new CounterSelectorItem
-                {
-                    DisplayName = instanceNode.DisplayName,
-                    ObjectName = objectNode.DisplayName,
-                    InstanceName = instanceNode.DisplayName
-                });
-            }
-
-            SelectDefaultCounterSelectorRows();
-        }
-        finally
-        {
-            _isRefreshingCounterSelector = false;
-        }
-    }
-
-    private void SelectDefaultCounterSelectorRows()
-    {
-        if (_availableCounterItems.Count > 0)
-        {
-            AvailableCountersListBox.SelectedIndex = 0;
-        }
-
-        var totalInstance = _availableInstanceItems
-            .FirstOrDefault(static item => !item.IsAllInstances && string.Equals(item.DisplayName, "_Total", StringComparison.Ordinal));
-        var defaultInstance = totalInstance ?? _availableInstanceItems.FirstOrDefault(static item => !item.IsAllInstances);
-        if (defaultInstance is not null)
-        {
-            AvailableInstancesListBox.SelectedItem = defaultInstance;
-        }
-    }
-
-    private CounterTreeNode? GetSelectedCounterObjectNode()
-    {
-        if (CounterObjectListBox.SelectedItem is not string objectName)
-        {
-            return null;
-        }
-
-        return _counterTreeNodes.FirstOrDefault(node => string.Equals(node.DisplayName, objectName, StringComparison.Ordinal));
-    }
-
-    private void CounterSelectorCheckBox_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_isRefreshingCounterSelector)
-        {
-            return;
-        }
-
-        if (sender is CheckBox checkBox && checkBox.Tag is CounterSelectorItem item)
-        {
-            item.IsChecked = checkBox.IsChecked == true;
-        }
-    }
-
-    private void AddSelectedCounters_Click(object sender, RoutedEventArgs e)
-    {
-        AddCountersFromCurrentSelector();
-    }
-
-    private void AddCountersFromCurrentSelector()
-    {
-        var objectNode = GetSelectedCounterObjectNode();
-        if (objectNode is null)
-        {
-            return;
-        }
-
-        var selectedCounters = GetCheckedOrSelectedCounterItems(AvailableCountersListBox, _availableCounterItems);
-        var selectedInstances = GetCheckedOrSelectedCounterItems(AvailableInstancesListBox, _availableInstanceItems);
-        var requiresInstanceSelection = HasSelectableInstances(objectNode);
-
-        if (selectedCounters.Count == 0 || (requiresInstanceSelection && selectedInstances.Count == 0))
-        {
-            AddOperationLog(LogLevel.Warning, "追加するカウンターまたはインスタンスが選択されていません。");
-            return;
-        }
-
-        var actualInstanceNodes = ResolveSelectedInstanceNodes(objectNode, selectedInstances);
         var addedCount = 0;
 
-        foreach (var counterItem in selectedCounters)
+        foreach (var counterPath in counterPaths)
         {
-            foreach (var instanceNode in actualInstanceNodes)
+            if (AddSelectedCounter(counterPath))
             {
-                var counterNode = instanceNode.Children.FirstOrDefault(node =>
-                    !node.IsWildCard &&
-                    string.Equals(node.DisplayName, counterItem.CounterName, StringComparison.Ordinal));
-                if (counterNode is not null && AddSelectedCounter(counterNode.FullPath))
-                {
-                    addedCount++;
-                }
+                addedCount++;
             }
         }
 
@@ -2110,76 +1965,7 @@ public partial class MainWindow : Window
         }
 
         UpdateRelogCommandDisplay();
-    }
-
-    private static List<CounterSelectorItem> GetCheckedOrSelectedCounterItems(
-        ListBox listBox,
-        ObservableCollection<CounterSelectorItem> items)
-    {
-        var selectedItems = items.Where(static item => item.IsChecked).ToList();
-        if (selectedItems.Count > 0)
-        {
-            return selectedItems;
-        }
-
-        return listBox.SelectedItems
-            .OfType<CounterSelectorItem>()
-            .ToList();
-    }
-
-    private static bool HasSelectableInstances(CounterTreeNode objectNode)
-    {
-        return GetVisibleInstanceNodes(GetActualInstanceNodes(objectNode)).Count > 0;
-    }
-
-    private static List<CounterTreeNode> ResolveSelectedInstanceNodes(
-        CounterTreeNode objectNode,
-        IReadOnlyCollection<CounterSelectorItem> selectedInstances)
-    {
-        var actualInstanceNodes = GetActualInstanceNodes(objectNode);
-        var visibleInstanceNodes = GetVisibleInstanceNodes(actualInstanceNodes);
-
-        if (visibleInstanceNodes.Count == 0)
-        {
-            return actualInstanceNodes;
-        }
-
-        if (selectedInstances.Any(static item => item.IsAllInstances))
-        {
-            return visibleInstanceNodes;
-        }
-
-        var selectedInstanceNames = selectedInstances
-            .Where(static item => !item.IsAllInstances)
-            .Select(static item => item.InstanceName)
-            .ToHashSet(StringComparer.Ordinal);
-
-        return actualInstanceNodes
-            .Where(node => selectedInstanceNames.Contains(node.DisplayName))
-            .ToList();
-    }
-
-    private static List<CounterTreeNode> GetActualInstanceNodes(CounterTreeNode objectNode, bool sortByDisplayName = false)
-    {
-        var instanceNodes = objectNode.Children.Where(static node => !node.IsWildCard);
-        return sortByDisplayName
-            ? instanceNodes.OrderBy(static node => node.DisplayName, StringComparer.Ordinal).ToList()
-            : instanceNodes.ToList();
-    }
-
-    private static List<CounterTreeNode> GetVisibleInstanceNodes(IEnumerable<CounterTreeNode> instanceNodes)
-    {
-        return instanceNodes
-            .Where(static node => !string.IsNullOrWhiteSpace(node.DisplayName))
-            .ToList();
-    }
-
-    private void SetAvailableInstancesVisibility(bool isVisible)
-    {
-        AvailableInstancesGroupBox.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
-        AvailableInstancesRowDefinition.Height = isVisible
-            ? new GridLength(1, GridUnitType.Star)
-            : new GridLength(0);
+        return addedCount;
     }
 
     private bool AddSelectedCounter(string fullPath)
@@ -2193,6 +1979,7 @@ public partial class MainWindow : Window
 
         var selectedItem = CreateSelectedCounterItem(fullPath);
         _selectedCounterItems.Add(selectedItem);
+        UpdateExecuteButtonState();
         return true;
     }
 
@@ -2285,6 +2072,7 @@ public partial class MainWindow : Window
             RemoveCounterFromChart(item.FullPath);
         }
 
+        UpdateExecuteButtonState();
         UpdateRelogCommandDisplay();
     }
 
@@ -2304,6 +2092,7 @@ public partial class MainWindow : Window
         }
 
         _selectedCounterItems.Clear();
+        UpdateExecuteButtonState();
         UpdateRelogCommandDisplay();
     }
 
@@ -3810,8 +3599,7 @@ public partial class MainWindow : Window
             
             UpdateTimeSliderTexts();
             
-            // 実行ボタンを有効化
-            ExecuteButton.IsEnabled = true;
+            UpdateExecuteButtonState();
             
             // グラフのX軸範囲を初期化
             UpdateChartXAxisRange();
@@ -3819,7 +3607,7 @@ public partial class MainWindow : Window
         else
         {
             TimeRangeExpander.Visibility = Visibility.Collapsed;
-            ExecuteButton.IsEnabled = !string.IsNullOrEmpty(_currentBlgFile);
+            UpdateExecuteButtonState();
         }
     }
 
@@ -3888,8 +3676,8 @@ public partial class MainWindow : Window
         var selectedCounters = GetSelectedCounters();
         if (selectedCounters.Count == 0)
         {
-            AddOperationLog(LogLevel.Warning, "実行するカウンターが選択されていません。チェックボックスを選択してからボタンを押してください。");
-            MessageBox.Show("実行するカウンターが選択されていません。\nチェックボックスを選択してからボタンを押してください。", 
+            AddOperationLog(LogLevel.Warning, "実行するカウンターが追加されていません。カウンターを追加してからボタンを押してください。");
+            MessageBox.Show("実行するカウンターが追加されていません。\nカウンターを追加してからボタンを押してください。",
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -5237,6 +5025,8 @@ public partial class MainWindow : Window
     {
         try
         {
+            UpdateExecuteButtonState();
+
             // 現在選択されているカウンターを取得
             var selectedCounters = GetSelectedCounters();
             
