@@ -28,6 +28,11 @@ public partial class MainWindow : Window
     private Dictionary<string, List<PerformanceDataPoint>> _counterData = new();
     private string? _currentBlgFile;
     private ObservableCollection<CounterTreeNode> _counterTreeNodes = new();
+    private readonly ObservableCollection<string> _counterObjectNames = new();
+    private readonly ObservableCollection<CounterSelectorItem> _availableCounterItems = new();
+    private readonly ObservableCollection<CounterSelectorItem> _availableInstanceItems = new();
+    private readonly ObservableCollection<CounterSelectorItem> _selectedCounterItems = new();
+    private bool _isRefreshingCounterSelector;
     private DateTime _fileStartTime;
     private DateTime _fileEndTime;
     private bool _timeRangeDetected = false;
@@ -101,7 +106,10 @@ public partial class MainWindow : Window
         InitializeChart();
         InitializeBulkScaleComboBox();
         InitializeCounterPanelControls();
-        CounterTreeView.ItemsSource = _counterTreeNodes;
+        CounterObjectListBox.ItemsSource = _counterObjectNames;
+        AvailableCountersListBox.ItemsSource = _availableCounterItems;
+        AvailableInstancesListBox.ItemsSource = _availableInstanceItems;
+        SelectedCountersListView.ItemsSource = _selectedCounterItems;
         
         // 凡例の初期化
         InitializeLegend();
@@ -1147,6 +1155,90 @@ public partial class MainWindow : Window
         }
     }
 
+    private void GraphContainer_PreviewDragEnter(object sender, DragEventArgs e)
+    {
+        UpdateBlgFileDropEffects(e);
+    }
+
+    private void GraphContainer_PreviewDragOver(object sender, DragEventArgs e)
+    {
+        UpdateBlgFileDropEffects(e);
+    }
+
+    private void GraphContainer_PreviewDragLeave(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private async void GraphContainer_PreviewDrop(object sender, DragEventArgs e)
+    {
+        if (!TryGetDroppedBlgFile(e.Data, out var filePath, out var validationMessage))
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            AddOperationLog(LogLevel.Warning, validationMessage);
+            return;
+        }
+
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+        AddOperationLog(LogLevel.Info, $"ドラッグ＆ドロップでBLGファイルを開きます: {filePath}");
+        await LoadBlgFileAsync(filePath);
+    }
+
+    private void UpdateBlgFileDropEffects(DragEventArgs e)
+    {
+        e.Effects = TryGetDroppedBlgFile(e.Data, out _, out _)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private bool TryGetDroppedBlgFile(IDataObject? dataObject, out string filePath, out string validationMessage)
+    {
+        filePath = string.Empty;
+
+        if (ProgressGrid.Visibility == Visibility.Visible)
+        {
+            validationMessage = "現在別のファイル処理を実行中です。完了後に再度ドロップしてください。";
+            return false;
+        }
+
+        if (dataObject is null || !dataObject.GetDataPresent(DataFormats.FileDrop))
+        {
+            validationMessage = "BLGファイルを1つだけドロップしてください。";
+            return false;
+        }
+
+        if (dataObject.GetData(DataFormats.FileDrop) is not string[] droppedFiles || droppedFiles.Length == 0)
+        {
+            validationMessage = "ドロップされたファイル情報を取得できませんでした。";
+            return false;
+        }
+
+        if (droppedFiles.Length != 1)
+        {
+            validationMessage = "同時に読み込めるBLGファイルは1つだけです。";
+            return false;
+        }
+
+        filePath = droppedFiles[0];
+        if (!string.Equals(Path.GetExtension(filePath), ".blg", StringComparison.OrdinalIgnoreCase))
+        {
+            validationMessage = "BLGファイル (.blg) のみドロップできます。";
+            return false;
+        }
+
+        if (!File.Exists(filePath))
+        {
+            validationMessage = $"ドロップされたファイルが見つかりません: {filePath}";
+            return false;
+        }
+
+        validationMessage = string.Empty;
+        return true;
+    }
+
 
 
     private async Task LoadBlgFileAsync(string fileName)
@@ -1523,8 +1615,9 @@ public partial class MainWindow : Window
             }
         }
         
-        // TreeViewノードを作成（UIスレッドで実行されているため直接更新可能）
+        // 既存の検索ロジックへ渡す内部ノードを作成（UIスレッドで実行されているため直接更新可能）
         _counterTreeNodes.Clear();
+        _selectedCounterItems.Clear();
         
         // 凡例をクリア（新しいファイル読み込み時）
         ClearLegendItems();
@@ -1603,7 +1696,7 @@ public partial class MainWindow : Window
             {
                 var instanceNode = new CounterTreeNode
                 {
-                    DisplayName = instanceGroup.Key == "(なし)" ? "(総合)" : instanceGroup.Key,
+                    DisplayName = instanceGroup.Key == "(なし)" ? string.Empty : instanceGroup.Key,
                     FullPath = "",
                     Type = NodeType.Instance
                 };
@@ -1662,221 +1755,395 @@ public partial class MainWindow : Window
             }
         }
         
-        LogError("TreeView structure updated via ObservableCollection");
+        RefreshPerfMonCounterSelector();
+        LogError("PerfMon-style counter selector updated via ObservableCollection");
     }
 
-    private void CounterCheckBox_Checked(object sender, RoutedEventArgs e)
+    private void RefreshPerfMonCounterSelector()
     {
+        _isRefreshingCounterSelector = true;
         try
         {
-            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Checked called");
-            
-            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
-            {
-                System.Diagnostics.Debug.WriteLine($"CheckBox found for node: {node.DisplayName} (Type: {node.Type})");
-                
-                // チェックボックスの状態変更を一時的に無効化して無限ループを防ぐ
-                checkBox.Checked -= CounterCheckBox_Checked;
-                checkBox.Unchecked -= CounterCheckBox_Unchecked;
-                checkBox.Indeterminate -= CounterCheckBox_Indeterminate;
-                
-                // ノードのIsCheckedを更新（階層管理の自動処理が実行される）
-                if (node.IsChecked != true)
-                {
-                    node.IsChecked = true;
-                }
-                
-                // イベントハンドラーを再度登録
-                checkBox.Checked += CounterCheckBox_Checked;
-                checkBox.Unchecked += CounterCheckBox_Unchecked;
-                checkBox.Indeterminate += CounterCheckBox_Indeterminate;
-                
-                // リーフノード（カウンター）の場合は、データ読み込みの準備
-                if (node.IsLeaf)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Counter {node.FullPath} marked for execution");
-                    
-                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択
-                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
-                    {
-                        HandleWildcardCounterSelection(node, true);
-                    }
-                }
+            _counterObjectNames.Clear();
+            _availableCounterItems.Clear();
+            _availableInstanceItems.Clear();
 
-                // ノード種別に関係なく、現在の選択状態でrelog表示を更新
-                UpdateRelogCommandDisplay();
-            }
-            else
+            foreach (var objectNode in _counterTreeNodes.OrderBy(static node => node.DisplayName, StringComparer.Ordinal))
             {
-                System.Diagnostics.Debug.WriteLine("CheckBox Tag is not a CounterTreeNode");
+                _counterObjectNames.Add(objectNode.DisplayName);
             }
+
+            CounterObjectListBox.SelectedIndex = _counterObjectNames.Count > 0 ? 0 : -1;
         }
-        catch (Exception ex)
+        finally
         {
-            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Checked: {ex.Message}");
-            LogError($"Error in CounterCheckBox_Checked: {ex}");
+            _isRefreshingCounterSelector = false;
+        }
+
+        RefreshAvailableCounterSelectorItems();
+        UpdateRelogCommandDisplay();
+    }
+
+    private void CounterObjectListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isRefreshingCounterSelector)
+        {
+            return;
+        }
+
+        RefreshAvailableCounterSelectorItems();
+    }
+
+    private void RefreshAvailableCounterSelectorItems()
+    {
+        _isRefreshingCounterSelector = true;
+        try
+        {
+            _availableCounterItems.Clear();
+            _availableInstanceItems.Clear();
+
+            var objectNode = GetSelectedCounterObjectNode();
+            if (objectNode is null)
+            {
+                return;
+            }
+
+            var actualInstanceNodes = GetActualInstanceNodes(objectNode, sortByDisplayName: true);
+            var visibleInstanceNodes = GetVisibleInstanceNodes(actualInstanceNodes);
+
+            var counterNames = actualInstanceNodes
+                .SelectMany(static instanceNode => instanceNode.Children)
+                .Where(static counterNode => !counterNode.IsWildCard)
+                .Select(static counterNode => counterNode.DisplayName)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(static name => name, StringComparer.Ordinal)
+                .ToList();
+
+            foreach (var counterName in counterNames)
+            {
+                _availableCounterItems.Add(new CounterSelectorItem
+                {
+                    DisplayName = counterName,
+                    ObjectName = objectNode.DisplayName,
+                    CounterName = counterName
+                });
+            }
+
+            SetAvailableInstancesVisibility(visibleInstanceNodes.Count > 0);
+
+            if (visibleInstanceNodes.Count > 1)
+            {
+                _availableInstanceItems.Add(new CounterSelectorItem
+                {
+                    DisplayName = "<すべてのインスタンス>",
+                    ObjectName = objectNode.DisplayName,
+                    IsAllInstances = true
+                });
+            }
+
+            foreach (var instanceNode in visibleInstanceNodes)
+            {
+                _availableInstanceItems.Add(new CounterSelectorItem
+                {
+                    DisplayName = instanceNode.DisplayName,
+                    ObjectName = objectNode.DisplayName,
+                    InstanceName = instanceNode.DisplayName
+                });
+            }
+
+            SelectDefaultCounterSelectorRows();
+        }
+        finally
+        {
+            _isRefreshingCounterSelector = false;
         }
     }
 
-    private bool TryHandleParentCounterNodeToggle(CheckBox checkBox)
+    private void SelectDefaultCounterSelectorRows()
     {
-        if (checkBox.Tag is not CounterTreeNode node || node.IsLeaf)
+        if (_availableCounterItems.Count > 0)
+        {
+            AvailableCountersListBox.SelectedIndex = 0;
+        }
+
+        var totalInstance = _availableInstanceItems
+            .FirstOrDefault(static item => !item.IsAllInstances && string.Equals(item.DisplayName, "_Total", StringComparison.Ordinal));
+        var defaultInstance = totalInstance ?? _availableInstanceItems.FirstOrDefault(static item => !item.IsAllInstances);
+        if (defaultInstance is not null)
+        {
+            AvailableInstancesListBox.SelectedItem = defaultInstance;
+        }
+    }
+
+    private CounterTreeNode? GetSelectedCounterObjectNode()
+    {
+        if (CounterObjectListBox.SelectedItem is not string objectName)
+        {
+            return null;
+        }
+
+        return _counterTreeNodes.FirstOrDefault(node => string.Equals(node.DisplayName, objectName, StringComparison.Ordinal));
+    }
+
+    private void CounterSelectorCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isRefreshingCounterSelector)
+        {
+            return;
+        }
+
+        if (sender is CheckBox checkBox && checkBox.Tag is CounterSelectorItem item)
+        {
+            item.IsChecked = checkBox.IsChecked == true;
+        }
+    }
+
+    private void AddSelectedCounters_Click(object sender, RoutedEventArgs e)
+    {
+        AddCountersFromCurrentSelector();
+    }
+
+    private void AddCountersFromCurrentSelector()
+    {
+        var objectNode = GetSelectedCounterObjectNode();
+        if (objectNode is null)
+        {
+            return;
+        }
+
+        var selectedCounters = GetCheckedOrSelectedCounterItems(AvailableCountersListBox, _availableCounterItems);
+        var selectedInstances = GetCheckedOrSelectedCounterItems(AvailableInstancesListBox, _availableInstanceItems);
+        var requiresInstanceSelection = HasSelectableInstances(objectNode);
+
+        if (selectedCounters.Count == 0 || (requiresInstanceSelection && selectedInstances.Count == 0))
+        {
+            AddOperationLog(LogLevel.Warning, "追加するカウンターまたはインスタンスが選択されていません。");
+            return;
+        }
+
+        var actualInstanceNodes = ResolveSelectedInstanceNodes(objectNode, selectedInstances);
+        var addedCount = 0;
+
+        foreach (var counterItem in selectedCounters)
+        {
+            foreach (var instanceNode in actualInstanceNodes)
+            {
+                var counterNode = instanceNode.Children.FirstOrDefault(node =>
+                    !node.IsWildCard &&
+                    string.Equals(node.DisplayName, counterItem.CounterName, StringComparison.Ordinal));
+                if (counterNode is not null && AddSelectedCounter(counterNode.FullPath))
+                {
+                    addedCount++;
+                }
+            }
+        }
+
+        if (addedCount > 0)
+        {
+            AddOperationLog(LogLevel.Info, $"{addedCount} 個のカウンターを追加しました。");
+        }
+        else
+        {
+            AddOperationLog(LogLevel.Info, "追加対象のカウンターはすでに追加済みです。");
+        }
+
+        UpdateRelogCommandDisplay();
+    }
+
+    private static List<CounterSelectorItem> GetCheckedOrSelectedCounterItems(
+        ListBox listBox,
+        ObservableCollection<CounterSelectorItem> items)
+    {
+        var selectedItems = items.Where(static item => item.IsChecked).ToList();
+        if (selectedItems.Count > 0)
+        {
+            return selectedItems;
+        }
+
+        return listBox.SelectedItems
+            .OfType<CounterSelectorItem>()
+            .ToList();
+    }
+
+    private static bool HasSelectableInstances(CounterTreeNode objectNode)
+    {
+        return GetVisibleInstanceNodes(GetActualInstanceNodes(objectNode)).Count > 0;
+    }
+
+    private static List<CounterTreeNode> ResolveSelectedInstanceNodes(
+        CounterTreeNode objectNode,
+        IReadOnlyCollection<CounterSelectorItem> selectedInstances)
+    {
+        var actualInstanceNodes = GetActualInstanceNodes(objectNode);
+        var visibleInstanceNodes = GetVisibleInstanceNodes(actualInstanceNodes);
+
+        if (visibleInstanceNodes.Count == 0)
+        {
+            return actualInstanceNodes;
+        }
+
+        if (selectedInstances.Any(static item => item.IsAllInstances))
+        {
+            return visibleInstanceNodes;
+        }
+
+        var selectedInstanceNames = selectedInstances
+            .Where(static item => !item.IsAllInstances)
+            .Select(static item => item.InstanceName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return actualInstanceNodes
+            .Where(node => selectedInstanceNames.Contains(node.DisplayName))
+            .ToList();
+    }
+
+    private static List<CounterTreeNode> GetActualInstanceNodes(CounterTreeNode objectNode, bool sortByDisplayName = false)
+    {
+        var instanceNodes = objectNode.Children.Where(static node => !node.IsWildCard);
+        return sortByDisplayName
+            ? instanceNodes.OrderBy(static node => node.DisplayName, StringComparer.Ordinal).ToList()
+            : instanceNodes.ToList();
+    }
+
+    private static List<CounterTreeNode> GetVisibleInstanceNodes(IEnumerable<CounterTreeNode> instanceNodes)
+    {
+        return instanceNodes
+            .Where(static node => !string.IsNullOrWhiteSpace(node.DisplayName))
+            .ToList();
+    }
+
+    private void SetAvailableInstancesVisibility(bool isVisible)
+    {
+        AvailableInstancesGroupBox.Visibility = isVisible ? Visibility.Visible : Visibility.Collapsed;
+        AvailableInstancesRowDefinition.Height = isVisible
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(0);
+    }
+
+    private bool AddSelectedCounter(string fullPath)
+    {
+        if (string.IsNullOrWhiteSpace(fullPath) ||
+            fullPath.StartsWith("WILDCARD:", StringComparison.Ordinal) ||
+            _selectedCounterItems.Any(item => string.Equals(item.FullPath, fullPath, StringComparison.Ordinal)))
         {
             return false;
         }
 
-        node.ToggleFromUserInteraction();
-        UpdateRelogCommandDisplay();
+        var selectedItem = CreateSelectedCounterItem(fullPath);
+        _selectedCounterItems.Add(selectedItem);
         return true;
     }
 
-    private void CounterCheckBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private CounterSelectorItem CreateSelectedCounterItem(string fullPath)
     {
-        if (sender is CheckBox checkBox && TryHandleParentCounterNodeToggle(checkBox))
+        var nodeInfo = FindCounterNodeInfo(fullPath);
+        if (nodeInfo is not null)
         {
-            e.Handled = true;
-        }
-    }
-
-    private void CounterCheckBox_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if ((e.Key == Key.Space || e.Key == Key.Enter) &&
-            sender is CheckBox checkBox &&
-            TryHandleParentCounterNodeToggle(checkBox))
-        {
-            e.Handled = true;
-        }
-    }
-
-    private void CounterCheckBox_Unchecked(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked called");
-            
-            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
+            var (objectNode, instanceNode, counterNode) = nodeInfo.Value;
+            return new CounterSelectorItem
             {
-                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Unchecked for node: {node.DisplayName} (Type: {node.Type})");
-                
-                // チェックボックスの状態変更を一時的に無効化して無限ループを防ぐ
-                checkBox.Checked -= CounterCheckBox_Checked;
-                checkBox.Unchecked -= CounterCheckBox_Unchecked;
-                checkBox.Indeterminate -= CounterCheckBox_Indeterminate;
-                
-                // ノードのIsCheckedを更新（階層管理の自動処理が実行される）
-                if (node.IsChecked != false)
+                DisplayName = fullPath,
+                FullPath = fullPath,
+                ObjectName = objectNode.DisplayName,
+                InstanceName = instanceNode.DisplayName,
+                CounterName = counterNode.DisplayName
+            };
+        }
+
+        var displayName = ExtractCounterDisplayName(fullPath);
+        return new CounterSelectorItem
+        {
+            DisplayName = fullPath,
+            FullPath = fullPath,
+            ObjectName = ExtractObjectDisplayName(fullPath),
+            InstanceName = ExtractInstanceDisplayName(fullPath),
+            CounterName = displayName
+        };
+    }
+
+    private (CounterTreeNode ObjectNode, CounterTreeNode InstanceNode, CounterTreeNode CounterNode)? FindCounterNodeInfo(string fullPath)
+    {
+        foreach (var objectNode in _counterTreeNodes)
+        {
+            foreach (var instanceNode in objectNode.Children.Where(static node => !node.IsWildCard))
+            {
+                foreach (var counterNode in instanceNode.Children.Where(static node => !node.IsWildCard))
                 {
-                    node.IsChecked = false;
-                }
-                
-                // イベントハンドラーを再度登録
-                checkBox.Checked += CounterCheckBox_Checked;
-                checkBox.Unchecked += CounterCheckBox_Unchecked;
-                checkBox.Indeterminate += CounterCheckBox_Indeterminate;
-                
-                // リーフノード（カウンター）の場合は、チャートからも削除
-                if (node.IsLeaf)
-                {
-                    RemoveCounterFromChart(node.FullPath);
-                    
-                    // ワイルドカードカウンターの場合、対応するすべてのインスタンスのカウンターを選択解除
-                    if (node.IsWildCard && node.FullPath.StartsWith("WILDCARD:"))
+                    if (string.Equals(counterNode.FullPath, fullPath, StringComparison.Ordinal))
                     {
-                        HandleWildcardCounterSelection(node, false);
+                        return (objectNode, instanceNode, counterNode);
                     }
                 }
-
-                // ノード種別に関係なく、現在の選択状態でrelog表示を更新
-                UpdateRelogCommandDisplay();
             }
         }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Unchecked: {ex.Message}");
-            LogError($"Error in CounterCheckBox_Unchecked: {ex}");
-        }
+
+        return null;
     }
-    
-    private void CounterCheckBox_Indeterminate(object sender, RoutedEventArgs e)
+
+    private static string ExtractCounterDisplayName(string fullPath)
     {
-        try
-        {
-            System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Indeterminate called");
-            
-            if (sender is CheckBox checkBox && checkBox.Tag is CounterTreeNode node)
-            {
-                System.Diagnostics.Debug.WriteLine($"CounterCheckBox_Indeterminate for node: {node.DisplayName} (Type: {node.Type})");
-                
-                // 中間選択状態の処理
-                // 親ノードが中間選択状態の場合は、特別な処理は必要なし
-                // 子ノードの状態に基づいて自動的に中間選択状態が設定される
-                
-                System.Diagnostics.Debug.WriteLine($"Node {node.DisplayName} is in indeterminate state (partially selected)");
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error in CounterCheckBox_Indeterminate: {ex.Message}");
-            LogError($"Error in CounterCheckBox_Indeterminate: {ex}");
-        }
+        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 3 ? parts[2] :
+               parts.Length >= 2 ? parts[1] :
+               fullPath;
     }
 
-    /// <summary>
-    /// ワイルドカードカウンターの選択/選択解除時に対応するすべてのインスタンスのカウンターを処理
-    /// </summary>
-    private void HandleWildcardCounterSelection(CounterTreeNode wildcardNode, bool isChecked)
+    private static string ExtractObjectDisplayName(string fullPath)
     {
-        try
-        {
-            // WILDCARD:ObjectName:*:CounterName 形式からパースする
-            var parts = wildcardNode.FullPath.Split(':');
-            if (parts.Length != 4 || parts[0] != "WILDCARD")
-            {
-                LogError($"Invalid wildcard counter path: {wildcardNode.FullPath}");
-                return;
-            }
-
-            var objectName = parts[1];
-            var counterName = parts[3];
-            
-            System.Diagnostics.Debug.WriteLine($"HandleWildcardCounterSelection: {objectName}.*.{counterName} = {isChecked}");
-
-            // 対応するオブジェクトノードを検索
-            var objectNode = _counterTreeNodes.FirstOrDefault(o => o.DisplayName == objectName);
-            if (objectNode == null)
-            {
-                LogError($"Object node not found: {objectName}");
-                return;
-            }
-
-            // すべてのインスタンス（"*"以外）のカウンターを選択/選択解除
-            int matchedCount = 0;
-            foreach (var instanceNode in objectNode.Children)
-            {
-                // "*" ノード自体は除外
-                if (instanceNode.IsWildCard) continue;
-
-                // 対応するカウンター名のノードを検索
-                var targetCounterNode = instanceNode.Children.FirstOrDefault(c => c.DisplayName == counterName);
-                if (targetCounterNode != null)
-                {
-                    // 無限ループを防ぐため、イベントハンドラーを一時的に無効化
-                    targetCounterNode.IsChecked = isChecked;
-                    matchedCount++;
-                    
-                    System.Diagnostics.Debug.WriteLine($"  {(isChecked ? "Selected" : "Unselected")}: {targetCounterNode.FullPath}");
-                }
-            }
-
-            LogError($"Wildcard selection: {objectName}.*.{counterName} -> {matchedCount} counters {(isChecked ? "selected" : "unselected")}");
-        }
-        catch (Exception ex)
-        {
-            LogError($"Error in HandleWildcardCounterSelection: {ex}");
-        }
+        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        var objectPart = parts.Length >= 3 ? parts[1] :
+                         parts.Length >= 2 ? parts[0] :
+                         string.Empty;
+        var startIndex = objectPart.IndexOf('(');
+        return startIndex > 0 ? objectPart[..startIndex] : objectPart;
     }
 
+    private static string ExtractInstanceDisplayName(string fullPath)
+    {
+        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        var objectPart = parts.Length >= 3 ? parts[1] :
+                         parts.Length >= 2 ? parts[0] :
+                         string.Empty;
+        var startIndex = objectPart.IndexOf('(');
+        var endIndex = objectPart.LastIndexOf(')');
+        return startIndex >= 0 && endIndex > startIndex
+            ? objectPart.Substring(startIndex + 1, endIndex - startIndex - 1)
+            : string.Empty;
+    }
 
+    private void RemoveSelectedCounter_Click(object sender, RoutedEventArgs e)
+    {
+        var itemsToRemove = SelectedCountersListView.SelectedItems
+            .OfType<CounterSelectorItem>()
+            .ToList();
+
+        foreach (var item in itemsToRemove)
+        {
+            _selectedCounterItems.Remove(item);
+            RemoveCounterFromChart(item.FullPath);
+        }
+
+        UpdateRelogCommandDisplay();
+    }
+
+    private void ClearSelectedCounters_Click(object sender, RoutedEventArgs e)
+    {
+        ClearSelectedCounters(removeFromChart: true);
+    }
+
+    private void ClearSelectedCounters(bool removeFromChart)
+    {
+        if (removeFromChart)
+        {
+            foreach (var item in _selectedCounterItems.ToList())
+            {
+                RemoveCounterFromChart(item.FullPath);
+            }
+        }
+
+        _selectedCounterItems.Clear();
+        UpdateRelogCommandDisplay();
+    }
 
     private void AddCounterToChart(string counter)
     {
@@ -3046,9 +3313,21 @@ public partial class MainWindow : Window
     
     private void SetAllCheckBoxes(bool isChecked)
     {
+        if (!isChecked)
+        {
+            ClearSelectedCounters(removeFromChart: true);
+            return;
+        }
+
         foreach (var objectNode in _counterTreeNodes)
         {
-            objectNode.IsChecked = isChecked;
+            foreach (var instanceNode in objectNode.Children.Where(static node => !node.IsWildCard))
+            {
+                foreach (var counterNode in instanceNode.Children.Where(static node => !node.IsWildCard))
+                {
+                    AddSelectedCounter(counterNode.FullPath);
+                }
+            }
         }
 
         UpdateRelogCommandDisplay();
@@ -3463,17 +3742,11 @@ public partial class MainWindow : Window
     /// </summary>
     private List<string> GetSelectedCounters()
     {
-        var selected = new List<string>();
-        
-        foreach (var objectNode in _counterTreeNodes)
-        {
-            foreach (var selectedCounter in objectNode.GetSelectedCounters())
-            {
-                selected.Add(selectedCounter.FullPath);
-            }
-        }
-        
-        return selected;
+        return _selectedCounterItems
+            .Select(static item => item.FullPath)
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>
@@ -4380,19 +4653,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // 現在の選択をすべて解除（リーフノードのみ操作して、親ノードは自動更新させる）
-            foreach (var objNode in _counterTreeNodes)
-            {
-                foreach (var instNode in objNode.Children)
-                {
-                    foreach (var counterNode in instNode.Children)
-                    {
-                        // カウンターノード（リーフノード）のみを解除
-                        // 親ノードの状態は自動的に更新される
-                        counterNode.IsChecked = false;
-                    }
-                }
-            }
+            ClearSelectedCounters(removeFromChart: true);
 
             var appliedCounters = new List<string>();
             var notFoundCounters = new List<string>();
@@ -4409,19 +4670,6 @@ public partial class MainWindow : Window
                 {
                     notFoundCounters.Add(counterDef.Name);
                 }
-            }
-
-            // パターン適用後、親ノードの状態を階層的に更新
-            // まず最下位（カウンター）から最上位（オブジェクト）へ順番に更新
-            foreach (var objNode in _counterTreeNodes)
-            {
-                foreach (var instNode in objNode.Children)
-                {
-                    // インスタンス レベルの状態更新
-                    instNode.UpdateParentStateFromChild();
-                }
-                // オブジェクト レベルの状態更新
-                objNode.UpdateParentStateFromChild();
             }
 
             // パターン適用後の選択状態でrelog表示を更新
@@ -4468,8 +4716,8 @@ public partial class MainWindow : Window
             var exactMatch = await FindCounterNodeAsync(counterPattern);
             if (exactMatch != null)
             {
-                exactMatch.IsChecked = true;
-                _counterScales[counterPattern] = scale;
+                AddSelectedCounter(exactMatch.FullPath);
+                _counterScales[exactMatch.FullPath] = scale;
                 return true;
             }
 
@@ -4479,7 +4727,7 @@ public partial class MainWindow : Window
             {
                 foreach (var match in patternMatches)
                 {
-                    match.IsChecked = true;
+                    AddSelectedCounter(match.FullPath);
                     _counterScales[match.FullPath] = scale;
                 }
                 return true;
@@ -4507,7 +4755,8 @@ public partial class MainWindow : Window
                 {
                     foreach (var counterNode in instNode.Children)
                     {
-                        if (counterNode.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
+                        if (!counterNode.IsWildCard &&
+                            counterNode.FullPath.Equals(fullPath, StringComparison.OrdinalIgnoreCase))
                         {
                             return counterNode;
                         }
@@ -4548,7 +4797,7 @@ public partial class MainWindow : Window
                     {
                         foreach (var counterNode in instNode.Children)
                         {
-                            if (regex.IsMatch(counterNode.FullPath))
+                            if (!counterNode.IsWildCard && regex.IsMatch(counterNode.FullPath))
                             {
                                 matches.Add(counterNode);
                             }
@@ -4565,7 +4814,8 @@ public partial class MainWindow : Window
                     {
                         foreach (var counterNode in instNode.Children)
                         {
-                            if (counterNode.FullPath.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                            if (!counterNode.IsWildCard &&
+                                counterNode.FullPath.Contains(pattern, StringComparison.OrdinalIgnoreCase))
                             {
                                 matches.Add(counterNode);
                             }
