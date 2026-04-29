@@ -47,6 +47,46 @@ public static class ScaleCatalog
             }
         }
 
-        return scale.ToString("0.###############", CultureInfo.InvariantCulture);
+        var decimalLabel = scale.ToString("0.###############", CultureInfo.InvariantCulture);
+        return decimalLabel == "0" && scale != 0
+            ? scale.ToString("0.###############E+0", CultureInfo.InvariantCulture)
+            : decimalLabel;
+    }
+
+    public static bool TryCalculateScaleToTarget(double maximumAbsoluteValue, out double scale, double targetValue = 100.0)
+    {
+        scale = 0;
+
+        if (!double.IsFinite(maximumAbsoluteValue) ||
+            !double.IsFinite(targetValue) ||
+            maximumAbsoluteValue <= 0 ||
+            targetValue <= 0)
+        {
+            return false;
+        }
+
+        scale = RoundToNiceScale(targetValue / maximumAbsoluteValue);
+        return double.IsFinite(scale) && scale > 0;
+    }
+
+    public static double RoundToNiceScale(double scale)
+    {
+        if (!double.IsFinite(scale) || scale <= 0)
+        {
+            return 0;
+        }
+
+        var exponent = Math.Floor(Math.Log10(scale));
+        var magnitude = Math.Pow(10, exponent);
+        var normalized = scale / magnitude;
+        var niceNormalized = normalized switch
+        {
+            < 1.5 => 1.0,
+            < 3.5 => 2.0,
+            < 7.5 => 5.0,
+            _ => 10.0
+        };
+
+        return niceNormalized * magnitude;
     }
 }

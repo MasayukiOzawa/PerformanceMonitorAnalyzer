@@ -459,6 +459,25 @@ public partial class MainWindow : Window
         return deltaDataPoints;
     }
 
+    private static bool TryGetMaximumAbsoluteValue(IEnumerable<PerformanceDataPoint> dataPoints, out double maximumAbsoluteValue)
+    {
+        maximumAbsoluteValue = 0;
+        var hasValue = false;
+
+        foreach (var dataPoint in dataPoints)
+        {
+            if (!double.IsFinite(dataPoint.Value))
+            {
+                continue;
+            }
+
+            maximumAbsoluteValue = Math.Max(maximumAbsoluteValue, Math.Abs(dataPoint.Value));
+            hasValue = true;
+        }
+
+        return hasValue && maximumAbsoluteValue > 0;
+    }
+
     /// <summary>
     /// 現在の値モードに応じた最新値を取得
     /// </summary>
@@ -4524,6 +4543,67 @@ public partial class MainWindow : Window
         {
             AddOperationLog(LogLevel.Error, $"一括スケール適用に失敗しました: {ex.Message}");
             LogError($"Bulk scale apply failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// 表示中カウンターごとに最大絶対値が 100 に近づくスケールを適用
+    /// </summary>
+    private void AutoScaleCounters_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var currentCounters = GetCurrentChartCounters();
+            if (!currentCounters.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "自動スケールの対象カウンターがありません。");
+                return;
+            }
+
+            var updatedCounters = new List<string>();
+            var skippedCount = 0;
+
+            foreach (var counter in currentCounters)
+            {
+                var dataPoints = GetDisplayDataPoints(counter);
+                if (!TryGetMaximumAbsoluteValue(dataPoints, out var maximumAbsoluteValue) ||
+                    !ScaleCatalog.TryCalculateScaleToTarget(maximumAbsoluteValue, out var newScale))
+                {
+                    skippedCount++;
+                    continue;
+                }
+
+                _counterScales[counter] = newScale;
+                updatedCounters.Add(counter);
+            }
+
+            if (!updatedCounters.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "自動スケールを適用できるカウンターがありません。データなし、0、または非数値のカウンターはスキップされます。");
+                return;
+            }
+
+            if (_currentChartType == ChartType.LineChart)
+            {
+                foreach (var counter in updatedCounters)
+                {
+                    RefreshCounterInChart(counter);
+                }
+            }
+            else
+            {
+                RefreshChartWithCurrentType();
+            }
+
+            UpdateScaleControlVisibility();
+
+            var skippedMessage = skippedCount > 0 ? $"（{skippedCount} 件スキップ）" : string.Empty;
+            AddOperationLog(LogLevel.Success, $"自動スケールを {updatedCounters.Count} 件のカウンターに適用しました{skippedMessage}。最大絶対値が約 100 になるよう表示倍率を調整しました。");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"自動スケール適用に失敗しました: {ex.Message}");
+            LogError($"Auto scale apply failed: {ex}");
         }
     }
 

@@ -67,6 +67,16 @@ public partial class CounterAddDialog : Window
         RefreshAvailableCounterSelectorItems();
     }
 
+    private void AvailableCountersListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isRefreshingCounterSelector)
+        {
+            return;
+        }
+
+        UpdateInstanceSelectionAvailability();
+    }
+
     private void RefreshAvailableCounterSelectorItems()
     {
         _isRefreshingCounterSelector = true;
@@ -92,27 +102,79 @@ public partial class CounterAddDialog : Window
                 _availableInstanceItems.Add(instanceItem);
             }
 
-            SelectDefaultCounterSelectorRows();
+            ResetCounterSelectorRows();
         }
         finally
         {
             _isRefreshingCounterSelector = false;
         }
+
+        UpdateInstanceSelectionAvailability();
     }
 
-    private void SelectDefaultCounterSelectorRows()
+    private void ResetCounterSelectorRows()
     {
-        if (_availableCounterItems.Count > 0)
-        {
-            AvailableCountersListBox.SelectedIndex = 0;
-        }
+        AvailableCountersListBox.SelectedIndex = -1;
+        AvailableInstancesListBox.SelectedIndex = -1;
+    }
 
+    private void SelectDefaultInstanceRow()
+    {
         var totalInstance = _availableInstanceItems
             .FirstOrDefault(static item => !item.IsAllInstances && string.Equals(item.DisplayName, "_Total", StringComparison.Ordinal));
         var defaultInstance = totalInstance ?? _availableInstanceItems.FirstOrDefault(static item => !item.IsAllInstances);
         if (defaultInstance is not null)
         {
             AvailableInstancesListBox.SelectedItem = defaultInstance;
+        }
+    }
+
+    private void UpdateInstanceSelectionAvailability()
+    {
+        var hasInstanceItems = _availableInstanceItems.Count > 0;
+        var canSelectInstances = !hasInstanceItems || HasSelectedCounterItems();
+
+        AvailableInstancesListBox.IsEnabled = canSelectInstances;
+        AvailableInstancesListBox.ToolTip = hasInstanceItems && !canSelectInstances
+            ? "カウンターを選択するとインスタンスを選択できます。"
+            : null;
+
+        if (!hasInstanceItems)
+        {
+            AvailableInstancesListBox.SelectedIndex = -1;
+            return;
+        }
+
+        if (!canSelectInstances)
+        {
+            ClearInstanceSelection();
+            return;
+        }
+
+        if (!HasSelectedInstanceItems())
+        {
+            SelectDefaultInstanceRow();
+        }
+    }
+
+    private bool HasSelectedCounterItems()
+    {
+        return _availableCounterItems.Any(static item => item.IsChecked) ||
+               AvailableCountersListBox.SelectedItems.OfType<CounterSelectorItem>().Any();
+    }
+
+    private bool HasSelectedInstanceItems()
+    {
+        return _availableInstanceItems.Any(static item => item.IsChecked) ||
+               AvailableInstancesListBox.SelectedItems.OfType<CounterSelectorItem>().Any();
+    }
+
+    private void ClearInstanceSelection()
+    {
+        AvailableInstancesListBox.SelectedIndex = -1;
+        foreach (var instanceItem in _availableInstanceItems)
+        {
+            instanceItem.IsChecked = false;
         }
     }
 
@@ -133,6 +195,12 @@ public partial class CounterAddDialog : Window
         if (sender is CheckBox checkBox && checkBox.Tag is CounterSelectorItem item)
         {
             item.IsChecked = checkBox.IsChecked == true;
+        }
+
+        if (sender is CheckBox { Tag: CounterSelectorItem itemForList } &&
+            _availableCounterItems.Contains(itemForList))
+        {
+            UpdateInstanceSelectionAvailability();
         }
     }
 

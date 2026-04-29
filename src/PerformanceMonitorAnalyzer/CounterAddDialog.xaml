@@ -44,11 +44,12 @@
                                  Margin="3"/>
                     </GroupBox>
 
-                    <GroupBox Grid.Column="1" Header="カウンター" Margin="0,0,8,0">
-                        <ListBox x:Name="AvailableCountersListBox"
-                                 SelectionMode="Extended"
-                                 BorderThickness="0"
-                                 Margin="3">
+                     <GroupBox Grid.Column="1" Header="カウンター" Margin="0,0,8,0">
+                         <ListBox x:Name="AvailableCountersListBox"
+                                  SelectionMode="Extended"
+                                  SelectionChanged="AvailableCountersListBox_SelectionChanged"
+                                  BorderThickness="0"
+                                  Margin="3">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <CheckBox Content="{Binding DisplayName}"
@@ -62,11 +63,12 @@
                         </ListBox>
                     </GroupBox>
 
-                    <GroupBox Grid.Column="2" x:Name="AvailableInstancesGroupBox" Header="インスタンス">
-                        <ListBox x:Name="AvailableInstancesListBox"
-                                 SelectionMode="Extended"
-                                 BorderThickness="0"
-                                 Margin="3">
+                     <GroupBox Grid.Column="2" x:Name="AvailableInstancesGroupBox" Header="インスタンス">
+                         <ListBox x:Name="AvailableInstancesListBox"
+                                  SelectionMode="Extended"
+                                  IsEnabled="False"
+                                  BorderThickness="0"
+                                  Margin="3">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <CheckBox Content="{Binding DisplayName}"
