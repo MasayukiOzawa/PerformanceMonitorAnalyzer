@@ -313,10 +313,21 @@
             </GroupBox>
 
             <!-- カウンター選択エリアとグラフ領域の表示切り替え -->
+            <GridSplitter Grid.Column="1"
+                          x:Name="CounterPanelGridSplitter"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          Background="Transparent"
+                          Cursor="SizeWE"
+                          ToolTip="ドラッグでパフォーマンスカウンター領域の幅を変更します"/>
+
             <Grid Grid.Column="1" x:Name="CounterPanelDividerHost">
                 <Border Background="{StaticResource PanelDividerBrush}"
                         BorderBrush="{StaticResource DividerBrush}"
-                        BorderThickness="1,0,1,0"/>
+                        BorderThickness="1,0,1,0"
+                        IsHitTestVisible="False"/>
                 <Button x:Name="CounterPanelToggleButton"
                         Width="16"
                         Height="34"
@@ -859,10 +870,22 @@
             </GroupBox>
 
             <!-- グラフ領域とスケール設定領域の表示切り替え -->
+            <GridSplitter Grid.Column="3"
+                          x:Name="ScalePanelGridSplitter"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          Background="Transparent"
+                          Cursor="SizeWE"
+                          IsEnabled="False"
+                          ToolTip="ドラッグでスケール設定領域の幅を変更します"/>
+
             <Grid Grid.Column="3" x:Name="ScalePanelDividerHost" Visibility="Collapsed">
                 <Border Background="{StaticResource PanelDividerBrush}"
                         BorderBrush="{StaticResource DividerBrush}"
-                        BorderThickness="1,0,1,0"/>
+                        BorderThickness="1,0,1,0"
+                        IsHitTestVisible="False"/>
                 <Button x:Name="ScalePanelToggleButton"
                         Width="16"
                         Height="34"

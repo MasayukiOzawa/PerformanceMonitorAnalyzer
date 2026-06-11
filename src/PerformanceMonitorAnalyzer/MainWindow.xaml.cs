@@ -643,6 +643,7 @@ public partial class MainWindow : Window
         CounterPanelToggleButton.ToolTip = _panelLayoutState.IsCounterPanelVisible
             ? "クリックでカウンター選択エリアを非表示にします"
             : "クリックでカウンター選択エリアを表示します";
+        CounterPanelGridSplitter.IsEnabled = _panelLayoutState.IsCounterPanelVisible;
     }
 
     /// <summary>
@@ -3832,6 +3833,7 @@ public partial class MainWindow : Window
         {
             ScaleControlGroupBox.Visibility = Visibility.Collapsed;
             ScalePanelDividerHost.Visibility = Visibility.Collapsed;
+            ScalePanelGridSplitter.IsEnabled = false;
 
             if (ScalePanelColumn.Width.Value > 0)
             {
@@ -3858,12 +3860,14 @@ public partial class MainWindow : Window
             ScalePanelColumn.MinWidth = 0;
             ScalePanelColumn.Width = new GridLength(0);
             ScalePanelSplitterColumn.Width = new GridLength(22);
+            ScalePanelGridSplitter.IsEnabled = false;
             return;
         }
 
         ScaleControlGroupBox.Visibility = Visibility.Visible;
         ScalePanelColumn.MinWidth = 210;
         ScalePanelSplitterColumn.Width = new GridLength(22);
+        ScalePanelGridSplitter.IsEnabled = true;
 
         if (ScalePanelColumn.Width.Value <= 0)
         {
