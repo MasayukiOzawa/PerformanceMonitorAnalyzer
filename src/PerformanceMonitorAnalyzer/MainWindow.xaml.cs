@@ -4466,8 +4466,6 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var selectedCounters = GetSelectedCounters();
-            
             // relog.exeコマンドを生成
             var useTimeConstraints = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
             var (effectiveStartTime, effectiveEndTime) = useTimeConstraints

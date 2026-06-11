@@ -40,17 +40,4 @@ public static class CsvLineParser
         result.Add(current.ToString());
         return result;
     }
-
-    public static bool TryParseTimestamp(string csvLine, out DateTime timestamp)
-    {
-        timestamp = default;
-
-        var parts = Parse(csvLine);
-        if (parts.Count == 0)
-        {
-            return false;
-        }
-
-        return DateTime.TryParse(parts[0].Trim('"'), out timestamp);
-    }
 }
