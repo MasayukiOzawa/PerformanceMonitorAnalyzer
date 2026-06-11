@@ -10,6 +10,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <SingleFileBuildRuntimeIdentifier>win-x64</SingleFileBuildRuntimeIdentifier>
+    <SingleFileBuildOutputPath>$(MSBuildProjectDirectory)\..\..\publish\$(SingleFileBuildRuntimeIdentifier)\</SingleFileBuildOutputPath>
+    <PublishSingleFileOnBuild Condition="'$(PublishSingleFileOnBuild)' == ''">true</PublishSingleFileOnBuild>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -33,5 +36,23 @@
           CopyToOutputDirectory="PreserveNewest"
           LinkBase="config" />
   </ItemGroup>
+
+  <Target Name="PublishSingleFileAfterReleaseBuild"
+          AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Release'
+                     and '$(PublishSingleFileOnBuild)' == 'true'
+                     and '$(IsPublishingSingleFileFromBuild)' != 'true'">
+    <Message Importance="High"
+             Text="Publishing single-file binary to $(SingleFileBuildOutputPath) for $(SingleFileBuildRuntimeIdentifier)" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);
+                         RuntimeIdentifier=$(SingleFileBuildRuntimeIdentifier);
+                         SelfContained=true;
+                         PublishSingleFile=true;
+                         IncludeNativeLibrariesForSelfExtract=true;
+                         PublishDir=$(SingleFileBuildOutputPath);
+                         IsPublishingSingleFileFromBuild=true" />
+  </Target>
 
 </Project>

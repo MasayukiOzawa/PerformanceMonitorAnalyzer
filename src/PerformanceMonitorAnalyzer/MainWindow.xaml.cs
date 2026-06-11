@@ -64,27 +64,13 @@ public partial class MainWindow : Window
     private const float DefaultLineWidth = 2f;
     private const float HighlightedLineWidth = 4f;
     private const float StackedAreaOutlineWidth = 1f;
-    private const double StatisticsPanelMinHeight = 80;
-    private const double StatisticsPanelMaxHeight = 450;
-    private const double BottomPanelMinHeight = 100;
-    private const double BottomPanelMaxHeight = 750;
+    private readonly PanelLayoutState _panelLayoutState = new();
     
     // グラフリサイズハンドル関連
     private bool _isResizing = false;
     private Point _resizeStartPoint;
     private Size _resizeStartSize;
 
-    // カウンター選択エリアの表示制御
-    private bool _isCounterPanelVisible = true;
-    private GridLength _lastCounterPanelWidth = new(350);
-    private bool _isLegendPanelCollapsed = false;
-    private GridLength _lastLegendPanelWidth = new(250);
-    private bool _isStatisticsPanelCollapsed = false;
-    private GridLength _lastStatisticsPanelHeight = new(170);
-    private bool _isBottomPanelCollapsed = false;
-    private GridLength _lastBottomPanelHeight = new(400);
-    private GridLength _lastScalePanelWidth = new(230);
-    private bool _isScalePanelCollapsed = false;
     private bool _isManualYAxisRangeEnabled = false;
     private double _manualYAxisMin = 0;
     private double _manualYAxisMax = 100;
@@ -96,8 +82,9 @@ public partial class MainWindow : Window
     
     
     // ログ機能
-    private readonly ObservableCollection<LogEntry> _operationLogs = new();
-    private readonly ObservableCollection<LogEntry> _errorLogs = new();
+    private readonly OperationLogStore _operationLogStore = new();
+    private ObservableCollection<LogEntry> _operationLogs => _operationLogStore.OperationLogs;
+    private ObservableCollection<LogEntry> _errorLogs => _operationLogStore.ErrorLogs;
     private readonly DispatcherTimer _progressStatusTimer;
     private BufferedProgressReporter? _progressStatusReporter;
     private string? _lastRenderedProgressMessage;
@@ -360,7 +347,7 @@ public partial class MainWindow : Window
 
         foreach (var counter in currentCounters)
         {
-            var dataPoints = GetDisplayDataPoints(counter);
+            var dataPoints = GetCurrentDisplayDataPoints(counter);
             if (!dataPoints.Any())
             {
                 continue;
@@ -420,89 +407,14 @@ public partial class MainWindow : Window
     /// <summary>
     /// 現在の値モードに応じた表示用データポイントを取得
     /// </summary>
-    private List<PerformanceDataPoint> GetDisplayDataPoints(string counter)
+    private List<PerformanceDataPoint> GetCurrentDisplayDataPoints(string counter)
     {
         if (!_counterData.TryGetValue(counter, out var rawData) || rawData.Count == 0)
         {
             return new List<PerformanceDataPoint>();
         }
 
-        if (_currentValueMode == CounterValueMode.RawValue)
-        {
-            return rawData;
-        }
-
-        if (rawData.Count < 2)
-        {
-            return new List<PerformanceDataPoint>();
-        }
-
-        var unit = EstimateUnit(counter);
-        var deltaDataPoints = new List<PerformanceDataPoint>(rawData.Count - 1);
-
-        for (int i = 1; i < rawData.Count; i++)
-        {
-            var current = rawData[i];
-            var previous = rawData[i - 1];
-            var deltaValue = current.Value - previous.Value;
-
-            deltaDataPoints.Add(new PerformanceDataPoint
-            {
-                Counter = counter,
-                Value = deltaValue,
-                Timestamp = current.Timestamp,
-                FormattedValue = FormatValueWithUnit(deltaValue, unit),
-                Unit = unit
-            });
-        }
-
-        return deltaDataPoints;
-    }
-
-    private static bool TryGetMaximumAbsoluteValue(IEnumerable<PerformanceDataPoint> dataPoints, out double maximumAbsoluteValue)
-    {
-        maximumAbsoluteValue = 0;
-        var hasValue = false;
-
-        foreach (var dataPoint in dataPoints)
-        {
-            if (!double.IsFinite(dataPoint.Value))
-            {
-                continue;
-            }
-
-            maximumAbsoluteValue = Math.Max(maximumAbsoluteValue, Math.Abs(dataPoint.Value));
-            hasValue = true;
-        }
-
-        return hasValue && maximumAbsoluteValue > 0;
-    }
-
-    /// <summary>
-    /// 現在の値モードに応じた最新値を取得
-    /// </summary>
-    private bool TryGetLatestDisplayValue(string counter, out double latestValue)
-    {
-        latestValue = 0;
-
-        if (!_counterData.TryGetValue(counter, out var rawData) || rawData.Count == 0)
-        {
-            return false;
-        }
-
-        if (_currentValueMode == CounterValueMode.RawValue)
-        {
-            latestValue = rawData[^1].Value;
-            return true;
-        }
-
-        if (rawData.Count < 2)
-        {
-            return false;
-        }
-
-        latestValue = rawData[^1].Value - rawData[^2].Value;
-        return true;
+        return CounterValueModeConverter.ToDisplayDataPoints(counter, rawData, _currentValueMode);
     }
 
     /// <summary>
@@ -560,7 +472,7 @@ public partial class MainWindow : Window
 
             foreach (var counter in snapshot.Counters)
             {
-                _openDataTableCounters.Add(new DataTableCounterItem(counter, GetCounterDisplayName(counter)));
+                _openDataTableCounters.Add(new DataTableCounterItem(counter, CounterPathFormatter.GetDisplayName(counter)));
             }
 
             _selectedDataTableCounter = snapshot.SelectedCounter;
@@ -602,9 +514,9 @@ public partial class MainWindow : Window
 
         _selectedDataTableCounter = counter;
 
-        SelectedDataCounterTextBlock.Text = GetCounterDisplayName(counter);
+        SelectedDataCounterTextBlock.Text = CounterPathFormatter.GetDisplayName(counter);
         SelectedDataCounterTextBlock.ToolTip = counter;
-        DataTableDetailContent.Content = CreateDataTableDetailContent(counter, GetDisplayDataPoints(counter));
+        DataTableDetailContent.Content = CreateDataTableDetailContent(counter, GetCurrentDisplayDataPoints(counter));
         DataTableDetailContent.Visibility = Visibility.Visible;
         DataTableEmptyStateTextBlock.Visibility = Visibility.Collapsed;
     }
@@ -652,12 +564,9 @@ public partial class MainWindow : Window
     /// </summary>
     private void InitializeCounterPanelControls()
     {
-        _isCounterPanelVisible = CounterPanelGroupBox.Visibility == Visibility.Visible;
-
-        if (CounterPanelColumn.Width.Value > 0)
-        {
-            _lastCounterPanelWidth = CounterPanelColumn.Width;
-        }
+        _panelLayoutState.InitializeCounterPanel(
+            CounterPanelGroupBox.Visibility == Visibility.Visible,
+            CounterPanelColumn.Width);
 
         CounterPanelSplitterColumn.Width = new GridLength(22);
 
@@ -671,7 +580,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_isCounterPanelVisible)
+            if (_panelLayoutState.IsCounterPanelVisible)
             {
                 HideCounterPanel();
                 AddOperationLog(LogLevel.Info, "カウンター選択エリアを非表示にしました。");
@@ -694,21 +603,15 @@ public partial class MainWindow : Window
     /// </summary>
     private void HideCounterPanel()
     {
-        if (!_isCounterPanelVisible)
+        if (!_panelLayoutState.IsCounterPanelVisible)
         {
             return;
         }
 
-        if (CounterPanelColumn.Width.Value > 0)
-        {
-            _lastCounterPanelWidth = CounterPanelColumn.Width;
-        }
-
         CounterPanelGroupBox.Visibility = Visibility.Collapsed;
         CounterPanelColumn.MinWidth = 0;
-        CounterPanelColumn.Width = new GridLength(0);
+        CounterPanelColumn.Width = _panelLayoutState.HideCounterPanel(CounterPanelColumn.Width);
         CounterPanelSplitterColumn.Width = new GridLength(22);
-        _isCounterPanelVisible = false;
 
         UpdateCounterPanelControls();
     }
@@ -718,16 +621,15 @@ public partial class MainWindow : Window
     /// </summary>
     private void ShowCounterPanel()
     {
-        if (_isCounterPanelVisible)
+        if (_panelLayoutState.IsCounterPanelVisible)
         {
             return;
         }
 
         CounterPanelGroupBox.Visibility = Visibility.Visible;
         CounterPanelColumn.MinWidth = 220;
-        CounterPanelColumn.Width = _lastCounterPanelWidth.Value > 0 ? _lastCounterPanelWidth : new GridLength(350);
+        CounterPanelColumn.Width = _panelLayoutState.ShowCounterPanel();
         CounterPanelSplitterColumn.Width = new GridLength(22);
-        _isCounterPanelVisible = true;
 
         UpdateCounterPanelControls();
     }
@@ -737,8 +639,8 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateCounterPanelControls()
     {
-        CounterPanelToggleButton.Content = _isCounterPanelVisible ? "◀" : "▶";
-        CounterPanelToggleButton.ToolTip = _isCounterPanelVisible
+        CounterPanelToggleButton.Content = _panelLayoutState.IsCounterPanelVisible ? "◀" : "▶";
+        CounterPanelToggleButton.ToolTip = _panelLayoutState.IsCounterPanelVisible
             ? "クリックでカウンター選択エリアを非表示にします"
             : "クリックでカウンター選択エリアを表示します";
     }
@@ -750,7 +652,7 @@ public partial class MainWindow : Window
     {
         if (LegendColumn.Width.Value > 0)
         {
-            _lastLegendPanelWidth = LegendColumn.Width;
+            _panelLayoutState.RememberLegendPanelWidth(LegendColumn.Width);
         }
 
         UpdateLegendPanelControls(hasChartData: HasChartPanelContext());
@@ -763,9 +665,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            _isLegendPanelCollapsed = !_isLegendPanelCollapsed;
+            _panelLayoutState.ToggleLegendPanel();
             UpdateLegendPanelControls(hasChartData: HasChartPanelContext());
-            AddOperationLog(LogLevel.Info, _isLegendPanelCollapsed
+            AddOperationLog(LogLevel.Info, _panelLayoutState.IsLegendPanelCollapsed
                 ? "凡例を非表示にしました。"
                 : "凡例を表示しました。");
         }
@@ -787,43 +689,43 @@ public partial class MainWindow : Window
 
             if (LegendColumn.Width.Value > 0)
             {
-                _lastLegendPanelWidth = LegendColumn.Width;
+                _panelLayoutState.RememberLegendPanelWidth(LegendColumn.Width);
             }
 
             LegendGroupBox.Visibility = Visibility.Collapsed;
             LegendColumn.MinWidth = 0;
             LegendColumn.Width = new GridLength(0);
             LegendSplitterColumn.Width = new GridLength(0);
+            LegendGridSplitter.IsEnabled = false;
             return;
         }
 
         LegendDividerHost.Visibility = Visibility.Visible;
-        LegendPanelToggleButton.Content = _isLegendPanelCollapsed ? "◀" : "▶";
-        LegendPanelToggleButton.ToolTip = _isLegendPanelCollapsed
+        LegendPanelToggleButton.Content = _panelLayoutState.IsLegendPanelCollapsed ? "◀" : "▶";
+        LegendPanelToggleButton.ToolTip = _panelLayoutState.IsLegendPanelCollapsed
             ? "クリックで凡例を表示します"
             : "クリックで凡例を非表示にします";
 
-        if (_isLegendPanelCollapsed)
+        if (_panelLayoutState.IsLegendPanelCollapsed)
         {
-            if (LegendColumn.Width.Value > 0)
-            {
-                _lastLegendPanelWidth = LegendColumn.Width;
-            }
+            _panelLayoutState.RememberLegendPanelWidth(LegendColumn.Width);
 
             LegendGroupBox.Visibility = Visibility.Collapsed;
             LegendColumn.MinWidth = 0;
             LegendColumn.Width = new GridLength(0);
             LegendSplitterColumn.Width = new GridLength(22);
+            LegendGridSplitter.IsEnabled = false;
             return;
         }
 
         LegendGroupBox.Visibility = Visibility.Visible;
         LegendColumn.MinWidth = 150;
         LegendSplitterColumn.Width = new GridLength(22);
+        LegendGridSplitter.IsEnabled = true;
 
         if (LegendColumn.Width.Value <= 0)
         {
-            LegendColumn.Width = _lastLegendPanelWidth.Value > 0 ? _lastLegendPanelWidth : new GridLength(250);
+            LegendColumn.Width = _panelLayoutState.GetLegendPanelWidth();
         }
     }
 
@@ -834,7 +736,7 @@ public partial class MainWindow : Window
     {
         if (StatisticsAreaRowDefinition.Height.Value > 0)
         {
-            _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
+            _panelLayoutState.RememberStatisticsPanelHeight(StatisticsAreaRowDefinition.Height);
         }
 
         UpdateStatisticsPanelControls(hasChartData: HasChartPanelContext());
@@ -847,9 +749,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            _isStatisticsPanelCollapsed = !_isStatisticsPanelCollapsed;
+            _panelLayoutState.ToggleStatisticsPanel();
             UpdateStatisticsPanelControls(hasChartData: HasChartPanelContext());
-            AddOperationLog(LogLevel.Info, _isStatisticsPanelCollapsed
+            AddOperationLog(LogLevel.Info, _panelLayoutState.IsStatisticsPanelCollapsed
                 ? "統計情報エリアを最小化しました。"
                 : "統計情報エリアを表示しました。");
         }
@@ -869,7 +771,7 @@ public partial class MainWindow : Window
         {
             if (StatisticsAreaRowDefinition.Height.Value > 0)
             {
-                _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
+                _panelLayoutState.RememberStatisticsPanelHeight(StatisticsAreaRowDefinition.Height);
             }
 
             StatisticsDividerBorder.Visibility = Visibility.Collapsed;
@@ -885,17 +787,14 @@ public partial class MainWindow : Window
         StatisticsDividerBorder.Visibility = Visibility.Visible;
         StatisticsPanelToggleButton.Visibility = Visibility.Visible;
         StatisticsDividerRowDefinition.Height = new GridLength(22);
-        StatisticsPanelToggleButton.Content = _isStatisticsPanelCollapsed ? "▲" : "▼";
-        StatisticsPanelToggleButton.ToolTip = _isStatisticsPanelCollapsed
+        StatisticsPanelToggleButton.Content = _panelLayoutState.IsStatisticsPanelCollapsed ? "▲" : "▼";
+        StatisticsPanelToggleButton.ToolTip = _panelLayoutState.IsStatisticsPanelCollapsed
             ? "クリックで統計情報エリアを表示します"
             : "クリックで統計情報エリアを最小化します";
 
-        if (_isStatisticsPanelCollapsed)
+        if (_panelLayoutState.IsStatisticsPanelCollapsed)
         {
-            if (StatisticsAreaRowDefinition.Height.Value > 0)
-            {
-                _lastStatisticsPanelHeight = StatisticsAreaRowDefinition.Height;
-            }
+            _panelLayoutState.RememberStatisticsPanelHeight(StatisticsAreaRowDefinition.Height);
 
             StatisticsGridSplitter.Visibility = Visibility.Collapsed;
             StatisticsBorder.Visibility = Visibility.Collapsed;
@@ -906,12 +805,12 @@ public partial class MainWindow : Window
 
         StatisticsGridSplitter.Visibility = Visibility.Visible;
         StatisticsBorder.Visibility = Visibility.Visible;
-        StatisticsAreaRowDefinition.MinHeight = StatisticsPanelMinHeight;
-        StatisticsAreaRowDefinition.MaxHeight = StatisticsPanelMaxHeight;
+        StatisticsAreaRowDefinition.MinHeight = PanelLayoutState.StatisticsPanelMinHeight;
+        StatisticsAreaRowDefinition.MaxHeight = PanelLayoutState.StatisticsPanelMaxHeight;
 
         if (StatisticsAreaRowDefinition.Height.Value <= 0)
         {
-            StatisticsAreaRowDefinition.Height = _lastStatisticsPanelHeight.Value > 0 ? _lastStatisticsPanelHeight : new GridLength(170);
+            StatisticsAreaRowDefinition.Height = _panelLayoutState.GetStatisticsPanelHeight();
         }
     }
 
@@ -922,7 +821,7 @@ public partial class MainWindow : Window
     {
         if (BottomPanelAreaRowDefinition.Height.Value > 0)
         {
-            _lastBottomPanelHeight = BottomPanelAreaRowDefinition.Height;
+            _panelLayoutState.RememberBottomPanelHeight(BottomPanelAreaRowDefinition.Height);
         }
 
         UpdateBottomPanelControls();
@@ -935,9 +834,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            _isBottomPanelCollapsed = !_isBottomPanelCollapsed;
+            _panelLayoutState.ToggleBottomPanel();
             UpdateBottomPanelControls();
-            AddOperationLog(LogLevel.Info, _isBottomPanelCollapsed
+            AddOperationLog(LogLevel.Info, _panelLayoutState.IsBottomPanelCollapsed
                 ? "データテーブル / ログ表示エリアを最小化しました。"
                 : "データテーブル / ログ表示エリアを表示しました。");
         }
@@ -953,18 +852,15 @@ public partial class MainWindow : Window
     /// </summary>
     private void UpdateBottomPanelControls()
     {
-        BottomPanelToggleButton.Content = _isBottomPanelCollapsed ? "▲" : "▼";
-        BottomPanelToggleButton.ToolTip = _isBottomPanelCollapsed
+        BottomPanelToggleButton.Content = _panelLayoutState.IsBottomPanelCollapsed ? "▲" : "▼";
+        BottomPanelToggleButton.ToolTip = _panelLayoutState.IsBottomPanelCollapsed
             ? "クリックでデータテーブル / ログ表示エリアを表示します"
             : "クリックでデータテーブル / ログ表示エリアを最小化します";
-        BottomPanelGridSplitter.Visibility = _isBottomPanelCollapsed ? Visibility.Collapsed : Visibility.Visible;
+        BottomPanelGridSplitter.Visibility = _panelLayoutState.IsBottomPanelCollapsed ? Visibility.Collapsed : Visibility.Visible;
 
-        if (_isBottomPanelCollapsed)
+        if (_panelLayoutState.IsBottomPanelCollapsed)
         {
-            if (BottomPanelAreaRowDefinition.Height.Value > 0)
-            {
-                _lastBottomPanelHeight = BottomPanelAreaRowDefinition.Height;
-            }
+            _panelLayoutState.RememberBottomPanelHeight(BottomPanelAreaRowDefinition.Height);
 
             BottomPanelGrid.Visibility = Visibility.Collapsed;
             BottomPanelAreaRowDefinition.MinHeight = 0;
@@ -973,12 +869,12 @@ public partial class MainWindow : Window
         }
 
         BottomPanelGrid.Visibility = Visibility.Visible;
-        BottomPanelAreaRowDefinition.MinHeight = BottomPanelMinHeight;
-        BottomPanelAreaRowDefinition.MaxHeight = BottomPanelMaxHeight;
+        BottomPanelAreaRowDefinition.MinHeight = PanelLayoutState.BottomPanelMinHeight;
+        BottomPanelAreaRowDefinition.MaxHeight = PanelLayoutState.BottomPanelMaxHeight;
 
         if (BottomPanelAreaRowDefinition.Height.Value <= 0)
         {
-            BottomPanelAreaRowDefinition.Height = _lastBottomPanelHeight.Value > 0 ? _lastBottomPanelHeight : new GridLength(400);
+            BottomPanelAreaRowDefinition.Height = _panelLayoutState.GetBottomPanelHeight();
         }
     }
 
@@ -987,12 +883,12 @@ public partial class MainWindow : Window
     /// </summary>
     private void EnsureBottomPanelVisible()
     {
-        if (!_isBottomPanelCollapsed)
+        if (!_panelLayoutState.IsBottomPanelCollapsed)
         {
             return;
         }
 
-        _isBottomPanelCollapsed = false;
+        _panelLayoutState.SetBottomPanelCollapsed(false);
         UpdateBottomPanelControls();
     }
 
@@ -1012,16 +908,13 @@ public partial class MainWindow : Window
 
         var hasChartData = HasChartPanelContext();
 
-        _isLegendPanelCollapsed = collapsed;
+        _panelLayoutState.SetAllTogglePanelsCollapsed(collapsed);
         UpdateLegendPanelControls(hasChartData);
 
-        _isStatisticsPanelCollapsed = collapsed;
         UpdateStatisticsPanelControls(hasChartData);
 
-        _isScalePanelCollapsed = collapsed;
         UpdateScaleControlVisibility();
 
-        _isBottomPanelCollapsed = collapsed;
         UpdateBottomPanelControls();
     }
 
@@ -1066,9 +959,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            _isScalePanelCollapsed = !_isScalePanelCollapsed;
+            _panelLayoutState.ToggleScalePanel();
             UpdateScaleControlVisibility();
-            AddOperationLog(LogLevel.Info, _isScalePanelCollapsed
+            AddOperationLog(LogLevel.Info, _panelLayoutState.IsScalePanelCollapsed
                 ? "スケール設定エリアを非表示にしました。"
                 : "スケール設定エリアを表示しました。");
         }
@@ -1616,7 +1509,7 @@ public partial class MainWindow : Window
         try
         {
             var fileInfo = new FileInfo(fileName);
-            var fileSizeText = FormatFileSize(fileInfo.Length);
+            var fileSizeText = ValueFormatHelper.FormatFileSize(fileInfo.Length);
             FileSizeDisplay.Text = $"ファイルサイズ: {fileSizeText}";
             FileSizeDisplay.Visibility = Visibility.Visible;
         }
@@ -1686,7 +1579,7 @@ public partial class MainWindow : Window
             // コンピューター名を表示（最初のカウンターから抽出）
             if (counters.Count > 0)
             {
-                var computerName = GetComputerNameFromCounterPath(counters[0]);
+                var computerName = CounterPathFormatter.GetComputerName(counters[0], _actualComputerName);
                 ComputerNameDisplay.Text = $"コンピューター: {computerName}";
                 ComputerNameDisplay.Visibility = Visibility.Visible;
             }
@@ -1694,7 +1587,7 @@ public partial class MainWindow : Window
             // データ取得間隔を表示
             if (_samplingInterval != TimeSpan.Zero)
             {
-                SamplingIntervalDisplay.Text = $"取得間隔: {FormatSamplingInterval(_samplingInterval)}";
+                SamplingIntervalDisplay.Text = $"取得間隔: {ValueFormatHelper.FormatSamplingInterval(_samplingInterval)}";
                 SamplingIntervalDisplay.Visibility = Visibility.Visible;
             }
             else
@@ -1726,7 +1619,7 @@ public partial class MainWindow : Window
                 : "⚠️ 時間範囲の検出に失敗しました";
             
             var samplingIntervalInfo = _samplingInterval != TimeSpan.Zero
-                ? $"⏱️ 取得間隔: {FormatSamplingInterval(_samplingInterval)}"
+                ? $"⏱️ 取得間隔: {ValueFormatHelper.FormatSamplingInterval(_samplingInterval)}"
                 : "⚠️ 取得間隔の検出に失敗しました";
             
             if (loadCanceled || cancellationToken.IsCancellationRequested)
@@ -1897,8 +1790,8 @@ public partial class MainWindow : Window
                         
                         foreach (var dataPoint in counterInfo.DataPoints)
                         {
-                            var unit = EstimateUnit(counter);
-                            var formattedValue = FormatValueWithUnit(dataPoint.Value, unit);
+                            var unit = ValueFormatHelper.EstimateUnit(counter);
+                            var formattedValue = ValueFormatHelper.FormatValueWithUnit(dataPoint.Value, unit);
                             
                             dataPoints.Add(new PerformanceDataPoint
                             {
@@ -2018,13 +1911,13 @@ public partial class MainWindow : Window
             };
         }
 
-        var displayName = ExtractCounterDisplayName(fullPath);
+        var displayName = CounterPathFormatter.ExtractCounterDisplayName(fullPath);
         return new CounterSelectorItem
         {
             DisplayName = fullPath,
             FullPath = fullPath,
-            ObjectName = ExtractObjectDisplayName(fullPath),
-            InstanceName = ExtractInstanceDisplayName(fullPath),
+            ObjectName = CounterPathFormatter.ExtractObjectDisplayName(fullPath),
+            InstanceName = CounterPathFormatter.ExtractInstanceDisplayName(fullPath),
             CounterName = displayName
         };
     }
@@ -2046,37 +1939,6 @@ public partial class MainWindow : Window
         }
 
         return null;
-    }
-
-    private static string ExtractCounterDisplayName(string fullPath)
-    {
-        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 3 ? parts[2] :
-               parts.Length >= 2 ? parts[1] :
-               fullPath;
-    }
-
-    private static string ExtractObjectDisplayName(string fullPath)
-    {
-        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        var objectPart = parts.Length >= 3 ? parts[1] :
-                         parts.Length >= 2 ? parts[0] :
-                         string.Empty;
-        var startIndex = objectPart.IndexOf('(');
-        return startIndex > 0 ? objectPart[..startIndex] : objectPart;
-    }
-
-    private static string ExtractInstanceDisplayName(string fullPath)
-    {
-        var parts = fullPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        var objectPart = parts.Length >= 3 ? parts[1] :
-                         parts.Length >= 2 ? parts[0] :
-                         string.Empty;
-        var startIndex = objectPart.IndexOf('(');
-        var endIndex = objectPart.LastIndexOf(')');
-        return startIndex >= 0 && endIndex > startIndex
-            ? objectPart.Substring(startIndex + 1, endIndex - startIndex - 1)
-            : string.Empty;
     }
 
     private void RemoveSelectedCounter_Click(object sender, RoutedEventArgs e)
@@ -2198,26 +2060,25 @@ public partial class MainWindow : Window
 
     private LineSeriesBuildResult? BuildLineSeries(string counter)
     {
-        var dataPoints = GetDisplayDataPoints(counter);
+        var dataPoints = GetCurrentDisplayDataPoints(counter);
         if (!dataPoints.Any())
         {
             return null;
         }
 
         var scale = _counterScales.GetValueOrDefault(counter, 1.0);
-        var xValues = dataPoints.Select(dp => dp.Timestamp.ToOADate()).ToArray();
-        var yValues = dataPoints.Select(dp => dp.Value * scale).ToArray();
+        var lineSeriesData = LineSeriesDataBuilder.Build(dataPoints, scale);
         var lineColor = GetOrCreateCounterColor(counter);
 
         return new LineSeriesBuildResult(
             counter,
-            GetCounterDisplayName(counter),
+            CounterPathFormatter.GetDisplayName(counter),
             dataPoints,
             scale,
-            xValues,
-            yValues,
+            lineSeriesData.XValues,
+            lineSeriesData.YValues,
             lineColor,
-            ConvertToMediaColor(lineColor));
+            ChartColorPalette.ConvertToMediaColor(lineColor));
     }
 
     private void AddBuiltLineSeriesToChart(LineSeriesBuildResult lineSeries)
@@ -2508,7 +2369,7 @@ public partial class MainWindow : Window
     private void DrawStackedAreaChart(List<string> selectedCounters)
     {
         System.Diagnostics.Debug.WriteLine($"Drawing stacked area chart for {selectedCounters.Count} counters");
-        
+
         if (!selectedCounters.Any())
         {
             return;
@@ -2519,9 +2380,9 @@ public partial class MainWindow : Window
         for (int i = 0; i < selectedCounters.Count; i++)
         {
             var counter = selectedCounters[i];
-            var scottPlotColor = GetNextColor(i);
+            var scottPlotColor = ChartColorPalette.GetNextColor(i);
             counterColors[counter] = scottPlotColor;
-            AddLegendItem(counter, GetCounterDisplayName(counter), ConvertToMediaColor(scottPlotColor));
+            AddLegendItem(counter, CounterPathFormatter.GetDisplayName(counter), ChartColorPalette.ConvertToMediaColor(scottPlotColor));
         }
 
         // 積み上げ計算は「表示中（チェック有効）」の項目のみ対象
@@ -2534,149 +2395,43 @@ public partial class MainWindow : Window
             UpdateLegendCurrentValues();
             return;
         }
-        
-        // 全カウンターの共通のタイムスタンプを取得
+
         var displayedCounterData = new Dictionary<string, List<PerformanceDataPoint>>();
-        var allTimestamps = new SortedSet<DateTime>();
         foreach (var counter in visibleCounters)
         {
-            var dataPoints = GetDisplayDataPoints(counter);
+            var dataPoints = GetCurrentDisplayDataPoints(counter);
             if (dataPoints.Any())
             {
                 displayedCounterData[counter] = dataPoints;
-                foreach (var dp in dataPoints)
-                {
-                    allTimestamps.Add(dp.Timestamp);
-                }
             }
         }
 
-        if (!allTimestamps.Any())
+        var stackedSeries = StackedAreaSeriesBuilder.Build(visibleCounters, displayedCounterData, _counterScales);
+        if (!stackedSeries.Any())
         {
             UpdateLegendCurrentValues();
             return;
         }
-        
-        var timeArray = allTimestamps.ToArray();
-        var xValues = timeArray.Select(t => t.ToOADate()).ToArray();
-        
-        // 積み重ねのベースライン（前回の累積値）
-        var baseline = new double[timeArray.Length];
-        
-        foreach (var counter in visibleCounters)
+
+        foreach (var series in stackedSeries)
         {
-            if (!displayedCounterData.TryGetValue(counter, out var dataPoints))
-            {
-                continue;
-            }
-            
-            // 手動スケールを取得（デフォルトは1.0）
-            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-            
-            // 最終スケール = 手動スケール
-            var finalScale = manualScale;
-            
-            // データポイントを辞書化（高速検索用）
-            var dataDict = dataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * finalScale);
-            
-            // タイムスタンプごとの値を補間
-            var yValues = new double[timeArray.Length];
-            for (int i = 0; i < timeArray.Length; i++)
-            {
-                var timestamp = timeArray[i];
-                if (dataDict.TryGetValue(timestamp, out var value))
-                {
-                    yValues[i] = value;
-                }
-                else
-                {
-                    // 補間：前後の値から線形補間
-                    yValues[i] = InterpolateValue(dataPoints, timestamp, finalScale);
-                }
-            }
-            
-            // 積み重ねのために現在の値とベースラインを加算
-            var topValues = new double[timeArray.Length];
-            for (int i = 0; i < timeArray.Length; i++)
-            {
-                topValues[i] = baseline[i] + yValues[i];
-            }
-            
             // FillYプロットを作成（ベースラインから現在の値まで）
-            var fillY = PerformanceChart.Plot.Add.FillY(xValues, baseline, topValues);
-            fillY.LegendText = GetCounterDisplayName(counter);
-            var scottPlotColor = counterColors[counter];
+            var fillY = PerformanceChart.Plot.Add.FillY(series.XValues, series.Baseline, series.Top);
+            fillY.LegendText = CounterPathFormatter.GetDisplayName(series.Counter);
+            var scottPlotColor = counterColors[series.Counter];
             fillY.FillStyle.Color = scottPlotColor;
             fillY.LineColor = scottPlotColor;
             fillY.LineWidth = StackedAreaOutlineWidth;
             fillY.LineStyle.Width = StackedAreaOutlineWidth;
             fillY.IsVisible = true;
-            
-            _areaChartSeries[counter] = fillY;
-            
-            // 次のカウンター用にベースラインを更新
-            baseline = topValues;
-            
-            System.Diagnostics.Debug.WriteLine($"Added stacked area series for: {counter}");
+
+            _areaChartSeries[series.Counter] = fillY;
+
+            System.Diagnostics.Debug.WriteLine($"Added stacked area series for: {series.Counter}");
         }
-        
+
         // 凡例の現在値を更新
         UpdateLegendCurrentValues();
-    }
-
-    /// <summary>
-    /// データポイント間の値を線形補間
-    /// </summary>
-    private double InterpolateValue(List<PerformanceDataPoint> dataPoints, DateTime targetTime, double scale)
-    {
-        if (!dataPoints.Any())
-            return 0;
-        
-        // 目標時間より前の最新のポイント
-        var before = dataPoints.Where(dp => dp.Timestamp <= targetTime).LastOrDefault();
-        // 目標時間より後の最初のポイント
-        var after = dataPoints.Where(dp => dp.Timestamp >= targetTime).FirstOrDefault();
-        
-        if (before == null && after == null)
-            return 0;
-        
-        if (before == null)
-            return after!.Value * scale;
-        
-        if (after == null)
-            return before.Value * scale;
-        
-        if (before.Timestamp == after.Timestamp)
-            return before.Value * scale;
-        
-        // 線形補間
-        var totalTicks = (after.Timestamp - before.Timestamp).Ticks;
-        var targetTicks = (targetTime - before.Timestamp).Ticks;
-        var ratio = (double)targetTicks / totalTicks;
-        
-        return (before.Value + (after.Value - before.Value) * ratio) * scale;
-    }
-
-    /// <summary>
-    /// カウンター順に色を取得
-    /// </summary>
-    private ScottPlot.Color GetNextColor(int index)
-    {
-        var colors = new[]
-        {
-            ScottPlot.Colors.Blue,
-            ScottPlot.Colors.Red,
-            ScottPlot.Colors.Green,
-            ScottPlot.Colors.Orange,
-            ScottPlot.Colors.Purple,
-            ScottPlot.Colors.Brown,
-            ScottPlot.Colors.Pink,
-            ScottPlot.Colors.Gray,
-            ScottPlot.Colors.Olive,
-            ScottPlot.Colors.Cyan
-        };
-        
-        return colors[index % colors.Length];
     }
 
     /// <summary>
@@ -2689,22 +2444,9 @@ public partial class MainWindow : Window
             return color;
         }
 
-        color = GetNextColor(_counterLineColors.Count);
+        color = ChartColorPalette.GetNextColor(_counterLineColors.Count);
         _counterLineColors[counter] = color;
         return color;
-    }
-    
-    /// <summary>
-    /// ScottPlot.ColorをSystem.Windows.Media.Colorに変換
-    /// </summary>
-    private System.Windows.Media.Color ConvertToMediaColor(ScottPlot.Color scottPlotColor)
-    {
-        return System.Windows.Media.Color.FromArgb(
-            scottPlotColor.A,
-            scottPlotColor.R,
-            scottPlotColor.G,
-            scottPlotColor.B
-        );
     }
     
     private void UpdateChartVisibility()
@@ -2759,7 +2501,7 @@ public partial class MainWindow : Window
             // 各カウンターの統計情報を計算
             foreach (var counterName in currentCounters.OrderBy(c => c))
             {
-                var dataPoints = GetDisplayDataPoints(counterName);
+                var dataPoints = GetCurrentDisplayDataPoints(counterName);
                 if (dataPoints.Any())
                 {
                     // PerformanceDataPointから(DateTime, double)タプルに変換
@@ -2796,20 +2538,20 @@ public partial class MainWindow : Window
     {
         try
         {
-            // PDH風の統計計算を実装
-            var statistics = ComputeCounterStatistics(counterName, dataPoints);
-            
             // 単位情報を取得（既存のフォーマット機能を使用）
-            var unit = EstimateUnit(counterName);
+            var unit = ValueFormatHelper.EstimateUnit(counterName);
+            
+            // PDH風の統計計算を実装
+            var statistics = CounterStatisticsCalculator.Compute(counterName, dataPoints, unit);
             
             // フォーマットされた値を作成
-            var minFormatted = FormatValueWithUnit(statistics.Minimum, unit);
-            var maxFormatted = FormatValueWithUnit(statistics.Maximum, unit);
-            var avgFormatted = FormatValueWithUnit(statistics.Average, unit);
+            var minFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Minimum, unit);
+            var maxFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Maximum, unit);
+            var avgFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Average, unit);
             
             return new CounterStatisticsItem
             {
-                CounterName = GetCounterDisplayName(counterName),
+                CounterName = CounterPathFormatter.GetDisplayName(counterName),
                 Average = avgFormatted,
                 AverageValue = statistics.Average,
                 Maximum = maxFormatted,
@@ -2825,7 +2567,7 @@ public partial class MainWindow : Window
             // エラー時は簡単なアイテムを返す
             return new CounterStatisticsItem
             {
-                CounterName = GetCounterDisplayName(counterName),
+                CounterName = CounterPathFormatter.GetDisplayName(counterName),
                 Average = "エラー",
                 AverageValue = double.NaN,
                 Maximum = "エラー",
@@ -2885,16 +2627,6 @@ public partial class MainWindow : Window
             DispatcherPriority.Loaded);
     }
     
-    /// <summary>
-    /// フォーマットされた値から単位部分を抽出
-    /// </summary>
-    private string ExtractUnit(string formattedValue)
-    {
-        // 数値以外の部分を単位として抽出
-        var match = System.Text.RegularExpressions.Regex.Match(formattedValue, @"[^\d\.,\-\s]+");
-        return match.Success ? match.Value : "";
-    }
-
     private void AddCounterTab(string counter)
     {
         try
@@ -3025,7 +2757,10 @@ public partial class MainWindow : Window
     /// </summary>
     private UIElement CreateStatisticsPanel(string counter, List<PerformanceDataPoint> dataPoints)
     {
-        var statistics = CalculateStatistics(counter, dataPoints);
+        var statistics = CounterStatisticsCalculator.Calculate(
+            counter,
+            dataPoints,
+            ValueFormatHelper.EstimateUnit(counter));
         
         var border = new Border
         {
@@ -3082,114 +2817,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// PDH風の統計計算（PDH_STATISTICSの形式に合わせた実装）
-    /// </summary>
-    private CounterStatistics ComputeCounterStatistics(string counterName, List<(DateTime Timestamp, double Value)> dataPoints)
-    {
-        if (!dataPoints.Any())
-        {
-            return new CounterStatistics
-            {
-                CounterName = counterName,
-                DataPointCount = 0,
-                Average = 0,
-                Maximum = 0,
-                Minimum = 0,
-                StandardDeviation = 0,
-                Unit = EstimateUnit(counterName)
-            };
-        }
-
-        // 統計情報は元の値で計算（スケールは適用しない）
-        // これにより、実際のデータ値の統計が表示される
-        var values = dataPoints.Select(dp => dp.Value).ToArray();
-        
-        // PDH_STATISTICSの計算ロジックを模倣
-        // PDHでは内部的に以下の統計を計算します
-        var count = (uint)values.Length;
-        var sum = values.Sum();
-        var mean = sum / count;
-        
-        // PDHの統計計算アルゴリズムに従った実装
-        var min = values.Min();
-        var max = values.Max();
-        
-        // 標準偏差の計算（PDH風）
-        var variance = values.Select(v => Math.Pow(v - mean, 2)).Sum() / count;
-        var standardDeviation = Math.Sqrt(variance);
-
-        return new CounterStatistics
-        {
-            CounterName = counterName,
-            DataPointCount = dataPoints.Count,
-            Average = mean,
-            Maximum = max,
-            Minimum = min,
-            StandardDeviation = standardDeviation,
-            FirstTimestamp = dataPoints.Min(dp => dp.Timestamp),
-            LastTimestamp = dataPoints.Max(dp => dp.Timestamp),
-            Unit = EstimateUnit(counterName)
-        };
-    }
-
-    /// <summary>
-    /// 統計情報を計算
-    /// </summary>
-    private CounterStatistics CalculateStatistics(string counter, List<PerformanceDataPoint> dataPoints)
-    {
-        if (!dataPoints.Any())
-        {
-            return new CounterStatistics
-            {
-                CounterName = counter,
-                DataPointCount = 0
-            };
-        }
-
-        var values = dataPoints.Select(dp => dp.Value).ToList();
-        var average = values.Average();
-        var variance = values.Select(v => Math.Pow(v - average, 2)).Average();
-        var standardDeviation = Math.Sqrt(variance);
-
-        // カウンターの種類に基づいて単位を推定
-        var unit = EstimateUnit(counter);
-
-        return new CounterStatistics
-        {
-            CounterName = counter,
-            DataPointCount = dataPoints.Count,
-            Average = average,
-            Maximum = values.Max(),
-            Minimum = values.Min(),
-            StandardDeviation = standardDeviation,
-            FirstTimestamp = dataPoints.Min(dp => dp.Timestamp),
-            LastTimestamp = dataPoints.Max(dp => dp.Timestamp),
-            Unit = unit
-        };
-    }
-
-    /// <summary>
-    /// カウンターの種類から単位を推定
-    /// </summary>
-    private string EstimateUnit(string counter)
-    {
-        var lowerCounter = counter.ToLower();
-        
-        if (lowerCounter.Contains("% processor time") || lowerCounter.Contains("% idle time"))
-            return "%";
-        if (lowerCounter.Contains("available mbytes") || lowerCounter.Contains("mbytes"))
-            return "MB";
-        if (lowerCounter.Contains("bytes") && !lowerCounter.Contains("mbytes"))
-            return "Bytes";
-        if (lowerCounter.Contains("/sec"))
-            return "/sec";
-        if (lowerCounter.Contains("count"))
-            return "count";
-        
-        return "";
-    }
-
-    /// <summary>
     /// カウンターデータをCSVファイルに出力
     /// </summary>
     private void ExportCounterDataToCsv(string counter, List<PerformanceDataPoint> dataPoints)
@@ -3199,28 +2826,14 @@ public partial class MainWindow : Window
             var saveFileDialog = new SaveFileDialog
             {
                 Filter = "CSV Files (*.csv)|*.csv",
-                FileName = $"{GetCounterDisplayName(counter).Replace(" - ", "_").Replace(" ", "_")}.csv",
+                FileName = CounterCsvBuilder.BuildDefaultFileName(counter),
                 Title = "CSVファイルを保存"
             };
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                var csv = new StringBuilder();
-                
-                // ヘッダー行
-                csv.AppendLine("Timestamp,Value,FormattedValue,Unit,Counter");
-                
-                // データ行
-                foreach (var dataPoint in dataPoints.OrderBy(dp => dp.Timestamp))
-                {
-                    csv.AppendLine($"{dataPoint.Timestamp:yyyy-MM-dd HH:mm:ss}," +
-                                 $"{dataPoint.Value}," +
-                                 $"\"{dataPoint.FormattedValue}\"," +
-                                 $"\"{dataPoint.Unit}\"," +
-                                 $"\"{dataPoint.Counter}\"");
-                }
-                
-                File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
+                var csv = CounterCsvBuilder.BuildSingleCounterCsv(dataPoints);
+                File.WriteAllText(saveFileDialog.FileName, csv, Encoding.UTF8);
                 
                 AddOperationLog(LogLevel.Success, $"CSVファイルが保存されました。\n{saveFileDialog.FileName}");
             }
@@ -3231,105 +2844,6 @@ public partial class MainWindow : Window
             MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"CSV export failed: {ex}");
-        }
-    }
-
-    /// <summary>
-    /// カウンター名を短縮して表示用の名前を生成
-    /// </summary>
-    private string GetCounterDisplayName(string counter)
-    {
-        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 3)
-        {
-            var objectName = parts[1];
-            var counterName = parts[2];
-            
-            // インスタンス名を抽出
-            var instanceName = "";
-            if (objectName.Contains('(') && objectName.Contains(')'))
-            {
-                var startIndex = objectName.IndexOf('(');
-                var endIndex = objectName.IndexOf(')');
-                instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
-                objectName = objectName.Substring(0, startIndex);
-                
-                // インスタンス名がある場合は含める
-                return $"{objectName}({instanceName}) - {counterName}";
-            }
-            
-            return $"{objectName} - {counterName}";
-        }
-        else if (parts.Length >= 2) // ローカルコンピューターの場合
-        {
-            var objectName = parts[0];
-            var counterName = parts[1];
-            
-            // インスタンス名を抽出
-            var instanceName = "";
-            if (objectName.Contains('(') && objectName.Contains(')'))
-            {
-                var startIndex = objectName.IndexOf('(');
-                var endIndex = objectName.IndexOf(')');
-                instanceName = objectName.Substring(startIndex + 1, endIndex - startIndex - 1);
-                objectName = objectName.Substring(0, startIndex);
-                
-                // インスタンス名がある場合は含める
-                return $"{objectName}({instanceName}) - {counterName}";
-            }
-            
-            return $"{objectName} - {counterName}";
-        }
-        return counter;
-    }
-
-    /// <summary>
-    /// カウンターパスからコンピューター名を抽出
-    /// </summary>
-    private string GetComputerNameFromCounterPath(string counter)
-    {
-        var parts = counter.Split('\\', StringSplitOptions.RemoveEmptyEntries);
-        
-        // \\コンピューター名\オブジェクト\カウンター の場合
-        if (counter.StartsWith("\\\\") && parts.Length >= 3)
-        {
-            return parts[0]; // コンピューター名
-        }
-        
-        // \オブジェクト\カウンター の場合（ローカルコンピューター）
-        // BLGファイルから抽出した実際のコンピューター名があれば使用
-        if (!string.IsNullOrEmpty(_actualComputerName))
-        {
-            return _actualComputerName;
-        }
-        
-        return "ローカルコンピューター";
-    }
-
-    /// <summary>
-    /// サンプリング間隔を分かりやすい形式にフォーマット
-    /// </summary>
-    private string FormatSamplingInterval(TimeSpan interval)
-    {
-        if (interval.TotalHours >= 1)
-        {
-            return $"{interval.TotalHours:F1}時間";
-        }
-        else if (interval.TotalMinutes >= 1)
-        {
-            return $"{interval.TotalMinutes:F1}分";
-        }
-        else if (interval.TotalSeconds >= 1)
-        {
-            return $"{interval.TotalSeconds:F1}秒";
-        }
-        else if (interval.TotalMilliseconds >= 1)
-        {
-            return $"{interval.TotalMilliseconds:F0}ミリ秒";
-        }
-        else
-        {
-            return "不明";
         }
     }
 
@@ -3367,33 +2881,6 @@ public partial class MainWindow : Window
 
 
 
-    /// <summary>
-    /// 値を単位付きでフォーマット
-    /// </summary>
-    private string FormatValueWithUnit(double value, string unit)
-    {
-        if (unit == "%")
-            return $"{value:N1}%";
-        if (unit == "MB")
-            return $"{value:N0} MB";
-        if (unit == "Bytes")
-        {
-            if (value >= 1073741824) // >= 1GB
-                return $"{value / 1073741824:N2} GB";
-            if (value >= 1048576) // >= 1MB
-                return $"{value / 1048576:N2} MB";
-            if (value >= 1024) // >= 1KB
-                return $"{value / 1024:N2} KB";
-            return $"{value:N0} Bytes";
-        }
-        if (unit == "/sec")
-            return $"{value:N2}/sec";
-        if (unit == "count")
-            return $"{value:N0}";
-        
-        return $"{value:N2}";
-    }
-
     private void CloseAllTabs_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -3419,7 +2906,7 @@ public partial class MainWindow : Window
                 .Select(counter => new
                 {
                     Counter = counter,
-                    DataPoints = GetDisplayDataPoints(counter)
+                    DataPoints = GetCurrentDisplayDataPoints(counter)
                 })
                 .Where(x => x.DataPoints.Any())
                 .ToList();
@@ -3441,39 +2928,17 @@ public partial class MainWindow : Window
 
             if (saveFileDialog.ShowDialog() == true)
             {
-                var csv = new StringBuilder();
-                
-                // ヘッダー行
-                csv.AppendLine("Timestamp,CounterName,Value,FormattedValue,Unit");
-                
-                // 各カウンターのデータを統合
-                var allData = new List<(DateTime timestamp, string counter, PerformanceDataPoint data)>();
-                
-                foreach (var counterPair in exportCounterData)
-                {
-                    foreach (var dataPoint in counterPair.DataPoints)
-                    {
-                        allData.Add((dataPoint.Timestamp, counterPair.Counter, dataPoint));
-                    }
-                }
-                
-                // タイムスタンプ順にソート
-                foreach (var item in allData.OrderBy(x => x.timestamp).ThenBy(x => x.counter))
-                {
-                    var dp = item.data;
-                    csv.AppendLine($"{dp.Timestamp:yyyy-MM-dd HH:mm:ss}," +
-                                 $"\"{GetCounterDisplayName(item.counter)}\"," +
-                                 $"{dp.Value}," +
-                                 $"\"{dp.FormattedValue}\"," +
-                                 $"\"{dp.Unit}\"");
-                }
-                
-                File.WriteAllText(saveFileDialog.FileName, csv.ToString(), Encoding.UTF8);
+                var allDataCount = exportCounterData.Sum(static item => item.DataPoints.Count);
+                var csv = CounterCsvBuilder.BuildAllCountersCsv(
+                    exportCounterData.Select(static item => (item.Counter, (IEnumerable<PerformanceDataPoint>)item.DataPoints)),
+                    CounterPathFormatter.GetDisplayName);
+
+                File.WriteAllText(saveFileDialog.FileName, csv, Encoding.UTF8);
                 
                 AddOperationLog(LogLevel.Success, $"全データがCSVファイルに保存されました。\n" +
                               $"ファイル: {saveFileDialog.FileName}\n" +
                               $"カウンター数: {exportCounterData.Count}個\n" +
-                              $"データポイント数: {allData.Count}個");
+                              $"データポイント数: {allDataCount}個");
             }
         }
         catch (Exception ex)
@@ -3574,30 +3039,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// CSV行からタイムスタンプを解析
-    /// </summary>
-    private DateTime? ParseTimestampFromCsvLine(string csvLine)
-    {
-        try
-        {
-            var parts = csvLine.Split(',');
-            if (parts.Length > 0)
-            {
-                var timestampStr = parts[0].Trim('"');
-                if (DateTime.TryParse(timestampStr, out var timestamp))
-                {
-                    return timestamp;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            LogError($"Failed to parse timestamp from CSV line: {ex.Message}");
-        }
-        return null;
-    }
-
-    /// <summary>
     /// 時間範囲UIを更新
     /// </summary>
     private void UpdateTimeRangeUI()
@@ -3637,12 +3078,11 @@ public partial class MainWindow : Window
     {
         if (_timeRangeDetected)
         {
-            var totalDuration = _fileEndTime - _fileStartTime;
-            var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
-            var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
-            
-            var selectedStartTime = _fileStartTime + startOffset;
-            var selectedEndTime = _fileStartTime + endOffset;
+            var (selectedStartTime, selectedEndTime) = TimeRangeCalculator.CalculateRange(
+                _fileStartTime,
+                _fileEndTime,
+                StartTimeSlider.Value,
+                EndTimeSlider.Value);
             
             StartTimeText.Text = selectedStartTime.ToString("MM/dd HH:mm:ss");
             EndTimeText.Text = selectedEndTime.ToString("MM/dd HH:mm:ss");
@@ -3718,12 +3158,11 @@ public partial class MainWindow : Window
             DateTime selectedEndTime;
             if (_timeRangeDetected)
             {
-                var totalDuration = _fileEndTime - _fileStartTime;
-                var startOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * StartTimeSlider.Value / 100));
-                var endOffset = TimeSpan.FromTicks((long)(totalDuration.Ticks * EndTimeSlider.Value / 100));
-
-                selectedStartTime = _fileStartTime + startOffset;
-                selectedEndTime = _fileStartTime + endOffset;
+                (selectedStartTime, selectedEndTime) = TimeRangeCalculator.CalculateRange(
+                    _fileStartTime,
+                    _fileEndTime,
+                    StartTimeSlider.Value,
+                    EndTimeSlider.Value);
             }
             else
             {
@@ -3859,7 +3298,9 @@ public partial class MainWindow : Window
             bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
             
             // relog.exeコマンドライン文字列を生成
-            string relogCommand = GenerateRelogCommand(_currentBlgFile!, counters, useTimeConstraints ? startTime : (DateTime?)null, useTimeConstraints ? endTime : (DateTime?)null);
+            var effectiveStartTime = useTimeConstraints ? startTime : _fileStartTime;
+            var effectiveEndTime = useTimeConstraints ? endTime : _fileEndTime;
+            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile!, effectiveStartTime, effectiveEndTime);
             
             // UI表示を更新（relog.exe情報のみ表示）
             await Dispatcher.InvokeAsync(() =>
@@ -3928,8 +3369,8 @@ public partial class MainWindow : Window
                     var mappingResult = CounterLoadDataMapper.Map(
                         counterPath,
                         counterInfo,
-                        EstimateUnit,
-                        FormatValueWithUnit);
+                        ValueFormatHelper.EstimateUnit,
+                        ValueFormatHelper.FormatValueWithUnit);
 
                     if (mappingResult.DataPoints.Count > 0)
                     {
@@ -4039,12 +3480,12 @@ public partial class MainWindow : Window
             var lines = File.ReadAllLines(csvPath, Encoding.UTF8);
             if (lines.Length < 2) return;
             
-            var headers = ParseCsvLine(lines[0]);
+            var headers = CsvLineParser.Parse(lines[0]);
             var counterColumns = new Dictionary<string, int>();
             
             // Preprocess selectedCounters into a dictionary for fast lookups
             var normalizedCounters = selectedCounters.ToDictionary(
-                c => NormalizeCounterPath(c), 
+                c => CounterPathFormatter.Normalize(c), 
                 c => c
             );
             
@@ -4052,7 +3493,7 @@ public partial class MainWindow : Window
             for (int i = 1; i < headers.Count; i++)
             {
                 var headerName = headers[i];
-                var normalizedHeader = NormalizeCounterPath(headerName);
+                var normalizedHeader = CounterPathFormatter.Normalize(headerName);
                 
                 if (normalizedCounters.TryGetValue(normalizedHeader, out var matchingCounter) ||
                     selectedCounters.Any(c => headerName.Contains(c) || c.Contains(headerName)))
@@ -4072,14 +3513,14 @@ public partial class MainWindow : Window
                 
                 for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
                 {
-                    var values = ParseCsvLine(lines[lineIndex]);
+                    var values = CsvLineParser.Parse(lines[lineIndex]);
                     if (values.Count > columnIndex)
                     {
                         if (DateTime.TryParse(values[0], out var timestamp) &&
                             double.TryParse(values[columnIndex], out var value))
                         {
-                            var unit = EstimateUnit(counterPath);
-                            var formattedValue = FormatValueWithUnit(value, unit);
+                            var unit = ValueFormatHelper.EstimateUnit(counterPath);
+                            var formattedValue = ValueFormatHelper.FormatValueWithUnit(value, unit);
                             
                             dataPoints.Add(new PerformanceDataPoint
                             {
@@ -4106,55 +3547,6 @@ public partial class MainWindow : Window
                 }
             }
         });
-    }
-
-    /// <summary>
-    /// カウンターパスを正規化（比較用）
-    /// </summary>
-    private string NormalizeCounterPath(string path)
-    {
-        return path.Replace("\\", "/").Replace("\"", "").Trim().ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// CSV行を解析（カンマ区切り、ダブルクォート対応）
-    /// </summary>
-    private List<string> ParseCsvLine(string csvLine)
-    {
-        var result = new List<string>();
-        var current = new StringBuilder();
-        bool inQuotes = false;
-        
-        for (int i = 0; i < csvLine.Length; i++)
-        {
-            char c = csvLine[i];
-            
-            if (c == '"')
-            {
-                if (inQuotes && i + 1 < csvLine.Length && csvLine[i + 1] == '"')
-                {
-                    // エスケープされたダブルクォート
-                    current.Append('"');
-                    i++; // 次の文字をスキップ
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
-                }
-            }
-            else if (c == ',' && !inQuotes)
-            {
-                result.Add(current.ToString());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-        
-        result.Add(current.ToString());
-        return result;
     }
 
     private void LogError(string message)
@@ -4354,7 +3746,7 @@ public partial class MainWindow : Window
         // カウンター名表示
         var counterLabel = new TextBlock
         {
-            Text = GetCounterDisplayName(counter),
+            Text = CounterPathFormatter.GetDisplayName(counter),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             Foreground = System.Windows.Media.Brushes.DarkBlue,
@@ -4443,7 +3835,7 @@ public partial class MainWindow : Window
 
             if (ScalePanelColumn.Width.Value > 0)
             {
-                _lastScalePanelWidth = ScalePanelColumn.Width;
+                _panelLayoutState.RememberScalePanelWidth(ScalePanelColumn.Width);
             }
 
             ScalePanelColumn.MinWidth = 0;
@@ -4453,17 +3845,14 @@ public partial class MainWindow : Window
         }
 
         ScalePanelDividerHost.Visibility = Visibility.Visible;
-        ScalePanelToggleButton.Content = _isScalePanelCollapsed ? "◀" : "▶";
-        ScalePanelToggleButton.ToolTip = _isScalePanelCollapsed
+        ScalePanelToggleButton.Content = _panelLayoutState.IsScalePanelCollapsed ? "◀" : "▶";
+        ScalePanelToggleButton.ToolTip = _panelLayoutState.IsScalePanelCollapsed
             ? "クリックでスケール設定エリアを表示します"
             : "クリックでスケール設定エリアを非表示にします";
 
-        if (_isScalePanelCollapsed)
+        if (_panelLayoutState.IsScalePanelCollapsed)
         {
-            if (ScalePanelColumn.Width.Value > 0)
-            {
-                _lastScalePanelWidth = ScalePanelColumn.Width;
-            }
+            _panelLayoutState.RememberScalePanelWidth(ScalePanelColumn.Width);
 
             ScaleControlGroupBox.Visibility = Visibility.Collapsed;
             ScalePanelColumn.MinWidth = 0;
@@ -4478,7 +3867,7 @@ public partial class MainWindow : Window
 
         if (ScalePanelColumn.Width.Value <= 0)
         {
-            ScalePanelColumn.Width = _lastScalePanelWidth.Value > 0 ? _lastScalePanelWidth : new GridLength(230);
+            ScalePanelColumn.Width = _panelLayoutState.GetScalePanelWidth();
         }
 
         // 既存のコントロールをクリア
@@ -4565,8 +3954,8 @@ public partial class MainWindow : Window
 
             foreach (var counter in currentCounters)
             {
-                var dataPoints = GetDisplayDataPoints(counter);
-                if (!TryGetMaximumAbsoluteValue(dataPoints, out var maximumAbsoluteValue) ||
+                var dataPoints = GetCurrentDisplayDataPoints(counter);
+                if (!CounterValueModeConverter.TryGetMaximumAbsoluteValue(dataPoints, out var maximumAbsoluteValue) ||
                     !ScaleCatalog.TryCalculateScaleToTarget(maximumAbsoluteValue, out var newScale))
                 {
                     skippedCount++;
@@ -5063,42 +4452,6 @@ public partial class MainWindow : Window
     #region ヘルパーメソッド
 
     /// <summary>
-    /// relog.exeコマンドライン文字列を生成
-    /// </summary>
-    private string GenerateRelogCommand(string blgFilePath, List<string> counters, DateTime? startTime, DateTime? endTime)
-    {
-        try
-        {
-            var commandBuilder = new StringBuilder();
-            commandBuilder.AppendLine("relog.exe `");
-            
-            // 入力ファイル（引用符で囲む）
-            commandBuilder.AppendLine($"  \"{blgFilePath}\" `");
-            
-            // 出力ファイル
-            var outputFileName = Path.GetFileNameWithoutExtension(blgFilePath) + "_output.blg";
-            commandBuilder.AppendLine($"  -o \"{outputFileName}\" `");
-            
-            // バイナリフォーマット出力を明示的に指定
-            commandBuilder.AppendLine("  -f BIN `");
-            
-            // 時間範囲指定（時間制約が指定されていない場合でもファイル内の開始/終了時間を使用）
-            DateTime effectiveStartTime = startTime ?? _fileStartTime;
-            DateTime effectiveEndTime = endTime ?? _fileEndTime;
-            
-            commandBuilder.AppendLine($"  -b \"{effectiveStartTime:yyyy/MM/dd HH:mm:ss}\" `");
-            commandBuilder.Append($"  -e \"{effectiveEndTime:yyyy/MM/dd HH:mm:ss}\"");
-            
-            return commandBuilder.ToString();
-        }
-        catch (Exception ex)
-        {
-            LogError($"relog.exeコマンド生成エラー: {ex.Message}");
-            return $"relog.exe コマンド生成エラー: {ex.Message}";
-        }
-    }
-
-    /// <summary>
     /// relog.exe情報表示を更新
     /// </summary>
     private void UpdateRelogCommandDisplay()
@@ -5107,30 +4460,20 @@ public partial class MainWindow : Window
         {
             UpdateExecuteButtonState();
 
-            // 現在選択されているカウンターを取得
-            var selectedCounters = GetSelectedCounters();
-            
-            if (selectedCounters.Count == 0 || string.IsNullOrEmpty(_currentBlgFile))
+            if (string.IsNullOrEmpty(_currentBlgFile))
             {
-                // 選択されたカウンターまたはBLGファイルがない場合は非表示
                 RelogCommandExpander.Visibility = Visibility.Collapsed;
                 return;
             }
-            
-            // 時間制約の有効性を判定
-            bool useTimeConstraints = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
-            DateTime? startTime = null;
-            DateTime? endTime = null;
-            
-            if (useTimeConstraints)
-            {
-                var totalDuration = _fileEndTime - _fileStartTime;
-                startTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * StartTimeSlider.Value / 100);
-                endTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * EndTimeSlider.Value / 100);
-            }
+
+            var selectedCounters = GetSelectedCounters();
             
             // relog.exeコマンドを生成
-            string relogCommand = GenerateRelogCommand(_currentBlgFile, selectedCounters, startTime, endTime);
+            var useTimeConstraints = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
+            var (effectiveStartTime, effectiveEndTime) = useTimeConstraints
+                ? TimeRangeCalculator.CalculateRange(_fileStartTime, _fileEndTime, StartTimeSlider.Value, EndTimeSlider.Value)
+                : (_fileStartTime, _fileEndTime);
+            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile, effectiveStartTime, effectiveEndTime);
             
             // UI表示を更新
             RelogCommandExpander.Visibility = Visibility.Visible;
@@ -5152,11 +4495,11 @@ public partial class MainWindow : Window
             return (_fileStartTime, _fileEndTime);
         }
 
-        var totalDuration = _fileEndTime - _fileStartTime;
-        var startTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * StartTimeSlider.Value / 100);
-        var endTime = _fileStartTime.AddMilliseconds(totalDuration.TotalMilliseconds * EndTimeSlider.Value / 100);
-        
-        return (startTime, endTime);
+        return TimeRangeCalculator.CalculateRange(
+            _fileStartTime,
+            _fileEndTime,
+            StartTimeSlider.Value,
+            EndTimeSlider.Value);
     }
 
     /// <summary>
@@ -5199,23 +4542,10 @@ public partial class MainWindow : Window
     {
         try
         {
-            var logEntry = new LogEntry
-            {
-                Timestamp = DateTime.Now,
-                Level = level,
-                Message = message
-            };
-            
             // UIスレッドで実行
             if (Dispatcher.CheckAccess())
             {
-                _operationLogs.Insert(0, logEntry); // 新しいログを先頭に追加
-                
-                // 最大1000件で古いログを削除
-                while (_operationLogs.Count > 1000)
-                {
-                    _operationLogs.RemoveAt(_operationLogs.Count - 1);
-                }
+                _operationLogStore.AddOperationLog(level, message);
             }
             else
             {
@@ -5242,20 +4572,7 @@ public partial class MainWindow : Window
             
             if (File.Exists(logPath))
             {
-                _errorLogs.Clear();
-                
-                var lines = File.ReadAllLines(logPath, Encoding.UTF8);
-                
-                foreach (var line in lines.Reverse().Take(1000)) // 最新1000件のみ
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-                    
-                    var logEntry = ParseLogLine(line);
-                    if (logEntry != null)
-                    {
-                        _errorLogs.Add(logEntry);
-                    }
-                }
+                _operationLogStore.LoadErrorLogLines(File.ReadLines(logPath, Encoding.UTF8));
                 
                 AddOperationLog(LogLevel.Info, $"エラーログファイルから {_errorLogs.Count} 件のログを読み込みました。");
             }
@@ -5271,64 +4588,13 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// ログ行を解析してLogEntryを作成
-    /// </summary>
-    private LogEntry? ParseLogLine(string line)
-    {
-        try
-        {
-            // フォーマット: [yyyy-MM-dd HH:mm:ss] メッセージ
-            if (line.StartsWith("[") && line.Contains("] "))
-            {
-                var endBracket = line.IndexOf("] ");
-                if (endBracket > 0)
-                {
-                    var timestampStr = line.Substring(1, endBracket - 1);
-                    var message = line.Substring(endBracket + 2);
-                    
-                    if (DateTime.TryParse(timestampStr, out var timestamp))
-                    {
-                        // メッセージからレベルを推定
-                        var level = LogLevel.Info;
-                        if (message.Contains("ERROR") || message.Contains("エラー") || message.Contains("失敗"))
-                            level = LogLevel.Error;
-                        else if (message.Contains("WARNING") || message.Contains("警告"))
-                            level = LogLevel.Warning;
-                        else if (message.Contains("INFO"))
-                            level = LogLevel.Info;
-                        
-                        return new LogEntry
-                        {
-                            Timestamp = timestamp,
-                            Level = level,
-                            Message = message
-                        };
-                    }
-                }
-            }
-            
-            // タイムスタンプがない場合は現在時刻を使用
-            return new LogEntry
-            {
-                Timestamp = DateTime.Now,
-                Level = LogLevel.Info,
-                Message = line
-            };
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
     /// 操作ログをクリア
     /// </summary>
     private void ClearOperationLogs()
     {
         try
         {
-            _operationLogs.Clear();
+            _operationLogStore.ClearOperationLogs();
             AddOperationLog(LogLevel.Info, "操作ログがクリアされました。");
         }
         catch (Exception ex)
@@ -5344,7 +4610,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            _errorLogs.Clear();
+            _operationLogStore.ClearErrorLogs();
             
             // ファイルもクリア
             var logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "error.log");
@@ -5567,25 +4833,6 @@ public partial class MainWindow : Window
     #endregion
 
     #region ヘルパーメソッド（ファイル情報）
-
-    /// <summary>
-    /// ファイルサイズを読みやすい形式にフォーマット
-    /// </summary>
-    /// <param name="bytes">バイト数</param>
-    /// <returns>フォーマットされたファイルサイズ文字列</returns>
-    private string FormatFileSize(long bytes)
-    {
-        if (bytes < 1024)
-            return $"{bytes} B";
-        
-        if (bytes < 1024 * 1024)
-            return $"{bytes / 1024.0:F1} KB";
-        
-        if (bytes < 1024 * 1024 * 1024)
-            return $"{bytes / (1024.0 * 1024.0):F1} MB";
-        
-        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
-    }
 
     /// <summary>
     /// 凡例の初期化
@@ -5836,10 +5083,11 @@ public partial class MainWindow : Window
         {
             foreach (var item in _legendItems)
             {
-                if (TryGetLatestDisplayValue(item.CounterPath, out var latestValue))
+                if (_counterData.TryGetValue(item.CounterPath, out var rawData) &&
+                    CounterValueModeConverter.TryGetLatestValue(rawData, _currentValueMode, out var latestValue))
                 {
                     // 値をフォーマット
-                    item.CurrentValue = FormatCounterValue(latestValue);
+                    item.CurrentValue = ValueFormatHelper.FormatCounterValue(latestValue);
                 }
                 else
                 {
@@ -5853,24 +5101,6 @@ public partial class MainWindow : Window
         }
     }
     
-    /// <summary>
-    /// カウンター値をフォーマット
-    /// </summary>
-    private string FormatCounterValue(double value)
-    {
-        if (double.IsNaN(value) || double.IsInfinity(value))
-            return "-";
-            
-        if (Math.Abs(value) >= 1000000)
-            return $"{value / 1000000:F2}M";
-        if (Math.Abs(value) >= 1000)
-            return $"{value / 1000:F2}K";
-        if (Math.Abs(value) >= 1)
-            return $"{value:F2}";
-        
-        return $"{value:F4}";
-    }
-
     #endregion
 
     #region グラフサイズ関連
