@@ -250,17 +250,13 @@
                     
                     <!-- ボタン群 -->
                     <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Left" Margin="12,0,12,12">
-                        <Button AutomationProperties.Name="選択されたカウンターを読み込み"
-                               Click="ExecuteSelectedCounters_Click"
-                               Style="{StaticResource PrimaryActionButtonStyle}"
-                               Padding="8,4"
-                               Margin="0,0,10,0"
-                               IsEnabled="False"
-                               x:Name="ExecuteButton">
-                            <TextBlock Text="🚀 選択されたカウンターを読み込み"
-                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                       FontWeight="SemiBold"/>
-                        </Button>
+                        <Button x:Name="OpenCounterAddDialogButton"
+                                Content="カウンターを追加..."
+                                Click="OpenCounterAddDialog_Click"
+                                Style="{StaticResource SecondaryActionButtonStyle}"
+                                Padding="8,5"
+                                Margin="0,0,10,0"
+                                IsEnabled="False"/>
                         <Button Content="すべて解除" Click="UnselectAll_Click" Style="{StaticResource GhostButtonStyle}"/>
                     </StackPanel>
                     
@@ -272,31 +268,33 @@
                     <Grid Grid.Row="8" x:Name="CounterSelectionControlsPanel" Margin="8,0,8,8">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Button Grid.Row="0"
-                                x:Name="OpenCounterAddDialogButton"
-                                Content="カウンターを追加..."
-                                Click="OpenCounterAddDialog_Click"
-                                Style="{StaticResource SecondaryActionButtonStyle}"
-                                Padding="8,5"
-                                Margin="0,0,0,8"
-                                IsEnabled="False"
-                                HorizontalAlignment="Stretch"/>
-
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,5">
-                            <Button Content="削除(&lt;&lt;)"
-                                    Click="RemoveSelectedCounter_Click"
+                        <Grid Grid.Row="0" Margin="0,0,0,5">
+                            <Button HorizontalAlignment="Left"
+                                    AutomationProperties.Name="選択されたカウンターを読み込み"
+                                    Click="ExecuteSelectedCounters_Click"
+                                    Style="{StaticResource PrimaryActionButtonStyle}"
                                     Padding="8,4"
-                                    Margin="0,0,5,0"/>
-                            <Button Content="クリア"
-                                    Click="ClearSelectedCounters_Click"
-                                    Padding="8,4"/>
-                        </StackPanel>
+                                    IsEnabled="False"
+                                    x:Name="ExecuteButton">
+                                <TextBlock Text="🚀 選択されたカウンターを読み込み"
+                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                           FontWeight="SemiBold"/>
+                            </Button>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="削除(&lt;&lt;)"
+                                        Click="RemoveSelectedCounter_Click"
+                                        Padding="8,4"
+                                        Margin="0,0,5,0"/>
+                                <Button Content="クリア"
+                                        Click="ClearSelectedCounters_Click"
+                                        Padding="8,4"/>
+                            </StackPanel>
+                        </Grid>
 
-                        <GroupBox Grid.Row="2" Header="追加されたカウンター">
+                        <GroupBox Grid.Row="1" Header="追加されたカウンター">
                             <ListView x:Name="SelectedCountersListView"
                                       SelectionMode="Extended"
                                       BorderThickness="0"
@@ -536,11 +534,23 @@
                             </Grid>
                         </Border>
                         
+                        <!-- 凡例領域のドラッグリサイズ用スプリッター（トグルボタンの下に重ねる） -->
+                        <GridSplitter Grid.Column="1"
+                                      x:Name="LegendGridSplitter"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"
+                                      ResizeBehavior="PreviousAndNext"
+                                      ResizeDirection="Columns"
+                                      Background="Transparent"
+                                      Cursor="SizeWE"
+                                      ToolTip="ドラッグで凡例の幅を変更します"/>
+
                         <!-- 凡例領域の表示切り替え -->
                         <Grid Grid.Column="1" x:Name="LegendDividerHost" Visibility="Collapsed">
                             <Border Background="{StaticResource PanelDividerBrush}"
                                     BorderBrush="{StaticResource DividerBrush}"
-                                    BorderThickness="1,0,1,0"/>
+                                    BorderThickness="1,0,1,0"
+                                    IsHitTestVisible="False"/>
                             <Button x:Name="LegendPanelToggleButton"
                                     Width="16"
                                     Height="34"

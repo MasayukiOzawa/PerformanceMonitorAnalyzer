@@ -794,6 +794,7 @@ public partial class MainWindow : Window
             LegendColumn.MinWidth = 0;
             LegendColumn.Width = new GridLength(0);
             LegendSplitterColumn.Width = new GridLength(0);
+            LegendGridSplitter.IsEnabled = false;
             return;
         }
 
@@ -814,12 +815,14 @@ public partial class MainWindow : Window
             LegendColumn.MinWidth = 0;
             LegendColumn.Width = new GridLength(0);
             LegendSplitterColumn.Width = new GridLength(22);
+            LegendGridSplitter.IsEnabled = false;
             return;
         }
 
         LegendGroupBox.Visibility = Visibility.Visible;
         LegendColumn.MinWidth = 150;
         LegendSplitterColumn.Width = new GridLength(22);
+        LegendGridSplitter.IsEnabled = true;
 
         if (LegendColumn.Width.Value <= 0)
         {
@@ -5107,16 +5110,14 @@ public partial class MainWindow : Window
         {
             UpdateExecuteButtonState();
 
-            // 現在選択されているカウンターを取得
-            var selectedCounters = GetSelectedCounters();
-            
-            if (selectedCounters.Count == 0 || string.IsNullOrEmpty(_currentBlgFile))
+            if (string.IsNullOrEmpty(_currentBlgFile))
             {
-                // 選択されたカウンターまたはBLGファイルがない場合は非表示
                 RelogCommandExpander.Visibility = Visibility.Collapsed;
                 return;
             }
-            
+
+            var selectedCounters = GetSelectedCounters();
+
             // 時間制約の有効性を判定
             bool useTimeConstraints = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
             DateTime? startTime = null;
