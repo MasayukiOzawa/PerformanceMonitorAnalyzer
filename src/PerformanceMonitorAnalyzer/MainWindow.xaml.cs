@@ -2658,6 +2658,9 @@ public partial class MainWindow : Window
         mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var sortableHeaderTemplate = TryFindResource("SortableDataGridHeaderTemplate") as DataTemplate;
+        var rightAlignedCellStyle = new Style(typeof(TextBlock));
+        rightAlignedCellStyle.Setters.Add(new Setter(TextBlock.TextAlignmentProperty, TextAlignment.Right));
+        rightAlignedCellStyle.Setters.Add(new Setter(FrameworkElement.HorizontalAlignmentProperty, System.Windows.HorizontalAlignment.Stretch));
 
         var dataGrid = new DataGrid
         {
@@ -2688,6 +2691,7 @@ public partial class MainWindow : Window
             {
                 StringFormat = "N2"
             },
+            ElementStyle = rightAlignedCellStyle,
             Width = 100
         });
 
@@ -2696,6 +2700,7 @@ public partial class MainWindow : Window
             Header = "フォーマット済み値",
             HeaderTemplate = sortableHeaderTemplate,
             Binding = new System.Windows.Data.Binding("FormattedValue"),
+            ElementStyle = rightAlignedCellStyle,
             Width = 120
         });
 
@@ -2813,6 +2818,16 @@ public partial class MainWindow : Window
         exportButton.Click += (sender, e) => ExportCounterDataToCsv(counter, dataPoints);
         stackPanel.Children.Add(exportButton);
 
+        var copyTsvButton = new Button
+        {
+            Content = "TSVコピー",
+            Padding = new Thickness(10, 2, 10, 2),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+        copyTsvButton.Click += (sender, e) => CopyCounterDataToTsvClipboard(counter, dataPoints);
+        stackPanel.Children.Add(copyTsvButton);
+
         border.Child = stackPanel;
         return border;
     }
@@ -2845,6 +2860,34 @@ public partial class MainWindow : Window
             MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"CSV export failed: {ex}");
+        }
+    }
+
+    private void CopyCounterDataToTsvClipboard(string counter, List<PerformanceDataPoint> dataPoints)
+    {
+        try
+        {
+            if (!dataPoints.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするデータがありません。");
+                MessageBox.Show("コピーするデータがありません。", "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var tsv = CounterCsvBuilder.BuildSingleCounterTsv(dataPoints);
+            Clipboard.SetText(tsv);
+
+            AddOperationLog(LogLevel.Success,
+                $"TSVデータをクリップボードにコピーしました。\n" +
+                $"カウンター: {CounterPathFormatter.GetDisplayName(counter)}\n" +
+                $"データポイント数: {dataPoints.Count}個");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"TSVデータのクリップボードコピーに失敗しました: {ex.Message}");
+            MessageBox.Show($"TSVデータのクリップボードコピーに失敗しました: {ex.Message}",
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"TSV clipboard copy failed: {ex}");
         }
     }
 
@@ -2899,18 +2942,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private List<(string Counter, List<PerformanceDataPoint> DataPoints)> GetExportableDisplayCounterData()
+    {
+        return _counterData.Keys
+            .Select(counter => (
+                Counter: counter,
+                DataPoints: GetCurrentDisplayDataPoints(counter)))
+            .Where(static item => item.DataPoints.Any())
+            .ToList();
+    }
+
     private void ExportAllDataToCsv_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            var exportCounterData = _counterData.Keys
-                .Select(counter => new
-                {
-                    Counter = counter,
-                    DataPoints = GetCurrentDisplayDataPoints(counter)
-                })
-                .Where(x => x.DataPoints.Any())
-                .ToList();
+            var exportCounterData = GetExportableDisplayCounterData();
 
             if (!exportCounterData.Any())
             {
@@ -2948,6 +2994,40 @@ public partial class MainWindow : Window
             MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
                           "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             LogError($"All data CSV export failed: {ex}");
+        }
+    }
+
+    private void CopyAllDataToTsvClipboard_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var exportCounterData = GetExportableDisplayCounterData();
+
+            if (!exportCounterData.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするデータがありません。BLGファイルを読み込んでカウンターを選択してください。");
+                MessageBox.Show("コピーするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。",
+                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var allDataCount = exportCounterData.Sum(static item => item.DataPoints.Count);
+            var tsv = CounterCsvBuilder.BuildAllCountersTsv(
+                exportCounterData.Select(static item => (item.Counter, (IEnumerable<PerformanceDataPoint>)item.DataPoints)),
+                CounterPathFormatter.GetDisplayName);
+
+            Clipboard.SetText(tsv);
+
+            AddOperationLog(LogLevel.Success, $"全データをTSV形式でクリップボードにコピーしました。\n" +
+                          $"カウンター数: {exportCounterData.Count}個\n" +
+                          $"データポイント数: {allDataCount}個");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"TSVデータのクリップボードコピーに失敗しました: {ex.Message}");
+            MessageBox.Show($"TSVデータのクリップボードコピーに失敗しました: {ex.Message}",
+                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            LogError($"All data TSV clipboard copy failed: {ex}");
         }
     }
 

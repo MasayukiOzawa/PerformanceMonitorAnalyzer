@@ -52,12 +52,13 @@
                                   Margin="3">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <CheckBox Content="{Binding DisplayName}"
-                                              IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                               Checked="CounterSelectorCheckBox_Changed"
                                               Unchecked="CounterSelectorCheckBox_Changed"
                                               Tag="{Binding}"
-                                              ToolTip="{Binding CounterName}"/>
+                                              ToolTip="{Binding CounterName}">
+                                        <TextBlock Text="{Binding DisplayName}"/>
+                                    </CheckBox>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
@@ -71,12 +72,13 @@
                                   Margin="3">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <CheckBox Content="{Binding DisplayName}"
-                                              IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                               Checked="CounterSelectorCheckBox_Changed"
                                               Unchecked="CounterSelectorCheckBox_Changed"
                                               Tag="{Binding}"
-                                              ToolTip="{Binding InstanceDisplayName}"/>
+                                              ToolTip="{Binding InstanceDisplayName}">
+                                        <TextBlock Text="{Binding DisplayName}"/>
+                                    </CheckBox>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>

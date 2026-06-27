@@ -1039,6 +1039,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Vertical" Margin="0,0,16,0">
                                 <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
@@ -1062,6 +1063,12 @@
                             <Button Grid.Column="2"
                                    Content="全データをCSV出力" 
                                    Click="ExportAllDataToCsv_Click" 
+                                   Style="{StaticResource SecondaryActionButtonStyle}"
+                                   Padding="8,2,8,2"
+                                   Margin="0,0,10,0"/>
+                            <Button Grid.Column="3"
+                                   Content="全データをTSVコピー"
+                                   Click="CopyAllDataToTsvClipboard_Click"
                                    Style="{StaticResource SecondaryActionButtonStyle}"
                                    Padding="8,2,8,2"/>
                         </Grid>
