@@ -230,9 +230,8 @@ build-and-run.bat "D:\Git\PerformanceMonitorAnalyzer\sample\DataCollector01.blg"
 publish.bat
 ```
 
-このバッチファイルは以下の全アーキテクチャ向けにシングルバイナリを生成します：
+このバッチファイルは以下のアーキテクチャ向けにシングルバイナリを生成します：
 - Windows x64: `publish/win-x64/PerformanceMonitorAnalyzer.exe`
-- Windows x86: `publish/win-x86/PerformanceMonitorAnalyzer.exe`
 - Windows ARM64: `publish/win-arm64/PerformanceMonitorAnalyzer.exe`
 - publish 出力には `config\counter-patterns.yaml` も同梱されます。
 
@@ -252,12 +251,6 @@ dotnet run
 ```bash
 cd src/PerformanceMonitorAnalyzer
 dotnet publish --configuration Release --runtime win-x64 --self-contained true --output ../../publish/win-x64
-```
-
-#### Windows x86向け
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet publish --configuration Release --runtime win-x86 --self-contained true --output ../../publish/win-x86
 ```
 
 #### Windows ARM64向け
