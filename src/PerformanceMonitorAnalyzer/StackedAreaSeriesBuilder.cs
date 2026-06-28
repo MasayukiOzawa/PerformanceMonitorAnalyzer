@@ -45,7 +45,10 @@ public static class StackedAreaSeriesBuilder
             }
 
             var finalScale = counterScales.GetValueOrDefault(counter, 1.0);
-            var dataDict = dataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * finalScale);
+            var sortedDataPoints = dataPoints
+                .OrderBy(static dp => dp.Timestamp)
+                .ToList();
+            var dataDict = sortedDataPoints.ToDictionary(dp => dp.Timestamp, dp => dp.Value * finalScale);
             var yValues = new double[timeArray.Length];
 
             for (int i = 0; i < timeArray.Length; i++)
@@ -53,7 +56,7 @@ public static class StackedAreaSeriesBuilder
                 var timestamp = timeArray[i];
                 yValues[i] = dataDict.TryGetValue(timestamp, out var value)
                     ? value
-                    : InterpolateValue(dataPoints, timestamp, finalScale);
+                    : InterpolateSortedValue(sortedDataPoints, timestamp, finalScale);
             }
 
             var currentBaseline = baseline.ToArray();
@@ -85,8 +88,20 @@ public static class StackedAreaSeriesBuilder
             return 0;
         }
 
-        var before = dataPoints.Where(dp => dp.Timestamp <= targetTime).LastOrDefault();
-        var after = dataPoints.Where(dp => dp.Timestamp >= targetTime).FirstOrDefault();
+        var sortedDataPoints = dataPoints
+            .OrderBy(static dp => dp.Timestamp)
+            .ToList();
+
+        return InterpolateSortedValue(sortedDataPoints, targetTime, scale);
+    }
+
+    private static double InterpolateSortedValue(
+        IReadOnlyList<PerformanceDataPoint> sortedDataPoints,
+        DateTime targetTime,
+        double scale)
+    {
+        var before = sortedDataPoints.Where(dp => dp.Timestamp <= targetTime).LastOrDefault();
+        var after = sortedDataPoints.Where(dp => dp.Timestamp >= targetTime).FirstOrDefault();
 
         if (before == null && after == null)
         {

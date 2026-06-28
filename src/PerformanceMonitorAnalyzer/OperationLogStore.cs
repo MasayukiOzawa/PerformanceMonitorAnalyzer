@@ -32,7 +32,17 @@ public sealed class OperationLogStore
     {
         ErrorLogs.Clear();
 
-        foreach (var line in lines.Reverse().Take(MaxLogEntries))
+        var recentLines = new Queue<string>();
+        foreach (var line in lines)
+        {
+            recentLines.Enqueue(line);
+            if (recentLines.Count > MaxLogEntries)
+            {
+                recentLines.Dequeue();
+            }
+        }
+
+        foreach (var line in recentLines.Reverse())
         {
             if (string.IsNullOrWhiteSpace(line))
             {

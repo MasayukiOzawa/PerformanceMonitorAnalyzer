@@ -1,3 +1,4 @@
+using System.IO;
 using PerformanceMonitorAnalyzer;
 
 namespace PerformanceMonitorAnalyzer.Tests;
@@ -78,6 +79,16 @@ public class CounterCsvBuilderTests
     public void BuildDefaultFileName_UsesDisplayName()
     {
         Assert.Equal("Processor(_Total)_%_Processor_Time.csv", CounterCsvBuilder.BuildDefaultFileName(@"\Processor(_Total)\% Processor Time"));
+    }
+
+    [Fact]
+    public void BuildDefaultFileName_ReplacesInvalidFileNameCharacters()
+    {
+        var fileName = CounterCsvBuilder.BuildDefaultFileName(@"\SQLServer:Locks\Lock Waits/sec");
+        var invalidChars = Path.GetInvalidFileNameChars();
+
+        Assert.Equal("SQLServer_Locks_Lock_Waits_sec.csv", fileName);
+        Assert.DoesNotContain(fileName, character => invalidChars.Contains(character));
     }
 
     private static PerformanceDataPoint Point(DateTime timestamp, double value, string counter = @"\Counter")

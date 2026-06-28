@@ -18,6 +18,14 @@ public class ValueFormatHelperTests
     }
 
     [Fact]
+    public void EstimateUnit_UsesInvariantCaseMapping()
+    {
+        using var _ = new TestCultureScope("tr-TR");
+
+        Assert.Equal("%", ValueFormatHelper.EstimateUnit(@"\Processor(_Total)\% Idle Time"));
+    }
+
+    [Fact]
     public void FormatValueWithUnit_ConvertsByteThresholds()
     {
         using var _ = new TestCultureScope("en-US");

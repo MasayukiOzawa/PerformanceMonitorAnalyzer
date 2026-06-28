@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 
 namespace PerformanceMonitorAnalyzer;
@@ -96,7 +97,16 @@ public static class CounterCsvBuilder
 
     public static string BuildDefaultFileName(string counterPath)
     {
-        return $"{CounterPathFormatter.GetDisplayName(counterPath).Replace(" - ", "_").Replace(" ", "_")}.csv";
+        var fileName = $"{CounterPathFormatter.GetDisplayName(counterPath).Replace(" - ", "_").Replace(" ", "_")}.csv";
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitizedFileName = new StringBuilder(fileName.Length);
+
+        foreach (var character in fileName)
+        {
+            sanitizedFileName.Append(invalidChars.Contains(character) ? '_' : character);
+        }
+
+        return sanitizedFileName.ToString();
     }
 
     private static string EscapeTsvField(string value)

@@ -44,4 +44,19 @@ public class OperationLogStoreTests
         Assert.Equal("ERROR second", store.ErrorLogs[0].Message);
         Assert.Equal(LogLevel.Error, store.ErrorLogs[0].Level);
     }
+
+    [Fact]
+    public void LoadErrorLogLines_KeepsOnlyMostRecentRawLines()
+    {
+        var store = new OperationLogStore();
+        var start = new DateTime(2026, 1, 1);
+        var lines = Enumerable.Range(0, 1005)
+            .Select(index => $"[{start.AddSeconds(index):yyyy-MM-dd HH:mm:ss}] entry {index}");
+
+        var count = store.LoadErrorLogLines(lines);
+
+        Assert.Equal(1000, count);
+        Assert.Equal("entry 1004", store.ErrorLogs[0].Message);
+        Assert.Equal("entry 5", store.ErrorLogs[^1].Message);
+    }
 }

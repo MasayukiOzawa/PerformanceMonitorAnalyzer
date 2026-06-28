@@ -6,7 +6,7 @@ public static class ValueFormatHelper
 {
     public static string EstimateUnit(string counter)
     {
-        var lowerCounter = counter.ToLower();
+        var lowerCounter = counter.ToLowerInvariant();
 
         if (lowerCounter.Contains("% processor time") || lowerCounter.Contains("% idle time"))
         {

@@ -42,6 +42,28 @@ public class StackedAreaSeriesBuilderTests
         Assert.Equal(new[] { 6d, 12d }, result[1].Top);
     }
 
+    [Fact]
+    public void Build_InterpolatesUnsortedDataPointsByTimestamp()
+    {
+        var start = new DateTime(2026, 1, 1);
+        var result = StackedAreaSeriesBuilder.Build(
+            ["anchor", "unsorted"],
+            new Dictionary<string, List<PerformanceDataPoint>>
+            {
+                ["anchor"] = [Point(start.AddSeconds(25), 0)],
+                ["unsorted"] =
+                [
+                    Point(start.AddSeconds(20), 20),
+                    Point(start.AddSeconds(10), 100),
+                    Point(start.AddSeconds(30), 30)
+                ]
+            },
+            new Dictionary<string, double>());
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(new[] { 100d, 20d, 25d, 30d }, result[1].Top);
+    }
+
     private static PerformanceDataPoint Point(DateTime timestamp, double value)
     {
         return new PerformanceDataPoint
