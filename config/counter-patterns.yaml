@@ -45,7 +45,7 @@ patterns:
         enabled: true
         scale: 0.000001
 
-  - name: SQLサーバー監視
+  - name: SQL Server Monitoring
     description: SQL Serverパフォーマンスの監視項目
     graphType: lineChart
     valueMode: rawValue
@@ -65,3 +65,43 @@ patterns:
       - name: \SQLServer:Locks(_Total)\Lock Waits/sec
         enabled: true
         scale: 1.0
+
+  - name: SQL Server Lock Info
+    description: SQL Serverパフォーマンスの監視項目
+    graphType: lineChart
+    valueMode: rawValue
+    counters:
+      - name: \SQLServer:Memory Manager\Lock Memory (KB)
+        enabled: true
+        scale: 0.0000001
+      - name: \SQLServer:Memory Manager\Lock Blocks
+        enabled: true
+        scale: 0.0000001
+      - name: \SQLServer:Memory Manager\Lock Blocks Allocated
+        enabled: true
+        scale: 0.0000001
+      - name: \SQLServer:Memory Manager\Lock Owner Blocks
+        enabled: true
+        scale: 0.0000001
+      - name: \SQLServer:Memory Manager\Lock Owner Blocks Allocated
+        enabled: true
+        scale: 0.0000001
+      - name: \SQLServer:Locks(_Total)\Lock Requests/sec
+        enabled: true
+        scale: 0.00001
+      - name: \SQLServer:Transactions\Longest Transaction Running Time
+        enabled: true
+        scale: 0.1
+      - name: \SQLServer:Locks(Key)\Lock Requests/sec
+        enabled: true
+        scale: 0.1
+      - name: \SQLServer:Locks(Metadata)\Lock Requests/sec
+        enabled: true
+        scale: 0.1
+      - name: \SQLServer:Locks(Object)\Lock Requests/sec
+        enabled: true
+        scale: 0.1
+      - name: \SQLServer:Locks(Page)\Lock Requests/sec
+        enabled: true
+        scale: 0.1
+        
