@@ -17,7 +17,7 @@ public static class ScaleCatalog
         new(1000.0, "1000"),
         new(100.0, "100"),
         new(10.0, "10"),
-        new(1.0, "1.0"),
+        new(1.0, "1"),
         new(0.1, "0.1"),
         new(0.01, "0.01"),
         new(0.001, "0.001"),
@@ -65,8 +65,31 @@ public static class ScaleCatalog
             return false;
         }
 
-        scale = RoundToNiceScale(targetValue / maximumAbsoluteValue);
+        scale = RoundToSupportedScale(targetValue / maximumAbsoluteValue);
         return double.IsFinite(scale) && scale > 0;
+    }
+
+    public static double RoundToSupportedScale(double scale)
+    {
+        if (!double.IsFinite(scale) || scale <= 0)
+        {
+            return 0;
+        }
+
+        var bestScale = SupportedScaleOptions[0].Value;
+        var bestLogDistance = double.PositiveInfinity;
+
+        foreach (var option in SupportedScaleOptions)
+        {
+            var logDistance = Math.Abs(Math.Log10(scale / option.Value));
+            if (logDistance < bestLogDistance)
+            {
+                bestScale = option.Value;
+                bestLogDistance = logDistance;
+            }
+        }
+
+        return bestScale;
     }
 
     public static double RoundToNiceScale(double scale)

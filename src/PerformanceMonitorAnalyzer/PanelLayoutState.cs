@@ -10,9 +10,9 @@ public sealed class PanelLayoutState
     public const double BottomPanelMaxHeight = 750;
 
     public bool IsCounterPanelVisible { get; private set; } = true;
-    public GridLength LastCounterPanelWidth { get; private set; } = new(350);
+    public GridLength LastCounterPanelWidth { get; private set; } = new(440);
     public bool IsLegendPanelCollapsed { get; private set; }
-    public GridLength LastLegendPanelWidth { get; private set; } = new(250);
+    public GridLength LastLegendPanelWidth { get; private set; } = new(320);
     public bool IsStatisticsPanelCollapsed { get; private set; }
     public GridLength LastStatisticsPanelHeight { get; private set; } = new(170);
     public bool IsBottomPanelCollapsed { get; private set; }
@@ -44,7 +44,7 @@ public sealed class PanelLayoutState
     public GridLength ShowCounterPanel()
     {
         IsCounterPanelVisible = true;
-        return LastCounterPanelWidth.Value > 0 ? LastCounterPanelWidth : new GridLength(350);
+        return LastCounterPanelWidth.Value > 0 ? LastCounterPanelWidth : new GridLength(440);
     }
 
     public void ToggleLegendPanel()
@@ -67,7 +67,7 @@ public sealed class PanelLayoutState
 
     public GridLength GetLegendPanelWidth()
     {
-        return LastLegendPanelWidth.Value > 0 ? LastLegendPanelWidth : new GridLength(250);
+        return LastLegendPanelWidth.Value > 0 ? LastLegendPanelWidth : new GridLength(320);
     }
 
     public void ToggleStatisticsPanel()

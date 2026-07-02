@@ -48,8 +48,8 @@ public class PanelLayoutStateTests
         var state = new PanelLayoutState();
 
         Assert.True(state.IsCounterPanelVisible);
-        Assert.Equal(350, state.LastCounterPanelWidth.Value);
-        Assert.Equal(250, state.LastLegendPanelWidth.Value);
+        Assert.Equal(440, state.LastCounterPanelWidth.Value);
+        Assert.Equal(320, state.LastLegendPanelWidth.Value);
         Assert.Equal(170, state.LastStatisticsPanelHeight.Value);
         Assert.Equal(400, state.LastBottomPanelHeight.Value);
         Assert.Equal(230, state.LastScalePanelWidth.Value);

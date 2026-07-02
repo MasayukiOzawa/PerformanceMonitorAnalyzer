@@ -113,7 +113,7 @@
         <!-- 上部: カウンター選択とグラフ表示 -->
         <Grid Grid.Row="2" Margin="12,12,12,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="CounterPanelColumn" Width="350" MinWidth="220"/>
+                <ColumnDefinition x:Name="CounterPanelColumn" Width="440" MinWidth="220"/>
                 <ColumnDefinition x:Name="CounterPanelSplitterColumn" Width="22"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition x:Name="ScalePanelSplitterColumn" Width="22"/>
@@ -181,17 +181,28 @@
                         <TextBlock Text="🎯 カウンターパターン:" 
                                   Margin="0,0,0,3" 
                                   Style="{StaticResource SectionCaptionTextStyle}"/>
-                        <ComboBox x:Name="PatternComboBox" 
-                                DisplayMemberPath="Name"
-                                SelectionChanged="PatternComboBox_SelectionChanged"
-                                ToolTip="事前定義されたカウンターパターンを選択"/>
-                        <Button x:Name="ApplyPatternButton" 
-                               Content="パターンを適用" 
-                               Margin="0,3,0,0" 
-                               Click="ApplyPattern_Click"
-                               Style="{StaticResource SecondaryActionButtonStyle}"
-                               IsEnabled="False"
-                               ToolTip="選択されたパターンでカウンターを自動選択します"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="260"/>
+                                <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="PatternComboBox"
+                                      Grid.Column="0"
+                                      DisplayMemberPath="Name"
+                                      SelectionChanged="PatternComboBox_SelectionChanged"
+                                      ToolTip="事前定義されたカウンターパターンを選択"/>
+                            <Button x:Name="ApplyPatternButton"
+                                    Grid.Column="2"
+                                    Content="パターンを適用"
+                                    Click="ApplyPattern_Click"
+                                    Style="{StaticResource SecondaryActionButtonStyle}"
+                                    Padding="8,4"
+                                    HorizontalAlignment="Left"
+                                    IsEnabled="False"
+                                    ToolTip="選択されたパターンでカウンターを自動選択します"/>
+                        </Grid>
                     </StackPanel>
                     
                     <!-- 時間範囲選択 -->
@@ -298,11 +309,19 @@
                             <ListView x:Name="SelectedCountersListView"
                                       SelectionMode="Extended"
                                       BorderThickness="0"
-                                      Margin="3">
+                                      Margin="3"
+                                      PreviewMouseRightButtonDown="SelectedCountersListView_PreviewMouseRightButtonDown">
+                                <ListView.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem x:Name="CopySelectedCounterPatternSettingMenuItem"
+                                                  Header="カウンター設定をコピー"
+                                                  Click="CopySelectedCounterPatternSetting_Click"/>
+                                    </ContextMenu>
+                                </ListView.ContextMenu>
                                 <ListView.View>
                                     <GridView>
-                                        <GridViewColumn Header="カウンター" DisplayMemberBinding="{Binding CounterName}" Width="130"/>
-                                        <GridViewColumn Header="親" DisplayMemberBinding="{Binding ObjectName}" Width="80"/>
+                                        <GridViewColumn Header="オブジェクト" DisplayMemberBinding="{Binding ObjectName}" Width="160"/>
+                                        <GridViewColumn Header="カウンター" DisplayMemberBinding="{Binding CounterName}" Width="140"/>
                                         <GridViewColumn Header="インスタンス" DisplayMemberBinding="{Binding InstanceDisplayName}" Width="90"/>
                                     </GridView>
                                 </ListView.View>
@@ -459,7 +478,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="22" x:Name="LegendSplitterColumn"/>
-                                <ColumnDefinition Width="250" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
+                                <ColumnDefinition Width="320" MinWidth="150" MaxWidth="400" x:Name="LegendColumn"/>
                             </Grid.ColumnDefinitions>
                         
                         <!-- ScottPlot グラフコンテナ（リサイズハンドル付き） -->
@@ -490,6 +509,92 @@
                                         </ContextMenu>
                                     </scottplot:WpfPlot.ContextMenu>
                                 </scottplot:WpfPlot>
+
+                                <Canvas x:Name="GraphHoverOverlayCanvas"
+                                        IsHitTestVisible="False"
+                                        Panel.ZIndex="4">
+                                    <Border x:Name="GraphHoverContextOverlay"
+                                            Visibility="Collapsed"
+                                            Background="#F8FFFFFF"
+                                            BorderBrush="{StaticResource CardBorderStrongBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Padding="10,8"
+                                            MaxWidth="540">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal"
+                                                        Margin="0,0,0,6">
+                                                <TextBlock x:Name="GraphHoverTimestampText"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                <TextBlock x:Name="GraphHoverPinnedIconText"
+                                                           Text="📌"
+                                                           Visibility="Collapsed"
+                                                           FontSize="12"
+                                                           Margin="6,0,0,0"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <Grid Margin="0,0,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="14"/>
+                                                    <ColumnDefinition Width="320"/>
+                                                    <ColumnDefinition Width="120"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="カウンター名"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Grid.Column="2"
+                                                           Text="値"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           TextAlignment="Right"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </Grid>
+                                            <ScrollViewer MaxHeight="260"
+                                                          VerticalScrollBarVisibility="Auto"
+                                                          HorizontalScrollBarVisibility="Disabled">
+                                                <ItemsControl x:Name="GraphHoverItemsControl">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Grid Margin="0,0,0,4">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="14"/>
+                                                                    <ColumnDefinition Width="320"/>
+                                                                    <ColumnDefinition Width="120"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <Border Grid.Column="0"
+                                                                        Width="10"
+                                                                        Height="10"
+                                                                        CornerRadius="2"
+                                                                        VerticalAlignment="Center"
+                                                                        Margin="0,3,0,0"
+                                                                        Background="{Binding ColorBrush}"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="{Binding CounterName}"
+                                                                           FontSize="11"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           ToolTip="{Binding CounterName}"
+                                                                           VerticalAlignment="Center"/>
+                                                                <TextBlock Grid.Column="2"
+                                                                           Text="{Binding CurrentText}"
+                                                                           FontSize="11"
+                                                                           Foreground="{StaticResource AccentBrush}"
+                                                                           TextAlignment="Right"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           VerticalAlignment="Center"/>
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </StackPanel>
+                                    </Border>
+                                </Canvas>
 
                                 <Border x:Name="GraphDropOverlay"
                                         Visibility="Collapsed"
@@ -529,6 +634,7 @@
                                         Width="15" Height="15"
                                         HorizontalAlignment="Right" 
                                         VerticalAlignment="Bottom"
+                                        Panel.ZIndex="6"
                                         Background="{StaticResource SurfaceAltBrush}" 
                                         BorderBrush="{StaticResource CardBorderStrongBrush}" 
                                         BorderThickness="1"
@@ -623,7 +729,6 @@
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="20"/>
                                                             <ColumnDefinition Width="*"/>
-                                                            <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
 
                                                         <!-- 折れ線ハイライト -->
@@ -661,20 +766,10 @@
                                                                    Text="{Binding CounterName}"
                                                                    TextWrapping="Wrap"
                                                                    VerticalAlignment="Center"
-                                                                   FontSize="11"
+                                                                   FontSize="10"
                                                                    FontWeight="{Binding CounterFontWeight}"
                                                                    Foreground="{Binding TextBrush}"
                                                                    ToolTip="{Binding CounterPath}"/>
-                                                        
-                                                        <!-- 現在値 -->
-                                                        <TextBlock Grid.Column="4"
-                                                                   Text="{Binding CurrentValue}"
-                                                                   VerticalAlignment="Center"
-                                                                   FontSize="10"
-                                                                   FontWeight="Bold"
-                                                                   Foreground="{StaticResource AccentBrush}"
-                                                                   Margin="5,0,0,0"
-                                                                   ToolTip="最新の値"/>
 
                                                     </Grid>
                                                 </Border>
@@ -695,7 +790,14 @@
                                      HorizontalAlignment="Center"
                                      FontSize="16"
                                      Foreground="{StaticResource TextMutedBrush}"
-                                     Margin="10"/>
+                                     Margin="10,0,10,4"/>
+                            <TextBlock Text="グラフ領域へ .blg ファイルをドラッグアンドドロップして読み込むこともできます"
+                                     HorizontalAlignment="Center"
+                                     FontSize="12"
+                                     Foreground="{StaticResource TextMutedBrush}"
+                                     TextAlignment="Center"
+                                     TextWrapping="Wrap"
+                                     Margin="10,0"/>
                         </StackPanel>
                      
                         <!-- グラフ操作ボタン -->
@@ -800,9 +902,83 @@
                                         CanUserResizeColumns="True"
                                         CanUserSortColumns="True"
                                         Sorting="StatisticsDataGrid_Sorting"
-                                        SelectionMode="Single"
+                                        PreviewMouseRightButtonDown="StatisticsDataGrid_PreviewMouseRightButtonDown"
+                                        SelectionMode="Extended"
                                         Width="Auto"
                                         HorizontalAlignment="Stretch">
+                                    <DataGrid.Resources>
+                                        <Style x:Key="StatisticsCounterCellTextStyle" TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True"/>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=IsKeyboardFocusWithin}" Value="False"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                        <Style x:Key="StatisticsAverageCellTextStyle" TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#008000"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                            <Setter Property="TextAlignment" Value="Right"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True"/>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=IsKeyboardFocusWithin}" Value="False"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                        <Style x:Key="StatisticsMaximumCellTextStyle" TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#B40000"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                            <Setter Property="TextAlignment" Value="Right"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True"/>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=IsKeyboardFocusWithin}" Value="False"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                        <Style x:Key="StatisticsMinimumCellTextStyle" TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#0000B4"/>
+                                            <Setter Property="FontWeight" Value="SemiBold"/>
+                                            <Setter Property="TextAlignment" Value="Right"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                                <MultiDataTrigger>
+                                                    <MultiDataTrigger.Conditions>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=IsSelected}" Value="True"/>
+                                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=DataGrid}, Path=IsKeyboardFocusWithin}" Value="False"/>
+                                                    </MultiDataTrigger.Conditions>
+                                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                                </MultiDataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.Resources>
+                                    <DataGrid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="選択行をコピー"
+                                                      Click="CopySelectedStatisticsRow_Click"/>
+                                        </ContextMenu>
+                                    </DataGrid.ContextMenu>
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="カウンター名" 
                                                             Binding="{Binding CounterName}" 
@@ -812,7 +988,8 @@
                                                             MinWidth="200"
                                                             MaxWidth="500"
                                                             CanUserSort="True"
-                                                            CanUserResize="True" />
+                                                            CanUserResize="True"
+                                                            ElementStyle="{StaticResource StatisticsCounterCellTextStyle}" />
                                         <DataGridTextColumn Header="平均" 
                                                             Binding="{Binding Average}" 
                                                             SortMemberPath="AverageValue"
@@ -820,15 +997,8 @@
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
-                                                            CanUserResize="True">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#008000"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    <Setter Property="TextAlignment" Value="Right"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
+                                                            CanUserResize="True"
+                                                            ElementStyle="{StaticResource StatisticsAverageCellTextStyle}"/>
                                         <DataGridTextColumn Header="最大" 
                                                             Binding="{Binding Maximum}" 
                                                             SortMemberPath="MaximumValue"
@@ -836,15 +1006,8 @@
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
-                                                            CanUserResize="True">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#B40000"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    <Setter Property="TextAlignment" Value="Right"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
+                                                            CanUserResize="True"
+                                                            ElementStyle="{StaticResource StatisticsMaximumCellTextStyle}"/>
                                         <DataGridTextColumn Header="最小" 
                                                             Binding="{Binding Minimum}" 
                                                             SortMemberPath="MinimumValue"
@@ -852,15 +1015,8 @@
                                                             Width="120"
                                                             MinWidth="80"
                                                             MaxWidth="200"
-                                                            CanUserResize="True">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#0000B4"/>
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    <Setter Property="TextAlignment" Value="Right"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
+                                                            CanUserResize="True"
+                                                            ElementStyle="{StaticResource StatisticsMinimumCellTextStyle}"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </ScrollViewer>
@@ -995,8 +1151,9 @@
             <GroupBox Grid.Column="0" Header="📊 データテーブル" Margin="0,0,8,0">
                 <GroupBox.Resources>
                     <Style x:Key="DataTableCounterListBoxItemStyle" TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="10,8"/>
-                        <Setter Property="Margin" Value="0,0,0,6"/>
+                        <Setter Property="Padding" Value="8,4"/>
+                        <Setter Property="Margin" Value="0,0,0,4"/>
+                        <Setter Property="FontSize" Value="12"/>
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                         <Setter Property="Template">
                             <Setter.Value>
@@ -1028,55 +1185,12 @@
                 </GroupBox.Resources>
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    
-                    <!-- データテーブルの説明とコントロール -->
-                    <Border Grid.Row="0" Margin="10" Style="{StaticResource SectionHeaderBorderStyle}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Vertical" Margin="0,0,16,0">
-                                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold">
-                                    <Run Text="📈 カウンター選択方法: "/>
-                                    <Run Text="カウンターを追加... から選択" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
-                                    <Run Text=" または "/>
-                                    <Run Text="追加済みカウンターを読み込み" FontWeight="Bold" Foreground="{StaticResource SuccessBrush}"/>
-                                </TextBlock>
-                                <TextBlock x:Name="DataTableCountTextBlock"
-                                           Margin="0,4,0,0"
-                                           Style="{StaticResource SectionCaptionTextStyle}"
-                                           Text="表示中: 0 件"/>
-                            </StackPanel>
-                            <Button x:Name="CloseAllDataTablesButton"
-                                   Grid.Column="1"
-                                   Content="表示中一覧を閉じる" 
-                                   Click="CloseAllTabs_Click" 
-                                   Style="{StaticResource GhostButtonStyle}"
-                                   Padding="8,2,8,2"
-                                   Margin="0,0,10,0"/>
-                            <Button Grid.Column="2"
-                                   Content="全データをCSV出力" 
-                                   Click="ExportAllDataToCsv_Click" 
-                                   Style="{StaticResource SecondaryActionButtonStyle}"
-                                   Padding="8,2,8,2"
-                                   Margin="0,0,10,0"/>
-                            <Button Grid.Column="3"
-                                   Content="全データをTSVコピー"
-                                   Click="CopyAllDataToTsvClipboard_Click"
-                                   Style="{StaticResource SecondaryActionButtonStyle}"
-                                   Padding="8,2,8,2"/>
-                        </Grid>
-                    </Border>
-                    
-                    <Grid Grid.Row="1" Margin="10,0,10,10">
+
+                    <Grid Grid.Row="0" Margin="10">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="260" MinWidth="180"/>
+                            <ColumnDefinition Width="440" MinWidth="180"/>
                             <ColumnDefinition Width="5"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
@@ -1099,6 +1213,7 @@
                                          Margin="0,8,0,0"
                                          BorderThickness="0"
                                          Background="Transparent"
+                                         FontSize="12"
                                          SelectionChanged="DataCounterListBox_SelectionChanged"
                                          ItemContainerStyle="{StaticResource DataTableCounterListBoxItemStyle}">
                                     <ListBox.ItemTemplate>

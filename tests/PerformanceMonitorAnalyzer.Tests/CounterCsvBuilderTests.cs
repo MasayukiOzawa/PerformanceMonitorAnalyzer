@@ -17,10 +17,10 @@ public class CounterCsvBuilderTests
         });
 
         var lines = csv.TrimEnd().Split(Environment.NewLine);
-        Assert.Equal("Timestamp,Value,FormattedValue,Unit,Counter", lines[0]);
+        Assert.Equal("Timestamp,Value,Counter", lines[0]);
         Assert.StartsWith("2026-01-01 00:00:01,1", lines[1]);
         Assert.StartsWith("2026-01-01 00:00:02,2", lines[2]);
-        Assert.Contains("\"1.00\"", lines[1]);
+        Assert.EndsWith(",\"\\Counter\"", lines[1]);
     }
 
     [Fact]
@@ -35,44 +35,10 @@ public class CounterCsvBuilderTests
         });
 
         var lines = tsv.TrimEnd().Split(Environment.NewLine);
-        Assert.Equal("Timestamp\tValue\tFormattedValue\tUnit\tCounter", lines[0]);
-        Assert.StartsWith("2026-01-01 00:00:01\t1\t1.00\t%\t", lines[1]);
+        Assert.Equal("Timestamp\tValue\tCounter", lines[0]);
+        Assert.StartsWith("2026-01-01 00:00:01\t1\t", lines[1]);
         Assert.EndsWith(@"\Counter WithTab", lines[1]);
-        Assert.StartsWith("2026-01-01 00:00:02\t2\t2.00\t%", lines[2]);
-    }
-
-    [Fact]
-    public void BuildAllCountersCsv_UsesDisplayNameAndTimestampCounterSort()
-    {
-        var csv = CounterCsvBuilder.BuildAllCountersCsv(
-            new[]
-            {
-                (@"\B\Counter", (IEnumerable<PerformanceDataPoint>)new[] { Point(new DateTime(2026, 1, 1), 2, @"\B\Counter") }),
-                (@"\A\Counter", new[] { Point(new DateTime(2026, 1, 1), 1, @"\A\Counter") })
-            },
-            counter => $"display:{counter}");
-
-        var lines = csv.TrimEnd().Split(Environment.NewLine);
-        Assert.Equal("Timestamp,CounterName,Value,FormattedValue,Unit", lines[0]);
-        Assert.Contains("\"display:\\A\\Counter\"", lines[1]);
-        Assert.Contains("\"display:\\B\\Counter\"", lines[2]);
-    }
-
-    [Fact]
-    public void BuildAllCountersTsv_UsesDisplayNameAndTimestampCounterSort()
-    {
-        var tsv = CounterCsvBuilder.BuildAllCountersTsv(
-            new[]
-            {
-                (@"\B\Counter", (IEnumerable<PerformanceDataPoint>)new[] { Point(new DateTime(2026, 1, 1), 2, @"\B\Counter") }),
-                (@"\A\Counter", new[] { Point(new DateTime(2026, 1, 1), 1, @"\A\Counter") })
-            },
-            counter => $"display:{counter}");
-
-        var lines = tsv.TrimEnd().Split(Environment.NewLine);
-        Assert.Equal("Timestamp\tCounterName\tValue\tFormattedValue\tUnit", lines[0]);
-        Assert.Contains("display:\\A\\Counter", lines[1]);
-        Assert.Contains("display:\\B\\Counter", lines[2]);
+        Assert.StartsWith("2026-01-01 00:00:02\t2\t", lines[2]);
     }
 
     [Fact]

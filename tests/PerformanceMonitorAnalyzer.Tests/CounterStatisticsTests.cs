@@ -6,7 +6,7 @@ namespace PerformanceMonitorAnalyzer.Tests;
 public class CounterStatisticsTests
 {
     [Fact]
-    public void FormattedValues_WithUnit_UseTwoDecimalPlacesAndAppendUnit()
+    public void FormattedValues_WithUnit_UseTwoDecimalPlacesWithoutAppendingUnit()
     {
         using var _ = new CurrentCultureScope("en-US");
         var statistics = new CounterStatistics
@@ -18,10 +18,10 @@ public class CounterStatisticsTests
             Unit = "ms"
         };
 
-        Assert.Equal("1,234.50 ms", statistics.FormattedAverage);
-        Assert.Equal("2,000.00 ms", statistics.FormattedMaximum);
-        Assert.Equal("12.35 ms", statistics.FormattedMinimum);
-        Assert.Equal("0.57 ms", statistics.FormattedStandardDeviation);
+        Assert.Equal("1,234.50", statistics.FormattedAverage);
+        Assert.Equal("2,000.00", statistics.FormattedMaximum);
+        Assert.Equal("12.35", statistics.FormattedMinimum);
+        Assert.Equal("0.57", statistics.FormattedStandardDeviation);
     }
 
     [Fact]

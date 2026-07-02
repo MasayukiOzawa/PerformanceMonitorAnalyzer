@@ -15,8 +15,8 @@ public class CounterStatistics
     public DateTime LastTimestamp { get; set; }
     public string Unit { get; set; } = string.Empty;
 
-    public string FormattedAverage => $"{Average:N2} {Unit}".Trim();
-    public string FormattedMaximum => $"{Maximum:N2} {Unit}".Trim();
-    public string FormattedMinimum => $"{Minimum:N2} {Unit}".Trim();
-    public string FormattedStandardDeviation => $"{StandardDeviation:N2} {Unit}".Trim();
+    public string FormattedAverage => $"{Average:N2}";
+    public string FormattedMaximum => $"{Maximum:N2}";
+    public string FormattedMinimum => $"{Minimum:N2}";
+    public string FormattedStandardDeviation => $"{StandardDeviation:N2}";
 }

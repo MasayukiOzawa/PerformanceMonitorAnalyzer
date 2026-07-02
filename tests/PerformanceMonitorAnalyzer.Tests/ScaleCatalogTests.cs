@@ -16,7 +16,7 @@ public sealed class ScaleCatalogTests
         var expectedLabels = new[]
         {
             "1000000000", "100000000", "10000000", "1000000", "100000",
-            "10000", "1000", "100", "10", "1.0", "0.1", "0.01", "0.001",
+            "10000", "1000", "100", "10", "1", "0.1", "0.01", "0.001",
             "0.0001", "0.00001", "0.000001", "0.0000001", "0.00000001", "0.000000001"
         };
 
@@ -26,7 +26,7 @@ public sealed class ScaleCatalogTests
     }
 
     [Theory]
-    [InlineData(1.0, "1.0")]
+    [InlineData(1.0, "1")]
     [InlineData(0.000001, "0.000001")]
     [InlineData(1000.0, "1000")]
     [InlineData(0.25, "0.25")]
@@ -37,13 +37,13 @@ public sealed class ScaleCatalogTests
     }
 
     [Theory]
-    [InlineData(50.0, 2.0)]
-    [InlineData(200.0, 0.5)]
+    [InlineData(50.0, 1.0)]
+    [InlineData(200.0, 1.0)]
     [InlineData(100.0, 1.0)]
-    [InlineData(4700.0, 0.02)]
-    [InlineData(2800.0, 0.05)]
-    [InlineData(3000000000.0, 0.00000002)]
-    public void TryCalculateScaleToTarget_ReturnsNiceScaleForMaximumAbsoluteValue(double maximumAbsoluteValue, double expectedScale)
+    [InlineData(4700.0, 0.01)]
+    [InlineData(2800.0, 0.1)]
+    [InlineData(3000000000.0, 0.0000001)]
+    public void TryCalculateScaleToTarget_ReturnsSupportedScaleForMaximumAbsoluteValue(double maximumAbsoluteValue, double expectedScale)
     {
         var result = ScaleCatalog.TryCalculateScaleToTarget(maximumAbsoluteValue, out var scale);
 
@@ -77,6 +77,30 @@ public sealed class ScaleCatalogTests
 
         Assert.False(result);
         Assert.Equal(0, scale);
+    }
+
+    [Theory]
+    [InlineData(0.02, 0.01)]
+    [InlineData(0.05, 0.1)]
+    [InlineData(0.5, 1.0)]
+    [InlineData(2.0, 1.0)]
+    [InlineData(3.3333333333333334E-8, 0.0000001)]
+    [InlineData(1E-12, 0.000000001)]
+    [InlineData(1E+12, 1000000000.0)]
+    public void RoundToSupportedScale_RoundsToNearestSupportedScale(double scale, double expectedScale)
+    {
+        Assert.Equal(expectedScale, ScaleCatalog.RoundToSupportedScale(scale), precision: 12);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void RoundToSupportedScale_ReturnsZeroForInvalidScale(double scale)
+    {
+        Assert.Equal(0, ScaleCatalog.RoundToSupportedScale(scale));
     }
 
     [Theory]

@@ -71,6 +71,9 @@ patterns:
     graphType: lineChart
     valueMode: rawValue
     counters:
+      - name: \SQLServer:Memory Manager\Total Server Memory (KB)
+        enabled: true
+        scale: 1
       - name: \SQLServer:Memory Manager\Lock Memory (KB)
         enabled: true
         scale: 0.0000001
@@ -104,4 +107,18 @@ patterns:
       - name: \SQLServer:Locks(Page)\Lock Requests/sec
         enabled: true
         scale: 0.1
-        
+      - name: \SQLServer:Locks(Page)\Lock Requests/sec
+        enabled: true
+        scale: 1
+      - name: \SQLServer:Access Methods\Table Lock Escalations/sec
+        enabled: true
+        scale: 1
+      - name: \SQLServer:Locks(_Total)\Lock Requests/sec
+        enabled: true
+        scale: 0.00001
+      - name: \SQLServer:General Statistics\Processes blocked
+        enabled: true
+        scale: 1
+      - name: \SQLServer:SQL Statistics\SQL Attention rate
+        enabled: true
+        scale: 1

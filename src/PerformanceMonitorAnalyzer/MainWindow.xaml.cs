@@ -6,7 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using System.Windows.Documents;
+using System.Windows.Data;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -64,7 +66,12 @@ public partial class MainWindow : Window
     private const float DefaultLineWidth = 2f;
     private const float HighlightedLineWidth = 4f;
     private const float StackedAreaOutlineWidth = 1f;
+    private const double GraphHoverOverlayOffset = 14;
+    private const double GraphHoverClickDragThreshold = 4;
     private readonly PanelLayoutState _panelLayoutState = new();
+    private static readonly Brush DefaultGraphHoverItemBrush = new SolidColorBrush(System.Windows.Media.Colors.Gray);
+    private bool _isGraphHoverContextPinned = false;
+    private Point? _graphHoverMouseDownPoint;
     
     // グラフリサイズハンドル関連
     private bool _isResizing = false;
@@ -105,6 +112,13 @@ public partial class MainWindow : Window
         public required int ProcessedCount { get; init; }
         public required int SuccessCount { get; init; }
         public required bool WasCanceled { get; init; }
+    }
+
+    private sealed class GraphHoverDisplayItem
+    {
+        public required Brush ColorBrush { get; init; }
+        public required string CounterName { get; init; }
+        public required string CurrentText { get; init; }
     }
 
     public MainWindow()
@@ -281,8 +295,17 @@ public partial class MainWindow : Window
         PerformanceChart.Menu = plotMenu;
         // 右クリックはコンテキストメニュー用途のみとし、ドラッグズームを無効化
         PerformanceChart.UserInputProcessor.RightClickDragZoom(false);
+        PerformanceChart.UserInputProcessor.DoubleLeftClickBenchmark(false);
         PerformanceChart.PreviewMouseRightButtonUp -= PerformanceChart_PreviewMouseRightButtonUp;
         PerformanceChart.PreviewMouseRightButtonUp += PerformanceChart_PreviewMouseRightButtonUp;
+        PerformanceChart.MouseMove -= PerformanceChart_MouseMove;
+        PerformanceChart.MouseMove += PerformanceChart_MouseMove;
+        PerformanceChart.MouseLeave -= PerformanceChart_MouseLeave;
+        PerformanceChart.MouseLeave += PerformanceChart_MouseLeave;
+        PerformanceChart.PreviewMouseLeftButtonDown -= PerformanceChart_PreviewMouseLeftButtonDown;
+        PerformanceChart.PreviewMouseLeftButtonDown += PerformanceChart_PreviewMouseLeftButtonDown;
+        PerformanceChart.PreviewMouseLeftButtonUp -= PerformanceChart_PreviewMouseLeftButtonUp;
+        PerformanceChart.PreviewMouseLeftButtonUp += PerformanceChart_PreviewMouseLeftButtonUp;
         
         // グラフの更新
         PerformanceChart.Refresh();
@@ -423,7 +446,6 @@ public partial class MainWindow : Window
     private void InitializeDataTablePanel()
     {
         DataCounterListBox.ItemsSource = _openDataTableCounters;
-        UpdateDataTableCounterSummary();
         UpdateDataTableDetail(null);
     }
 
@@ -484,15 +506,7 @@ public partial class MainWindow : Window
             _isUpdatingDataTableSelection = false;
         }
 
-        UpdateDataTableCounterSummary();
         UpdateDataTableDetail(_selectedDataTableCounter);
-    }
-
-    private void UpdateDataTableCounterSummary()
-    {
-        var count = _openDataTableCounters.Count;
-        DataTableCountTextBlock.Text = $"表示中: {count} 件";
-        CloseAllDataTablesButton.IsEnabled = count > 0;
     }
 
     private void UpdateDataTableDetail(string? counter)
@@ -1958,6 +1972,119 @@ public partial class MainWindow : Window
         UpdateRelogCommandDisplay();
     }
 
+    private void SelectedCountersListView_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        CopySelectedCounterPatternSettingMenuItem.IsEnabled = false;
+
+        if (e.OriginalSource is not DependencyObject source)
+        {
+            return;
+        }
+
+        var listViewItem = FindVisualAncestor<ListViewItem>(source);
+        if (listViewItem?.DataContext is not CounterSelectorItem counterItem)
+        {
+            return;
+        }
+
+        if (!listViewItem.IsSelected)
+        {
+            SelectedCountersListView.SelectedItems.Clear();
+            listViewItem.IsSelected = true;
+        }
+
+        listViewItem.Focus();
+        CopySelectedCounterPatternSettingMenuItem.IsEnabled = SelectedCountersListView.SelectedItems.Count > 0;
+    }
+
+    private void CopySelectedCounterPatternSetting_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var selectedCounterItems = _selectedCounterItems
+                .Where(item => SelectedCountersListView.SelectedItems.Contains(item))
+                .Where(static item => !string.IsNullOrWhiteSpace(item.FullPath))
+                .ToList();
+
+            if (!selectedCounterItems.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするカウンターを選択してください。");
+                return;
+            }
+
+            var yaml = CounterPatternClipboardBuilder.BuildCounterDefinitionsYaml(
+                selectedCounterItems.Select(item => (
+                    CounterPath: item.FullPath,
+                    Scale: _counterScales.GetValueOrDefault(item.FullPath, 1.0))));
+            Clipboard.SetText(yaml);
+
+            AddOperationLog(LogLevel.Success, $"カウンター設定をクリップボードにコピーしました: {selectedCounterItems.Count}件");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"カウンター設定のコピーに失敗しました: {ex.Message}");
+            LogError($"Counter pattern clipboard copy failed: {ex}");
+        }
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject? source)
+        where T : DependencyObject
+    {
+        while (source is not null)
+        {
+            if (source is T target)
+            {
+                return target;
+            }
+
+            source = source switch
+            {
+                FrameworkContentElement contentElement => contentElement.Parent,
+                Visual or Visual3D => VisualTreeHelper.GetParent(source),
+                _ => null
+            };
+        }
+
+        return null;
+    }
+
+    private static bool TrySelectDataGridRowFromRightClick(DataGrid dataGrid, object originalSource)
+    {
+        if (originalSource is not DependencyObject source)
+        {
+            return false;
+        }
+
+        var row = FindVisualAncestor<DataGridRow>(source);
+        if (row?.Item is null || row.Item == CollectionView.NewItemPlaceholder)
+        {
+            return false;
+        }
+
+        if (!row.IsSelected)
+        {
+            dataGrid.SelectedItems.Clear();
+            dataGrid.SelectedItem = row.Item;
+            row.IsSelected = true;
+        }
+
+        row.Focus();
+        return true;
+    }
+
+    private static List<T> GetSelectedDataGridItemsInDisplayOrder<T>(DataGrid dataGrid)
+    {
+        var selectedItems = dataGrid.SelectedItems
+            .Cast<object>()
+            .ToHashSet();
+
+        return dataGrid.Items
+            .Cast<object>()
+            .Where(selectedItems.Contains)
+            .OfType<T>()
+            .ToList();
+    }
+
     private void ClearSelectedCounters_Click(object sender, RoutedEventArgs e)
     {
         ClearSelectedCounters(removeFromChart: true);
@@ -2457,6 +2584,10 @@ public partial class MainWindow : Window
         var hasPanelContext = HasChartPanelContext();
         NoDataMessagePanel.Visibility = hasVisibleData ? Visibility.Collapsed : Visibility.Visible;
         UpdateLegendPanelControls(hasPanelContext);
+        if (!hasVisibleData)
+        {
+            HideGraphHoverContext();
+        }
         System.Diagnostics.Debug.WriteLine($"Chart visibility updated: hasVisibleData={hasVisibleData}, hasPanelContext={hasPanelContext}");
         
         // 統計情報表示の更新
@@ -2539,25 +2670,17 @@ public partial class MainWindow : Window
     {
         try
         {
-            // 単位情報を取得（既存のフォーマット機能を使用）
-            var unit = ValueFormatHelper.EstimateUnit(counterName);
-            
             // PDH風の統計計算を実装
-            var statistics = CounterStatisticsCalculator.Compute(counterName, dataPoints, unit);
-            
-            // フォーマットされた値を作成
-            var minFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Minimum, unit);
-            var maxFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Maximum, unit);
-            var avgFormatted = ValueFormatHelper.FormatValueWithUnit(statistics.Average, unit);
+            var statistics = CounterStatisticsCalculator.Compute(counterName, dataPoints, string.Empty);
             
             return new CounterStatisticsItem
             {
                 CounterName = CounterPathFormatter.GetDisplayName(counterName),
-                Average = avgFormatted,
+                Average = statistics.FormattedAverage,
                 AverageValue = statistics.Average,
-                Maximum = maxFormatted,
+                Maximum = statistics.FormattedMaximum,
                 MaximumValue = statistics.Maximum,
-                Minimum = minFormatted,
+                Minimum = statistics.FormattedMinimum,
                 MinimumValue = statistics.Minimum
             };
         }
@@ -2627,6 +2750,35 @@ public partial class MainWindow : Window
             UpdateStatisticsSortIndicators,
             DispatcherPriority.Loaded);
     }
+
+    private void StatisticsDataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is DataGrid dataGrid)
+        {
+            TrySelectDataGridRowFromRightClick(dataGrid, e.OriginalSource);
+        }
+    }
+
+    private void CopySelectedStatisticsRow_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var selectedStatisticsItems = GetSelectedDataGridItemsInDisplayOrder<CounterStatisticsItem>(StatisticsDataGrid);
+            if (!selectedStatisticsItems.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーする統計情報の行を選択してください。");
+                return;
+            }
+
+            Clipboard.SetText(SelectedRowClipboardBuilder.BuildCounterStatisticsItemsTsv(selectedStatisticsItems));
+            AddOperationLog(LogLevel.Success, $"統計情報の選択行をクリップボードにコピーしました: {selectedStatisticsItems.Count}件");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"統計情報の選択行コピーに失敗しました: {ex.Message}");
+            LogError($"Statistics row clipboard copy failed: {ex}");
+        }
+    }
     
     private void AddCounterTab(string counter)
     {
@@ -2655,8 +2807,14 @@ public partial class MainWindow : Window
     private UIElement CreateDataTableDetailContent(string counter, List<PerformanceDataPoint> displayDataPoints)
     {
         var mainGrid = new Grid();
-        mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.58, GridUnitType.Star), MinWidth = 360 });
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+        mainGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.42, GridUnitType.Star), MinWidth = 260 });
+
+        var dataAreaGrid = new Grid();
+        dataAreaGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        dataAreaGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
         var sortableHeaderTemplate = TryFindResource("SortableDataGridHeaderTemplate") as DataTemplate;
         var rightAlignedCellStyle = new Style(typeof(TextBlock));
         rightAlignedCellStyle.Setters.Add(new Setter(TextBlock.TextAlignmentProperty, TextAlignment.Right));
@@ -2667,10 +2825,14 @@ public partial class MainWindow : Window
             AutoGenerateColumns = false,
             IsReadOnly = true,
             ItemsSource = displayDataPoints,
+            FontSize = 12,
             AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
             GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
-            HeadersVisibility = DataGridHeadersVisibility.Column
+            HeadersVisibility = DataGridHeadersVisibility.Column,
+            SelectionMode = DataGridSelectionMode.Extended
         };
+        dataGrid.PreviewMouseRightButtonDown += DataTableDetailDataGrid_PreviewMouseRightButtonDown;
+        dataGrid.ContextMenu = CreateDataTableDetailDataGridContextMenu();
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
@@ -2697,23 +2859,6 @@ public partial class MainWindow : Window
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "フォーマット済み値",
-            HeaderTemplate = sortableHeaderTemplate,
-            Binding = new System.Windows.Data.Binding("FormattedValue"),
-            ElementStyle = rightAlignedCellStyle,
-            Width = 120
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
-            Header = "単位",
-            HeaderTemplate = sortableHeaderTemplate,
-            Binding = new System.Windows.Data.Binding("Unit"),
-            Width = 80
-        });
-
-        dataGrid.Columns.Add(new DataGridTextColumn
-        {
             Header = "カウンター",
             HeaderTemplate = sortableHeaderTemplate,
             Binding = new System.Windows.Data.Binding("Counter"),
@@ -2721,13 +2866,269 @@ public partial class MainWindow : Window
         });
 
         Grid.SetRow(dataGrid, 0);
-        mainGrid.Children.Add(dataGrid);
+        dataAreaGrid.Children.Add(dataGrid);
 
         var statisticsPanel = CreateStatisticsPanel(counter, displayDataPoints);
         Grid.SetRow(statisticsPanel, 1);
-        mainGrid.Children.Add(statisticsPanel);
+        dataAreaGrid.Children.Add(statisticsPanel);
+
+        Grid.SetColumn(dataAreaGrid, 0);
+        mainGrid.Children.Add(dataAreaGrid);
+
+        var splitter = new GridSplitter
+        {
+            Width = 5,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+            Background = TryFindResource("DividerBrush") as Brush ?? Brushes.LightGray,
+            BorderBrush = TryFindResource("CardBorderBrush") as Brush ?? Brushes.LightGray,
+            BorderThickness = new Thickness(1, 0, 1, 0),
+            Cursor = Cursors.SizeWE,
+            ShowsPreview = false,
+            ToolTip = "ドラッグしてデータ表とグラフの幅を調整"
+        };
+
+        Grid.SetColumn(splitter, 1);
+        mainGrid.Children.Add(splitter);
+
+        var chartArea = CreateDataTableDetailChart(counter, displayDataPoints);
+        Grid.SetColumn(chartArea, 2);
+        mainGrid.Children.Add(chartArea);
 
         return mainGrid;
+    }
+
+    private ContextMenu CreateDataTableDetailDataGridContextMenu()
+    {
+        var contextMenu = new ContextMenu();
+        var copyMenuItem = new MenuItem
+        {
+            Header = "選択行をコピー"
+        };
+        copyMenuItem.Click += CopySelectedDataTableRow_Click;
+        contextMenu.Items.Add(copyMenuItem);
+        return contextMenu;
+    }
+
+    private static DataGrid? GetContextMenuPlacementDataGrid(object sender)
+    {
+        return sender is MenuItem { Parent: ContextMenu contextMenu }
+            ? contextMenu.PlacementTarget as DataGrid
+            : null;
+    }
+
+    private void DataTableDetailDataGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is DataGrid dataGrid)
+        {
+            TrySelectDataGridRowFromRightClick(dataGrid, e.OriginalSource);
+        }
+    }
+
+    private void CopySelectedDataTableRow_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dataGrid = GetContextMenuPlacementDataGrid(sender);
+            if (dataGrid is null)
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするデータ行を選択してください。");
+                return;
+            }
+
+            var selectedDataPoints = GetSelectedDataGridItemsInDisplayOrder<PerformanceDataPoint>(dataGrid);
+            if (!selectedDataPoints.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするデータ行を選択してください。");
+                return;
+            }
+
+            Clipboard.SetText(SelectedRowClipboardBuilder.BuildPerformanceDataPointsTsv(selectedDataPoints));
+            AddOperationLog(LogLevel.Success, $"選択中データの行をクリップボードにコピーしました: {selectedDataPoints.Count}件");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"選択中データの行コピーに失敗しました: {ex.Message}");
+            LogError($"Selected data row clipboard copy failed: {ex}");
+        }
+    }
+
+    private UIElement CreateDataTableDetailChart(string counter, List<PerformanceDataPoint> displayDataPoints)
+    {
+        var titleText = CounterPathFormatter.GetDisplayName(counter);
+        var chart = new WpfPlot
+        {
+            Background = Brushes.White,
+            MinHeight = 120
+        };
+
+        chart.Plot.Clear();
+        chart.Plot.XLabel("時間");
+        chart.Plot.YLabel("値");
+        chart.Plot.Axes.DateTimeTicksBottom();
+        chart.Plot.Legend.IsVisible = false;
+
+        if (displayDataPoints.Any())
+        {
+            var chartData = LineSeriesDataBuilder.Build(displayDataPoints, 1.0);
+            var scatter = chart.Plot.Add.Scatter(chartData.XValues, chartData.YValues);
+            scatter.LineWidth = 1.5f;
+            scatter.LineStyle.Width = 1.5f;
+            scatter.LineColor = GetOrCreateCounterColor(counter);
+            scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
+            chart.Plot.Axes.AutoScale();
+            chart.Plot.Axes.Left.Min = 0;
+            chart.Plot.Axes.Left.Max = CalculatePaddedYAxisMaximum(displayDataPoints);
+        }
+
+        chart.Loaded += (_, _) => chart.Refresh();
+
+        var headerGrid = new Grid
+        {
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var titleBlock = new TextBlock
+        {
+            Text = titleText,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            ToolTip = counter
+        };
+        Grid.SetColumn(titleBlock, 0);
+        headerGrid.Children.Add(titleBlock);
+
+        var copyButton = new Button
+        {
+            Content = "コピー",
+            Padding = new Thickness(8, 1, 8, 1),
+            Height = 22,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            ToolTip = "タイトル付きでグラフをクリップボードにコピーします"
+        };
+        if (TryFindResource("SecondaryActionButtonStyle") is Style copyButtonStyle)
+        {
+            copyButton.Style = copyButtonStyle;
+        }
+
+        Grid.SetColumn(copyButton, 1);
+        headerGrid.Children.Add(copyButton);
+
+        var contentGrid = new Grid();
+        contentGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        contentGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(headerGrid, 0);
+        contentGrid.Children.Add(headerGrid);
+        Grid.SetRow(chart, 1);
+        contentGrid.Children.Add(chart);
+
+        var chartContainer = new Border
+        {
+            Margin = new Thickness(8, 0, 0, 0),
+            Background = Brushes.White,
+            BorderBrush = TryFindResource("CardBorderBrush") as Brush ?? Brushes.LightGray,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(4),
+            Child = contentGrid
+        };
+
+        copyButton.Click += (_, _) => CopyDataTableDetailChartToClipboard(counter, displayDataPoints, titleText, chart);
+
+        return chartContainer;
+    }
+
+    private static double CalculatePaddedYAxisMaximum(IEnumerable<PerformanceDataPoint> dataPoints)
+    {
+        var maximum = dataPoints
+            .Select(static dataPoint => dataPoint.Value)
+            .Where(double.IsFinite)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        return maximum > 0 ? maximum * 1.1 : 1;
+    }
+
+    private void CopyDataTableDetailChartToClipboard(
+        string counter,
+        List<PerformanceDataPoint> displayDataPoints,
+        string title,
+        WpfPlot sourceChart)
+    {
+        try
+        {
+            if (!displayDataPoints.Any())
+            {
+                AddOperationLog(LogLevel.Warning, "コピーするデータテーブル詳細グラフのデータがありません。");
+                return;
+            }
+
+            var width = Math.Max(640, (int)Math.Ceiling(sourceChart.ActualWidth));
+            var height = Math.Max(360, (int)Math.Ceiling(sourceChart.ActualHeight) + 32);
+
+            var plot = CreateDataTableDetailCopyPlot(counter, displayDataPoints, title);
+            var bitmapBytes = RenderPlotToPngBytes(plot, width, height);
+
+            using var stream = new MemoryStream(bitmapBytes);
+            var bitmapImage = new BitmapImage();
+            bitmapImage.BeginInit();
+            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+            bitmapImage.StreamSource = stream;
+            bitmapImage.EndInit();
+            bitmapImage.Freeze();
+
+            Clipboard.SetImage(bitmapImage);
+
+            AddOperationLog(LogLevel.Info, $"データテーブル詳細グラフをクリップボードにコピーしました: {title}");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"データテーブル詳細グラフのコピーに失敗しました: {ex.Message}");
+            MessageBox.Show($"グラフのコピーに失敗しました。\n{ex.Message}",
+                "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private static byte[] RenderPlotToPngBytes(ScottPlot.Plot plot, int width, int height)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(width, height);
+        using var canvas = new SkiaSharp.SKCanvas(bitmap);
+        canvas.Clear(SkiaSharp.SKColors.White);
+        plot.Render(canvas, width, height);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private ScottPlot.Plot CreateDataTableDetailCopyPlot(
+        string counter,
+        List<PerformanceDataPoint> displayDataPoints,
+        string title)
+    {
+        var plot = new ScottPlot.Plot();
+        plot.Title(title, 16);
+        plot.XLabel("時間");
+        plot.YLabel("値");
+        plot.Axes.DateTimeTicksBottom();
+        plot.Legend.IsVisible = false;
+
+        var chartData = LineSeriesDataBuilder.Build(displayDataPoints, 1.0);
+        var scatter = plot.Add.Scatter(chartData.XValues, chartData.YValues);
+        scatter.LineWidth = 1.5f;
+        scatter.LineStyle.Width = 1.5f;
+        scatter.LineColor = GetOrCreateCounterColor(counter);
+        scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
+
+        plot.Axes.AutoScale();
+        plot.Axes.Left.Min = 0;
+        plot.Axes.Left.Max = CalculatePaddedYAxisMaximum(displayDataPoints);
+
+        return plot;
     }
 
     /// <summary>
@@ -2766,18 +3167,31 @@ public partial class MainWindow : Window
         var statistics = CounterStatisticsCalculator.Calculate(
             counter,
             dataPoints,
-            ValueFormatHelper.EstimateUnit(counter));
+            string.Empty);
         
         var border = new Border
         {
             Background = System.Windows.Media.Brushes.LightGray,
-            Padding = new Thickness(10),
-            Margin = new Thickness(0, 5, 0, 0)
+            Padding = new Thickness(8, 4, 8, 4),
+            Margin = new Thickness(0, 3, 0, 0)
         };
 
         var stackPanel = new StackPanel
         {
+            Orientation = System.Windows.Controls.Orientation.Vertical,
+            VerticalAlignment = System.Windows.VerticalAlignment.Center
+        };
+
+        var statisticsRow = new WrapPanel
+        {
             Orientation = System.Windows.Controls.Orientation.Horizontal
+        };
+
+        var buttonRow = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            Margin = new Thickness(0, 4, 0, 0),
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Left
         };
 
         var periodText = statistics.DataPointCount > 0
@@ -2804,30 +3218,34 @@ public partial class MainWindow : Window
                 FontSize = 12,
                 VerticalAlignment = System.Windows.VerticalAlignment.Center
             };
-            stackPanel.Children.Add(textBlock);
+            statisticsRow.Children.Add(textBlock);
         }
 
         // エクスポートボタンを追加
         var exportButton = new Button
         {
             Content = "CSV出力",
-            Padding = new Thickness(10, 2, 10, 2),
-            Margin = new Thickness(10, 0, 0, 0),
+            Padding = new Thickness(8, 1, 8, 1),
+            Margin = new Thickness(0, 0, 6, 0),
+            Height = 22,
             VerticalAlignment = System.Windows.VerticalAlignment.Center
         };
         exportButton.Click += (sender, e) => ExportCounterDataToCsv(counter, dataPoints);
-        stackPanel.Children.Add(exportButton);
+        buttonRow.Children.Add(exportButton);
 
         var copyTsvButton = new Button
         {
             Content = "TSVコピー",
-            Padding = new Thickness(10, 2, 10, 2),
-            Margin = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(8, 1, 8, 1),
+            Margin = new Thickness(0),
+            Height = 22,
             VerticalAlignment = System.Windows.VerticalAlignment.Center
         };
         copyTsvButton.Click += (sender, e) => CopyCounterDataToTsvClipboard(counter, dataPoints);
-        stackPanel.Children.Add(copyTsvButton);
+        buttonRow.Children.Add(copyTsvButton);
 
+        stackPanel.Children.Add(statisticsRow);
+        stackPanel.Children.Add(buttonRow);
         border.Child = stackPanel;
         return border;
     }
@@ -2921,114 +3339,6 @@ public partial class MainWindow : Window
     private void Exit_Click(object sender, RoutedEventArgs e)
     {
         Application.Current.Shutdown();
-    }
-
-
-
-    private void CloseAllTabs_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            ClearDataTableDisplay();
-            
-            AddOperationLog(LogLevel.Success, "表示中のデータテーブル一覧を閉じました。カウンターの選択状態は保持されています。");
-        }
-        catch (Exception ex)
-        {
-            AddOperationLog(LogLevel.Error, $"データテーブル一覧のクリアに失敗しました: {ex.Message}");
-            MessageBox.Show($"データテーブル一覧のクリアに失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"Failed to clear data table list: {ex}");
-        }
-    }
-
-    private List<(string Counter, List<PerformanceDataPoint> DataPoints)> GetExportableDisplayCounterData()
-    {
-        return _counterData.Keys
-            .Select(counter => (
-                Counter: counter,
-                DataPoints: GetCurrentDisplayDataPoints(counter)))
-            .Where(static item => item.DataPoints.Any())
-            .ToList();
-    }
-
-    private void ExportAllDataToCsv_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var exportCounterData = GetExportableDisplayCounterData();
-
-            if (!exportCounterData.Any())
-            {
-                AddOperationLog(LogLevel.Warning, "エクスポートするデータがありません。BLGファイルを読み込んでカウンターを選択してください。");
-                MessageBox.Show("エクスポートするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。", 
-                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var saveFileDialog = new SaveFileDialog
-            {
-                Filter = "CSV Files (*.csv)|*.csv",
-                FileName = $"PerformanceData_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
-                Title = "全データのCSVファイルを保存"
-            };
-
-            if (saveFileDialog.ShowDialog() == true)
-            {
-                var allDataCount = exportCounterData.Sum(static item => item.DataPoints.Count);
-                var csv = CounterCsvBuilder.BuildAllCountersCsv(
-                    exportCounterData.Select(static item => (item.Counter, (IEnumerable<PerformanceDataPoint>)item.DataPoints)),
-                    CounterPathFormatter.GetDisplayName);
-
-                File.WriteAllText(saveFileDialog.FileName, csv, Encoding.UTF8);
-                
-                AddOperationLog(LogLevel.Success, $"全データがCSVファイルに保存されました。\n" +
-                              $"ファイル: {saveFileDialog.FileName}\n" +
-                              $"カウンター数: {exportCounterData.Count}個\n" +
-                              $"データポイント数: {allDataCount}個");
-            }
-        }
-        catch (Exception ex)
-        {
-            AddOperationLog(LogLevel.Error, $"CSVファイルの保存に失敗しました: {ex.Message}");
-            MessageBox.Show($"CSVファイルの保存に失敗しました: {ex.Message}", 
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"All data CSV export failed: {ex}");
-        }
-    }
-
-    private void CopyAllDataToTsvClipboard_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var exportCounterData = GetExportableDisplayCounterData();
-
-            if (!exportCounterData.Any())
-            {
-                AddOperationLog(LogLevel.Warning, "コピーするデータがありません。BLGファイルを読み込んでカウンターを選択してください。");
-                MessageBox.Show("コピーするデータがありません。\nBLGファイルを読み込んでカウンターを選択してください。",
-                              "データなし", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-
-            var allDataCount = exportCounterData.Sum(static item => item.DataPoints.Count);
-            var tsv = CounterCsvBuilder.BuildAllCountersTsv(
-                exportCounterData.Select(static item => (item.Counter, (IEnumerable<PerformanceDataPoint>)item.DataPoints)),
-                CounterPathFormatter.GetDisplayName);
-
-            Clipboard.SetText(tsv);
-
-            AddOperationLog(LogLevel.Success, $"全データをTSV形式でクリップボードにコピーしました。\n" +
-                          $"カウンター数: {exportCounterData.Count}個\n" +
-                          $"データポイント数: {allDataCount}個");
-        }
-        catch (Exception ex)
-        {
-            AddOperationLog(LogLevel.Error, $"TSVデータのクリップボードコピーに失敗しました: {ex.Message}");
-            MessageBox.Show($"TSVデータのクリップボードコピーに失敗しました: {ex.Message}",
-                          "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-            LogError($"All data TSV clipboard copy failed: {ex}");
-        }
     }
 
     /// <summary>
@@ -3234,12 +3544,12 @@ public partial class MainWindow : Window
             
             SetSelectedCounterLoadUiState(true);
             
-            // 選択された時間範囲を計算（時間範囲未検出時は全期間扱い）
-            DateTime selectedStartTime;
-            DateTime selectedEndTime;
+            // 選択された時間範囲は読み込み条件ではなく、読み込み後のX軸表示範囲として扱う。
+            DateTime displayStartTime;
+            DateTime displayEndTime;
             if (_timeRangeDetected)
             {
-                (selectedStartTime, selectedEndTime) = TimeRangeCalculator.CalculateRange(
+                (displayStartTime, displayEndTime) = TimeRangeCalculator.CalculateRange(
                     _fileStartTime,
                     _fileEndTime,
                     StartTimeSlider.Value,
@@ -3247,14 +3557,14 @@ public partial class MainWindow : Window
             }
             else
             {
-                selectedStartTime = _fileStartTime;
-                selectedEndTime = _fileEndTime;
+                displayStartTime = _fileStartTime;
+                displayEndTime = _fileEndTime;
             }
             
             var executionResult = await ExecuteRelogForSelectedCounters(
                 selectedCounters,
-                selectedStartTime,
-                selectedEndTime,
+                displayStartTime,
+                displayEndTime,
                 progress,
                 cancellationToken);
 
@@ -3264,8 +3574,8 @@ public partial class MainWindow : Window
             }
 
             var timeRangeMessage = _timeRangeDetected
-                ? $"時間範囲: {selectedStartTime:yyyy/MM/dd HH:mm:ss} ～ {selectedEndTime:yyyy/MM/dd HH:mm:ss}"
-                : "時間範囲: 全期間（時間範囲の自動検出なし）";
+                ? $"読み込み範囲: 全期間 / 表示範囲: {displayStartTime:yyyy/MM/dd HH:mm:ss} ～ {displayEndTime:yyyy/MM/dd HH:mm:ss}"
+                : "読み込み範囲: 全期間（時間範囲の自動検出なし）";
 
             if (executionResult.WasCanceled)
             {
@@ -3366,8 +3676,8 @@ public partial class MainWindow : Window
     /// </summary>
     private async Task<CounterLoadExecutionResult> ExecuteRelogForSelectedCounters(
         List<string> counters,
-        DateTime startTime,
-        DateTime endTime,
+        DateTime displayStartTime,
+        DateTime displayEndTime,
         IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
@@ -3375,13 +3685,11 @@ public partial class MainWindow : Window
         {
             progress?.Report("PDH APIを使用してカウンターデータを読み込み中...");
             
-            // 時間制約有効かどうかを判定（スライダーが初期値でない場合は時間制約を適用）
-            bool useTimeConstraints = StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100;
+            // 時間範囲スライダーは読み込み条件ではなく、グラフ表示のズーム範囲として扱う。
+            bool hasDisplayRangeZoom = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
             
-            // relog.exeコマンドライン文字列を生成
-            var effectiveStartTime = useTimeConstraints ? startTime : _fileStartTime;
-            var effectiveEndTime = useTimeConstraints ? endTime : _fileEndTime;
-            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile!, effectiveStartTime, effectiveEndTime);
+            // relog.exeコマンドライン文字列は、実際の読み込みに合わせて全期間を表示する。
+            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile!, _fileStartTime, _fileEndTime);
             
             // UI表示を更新（relog.exe情報のみ表示）
             await Dispatcher.InvokeAsync(() =>
@@ -3392,15 +3700,15 @@ public partial class MainWindow : Window
             });
             
             // PDH API実行状況を操作ログに出力
-            var pdhApiInfo = useTimeConstraints 
-                ? $"📊 PDH API: {counters.Count}個のカウンターを時間範囲で読み込み（⏰ 時間範囲: {startTime:yyyy-MM-dd HH:mm:ss} ～ {endTime:yyyy-MM-dd HH:mm:ss}）"
-                : $"📊 PDH API: {counters.Count}個のカウンターを読み込み（時間制約なし）";
+            var pdhApiInfo = hasDisplayRangeZoom
+                ? $"📊 PDH API: {counters.Count}個のカウンターを全期間で読み込み（表示範囲: {displayStartTime:yyyy-MM-dd HH:mm:ss} ～ {displayEndTime:yyyy-MM-dd HH:mm:ss}）"
+                : $"📊 PDH API: {counters.Count}個のカウンターを全期間で読み込み";
             AddOperationLog(LogLevel.Info, pdhApiInfo);
             
             // デバッグ情報をログに出力
             LogInfo($"PDH APIを使用してカウンターデータを読み込み中");
-            LogInfo($"Use time constraints: {useTimeConstraints}");
-            LogInfo($"Start time: {startTime:yyyy-MM-dd HH:mm:ss}, End time: {endTime:yyyy-MM-dd HH:mm:ss}");
+            LogInfo("Use time constraints for loading: False");
+            LogInfo($"Display range: {displayStartTime:yyyy-MM-dd HH:mm:ss} - {displayEndTime:yyyy-MM-dd HH:mm:ss}");
             LogInfo($"Selected counters count: {counters.Count}");
             
             
@@ -3436,16 +3744,8 @@ public partial class MainWindow : Window
                 {
                     progress?.Report($"カウンター読み込み中: {counterPath} ({processedCount + 1}/{counters.Count})");
                     
-                    // 時間制約がある場合は、時間制約付きの読み込みメソッドを使用
-                    BlgFileAnalyzer.CounterInfo counterInfo;
-                    if (useTimeConstraints)
-                    {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, startTime, endTime, progress, cancellationToken).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress, cancellationToken).ConfigureAwait(false);
-                    }
+                    // グラフ表示範囲はX軸ズームだけに使うため、データは常に全期間読み込む。
+                    var counterInfo = await analyzer.LoadCounterDataAsync(counterPath, progress, cancellationToken).ConfigureAwait(false);
                     
                     var mappingResult = CounterLoadDataMapper.Map(
                         counterPath,
@@ -3719,9 +4019,21 @@ public partial class MainWindow : Window
     /// </summary>
     private List<string> GetCurrentChartCounters()
     {
-        return _currentChartType == ChartType.LineChart
-            ? _chartSeries.Keys.OrderBy(c => c).ToList()
-            : _areaChartSeries.Keys.OrderBy(c => c).ToList();
+        var chartCounters = _currentChartType == ChartType.LineChart
+            ? _chartSeries.Keys.ToHashSet(StringComparer.Ordinal)
+            : _areaChartSeries.Keys.ToHashSet(StringComparer.Ordinal);
+
+        var countersInLegendOrder = _legendItems
+            .Select(static item => item.CounterPath)
+            .Where(chartCounters.Contains)
+            .ToList();
+
+        var legendCounterSet = countersInLegendOrder.ToHashSet(StringComparer.Ordinal);
+        countersInLegendOrder.AddRange(chartCounters
+            .Where(counter => !legendCounterSet.Contains(counter))
+            .OrderBy(static counter => counter));
+
+        return countersInLegendOrder;
     }
 
     private static ComboBoxItem CreateScaleComboBoxItem(string scaleLabel)
@@ -4550,12 +4862,8 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // relog.exeコマンドを生成
-            var useTimeConstraints = _timeRangeDetected && (StartTimeSlider.Value > 0 || EndTimeSlider.Value < 100);
-            var (effectiveStartTime, effectiveEndTime) = useTimeConstraints
-                ? TimeRangeCalculator.CalculateRange(_fileStartTime, _fileEndTime, StartTimeSlider.Value, EndTimeSlider.Value)
-                : (_fileStartTime, _fileEndTime);
-            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile, effectiveStartTime, effectiveEndTime);
+            // 時間範囲スライダーはグラフのズーム用途のため、relog.exe相当コマンドは全期間で表示する。
+            string relogCommand = RelogCommandBuilder.Build(_currentBlgFile, _fileStartTime, _fileEndTime);
             
             // UI表示を更新
             RelogCommandExpander.Visibility = Visibility.Visible;
@@ -4750,6 +5058,241 @@ public partial class MainWindow : Window
         {
             LogError($"グラフコンテキストメニュー表示エラー: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// グラフ上のカーソル位置に対応するカウンター値を表示
+    /// </summary>
+    private void PerformanceChart_MouseMove(object sender, MouseEventArgs e)
+    {
+        try
+        {
+            if (_isGraphHoverContextPinned)
+            {
+                return;
+            }
+
+            if (!HasVisibleChartData() ||
+                GraphDropOverlay.Visibility == Visibility.Visible ||
+                GraphHoverOverlayCanvas.ActualWidth <= 0 ||
+                GraphHoverOverlayCanvas.ActualHeight <= 0)
+            {
+                HideGraphHoverContext();
+                return;
+            }
+
+            var chartPoint = e.GetPosition(PerformanceChart);
+            if (!TryBuildGraphHoverContext(chartPoint, out var context))
+            {
+                HideGraphHoverContext();
+                return;
+            }
+
+            ShowGraphHoverContext(context!, e.GetPosition(GraphHoverOverlayCanvas));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"グラフHoverコンテキスト更新エラー: {ex.Message}");
+            HideGraphHoverContext();
+        }
+    }
+
+    private void PerformanceChart_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_isGraphHoverContextPinned)
+        {
+            return;
+        }
+
+        _graphHoverMouseDownPoint = null;
+        HideGraphHoverContext();
+    }
+
+    private void PerformanceChart_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _graphHoverMouseDownPoint = e.GetPosition(PerformanceChart);
+    }
+
+    private void PerformanceChart_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        try
+        {
+            var mouseUpPoint = e.GetPosition(PerformanceChart);
+            if (_graphHoverMouseDownPoint is not Point mouseDownPoint)
+            {
+                return;
+            }
+
+            _graphHoverMouseDownPoint = null;
+
+            var dragDistance = Math.Sqrt(
+                Math.Pow(mouseUpPoint.X - mouseDownPoint.X, 2) +
+                Math.Pow(mouseUpPoint.Y - mouseDownPoint.Y, 2));
+            if (dragDistance > GraphHoverClickDragThreshold)
+            {
+                return;
+            }
+
+            if (_isGraphHoverContextPinned)
+            {
+                _isGraphHoverContextPinned = false;
+
+                if (TryBuildGraphHoverContext(mouseUpPoint, out var unpinnedContext))
+                {
+                    ShowGraphHoverContext(unpinnedContext!, e.GetPosition(GraphHoverOverlayCanvas));
+                }
+                else
+                {
+                    HideGraphHoverContext();
+                }
+
+                return;
+            }
+
+            if (!TryBuildGraphHoverContext(mouseUpPoint, out var context))
+            {
+                return;
+            }
+
+            _isGraphHoverContextPinned = true;
+            ShowGraphHoverContext(context!, e.GetPosition(GraphHoverOverlayCanvas));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"グラフHover固定切り替えエラー: {ex.Message}");
+        }
+    }
+
+    private bool TryBuildGraphHoverContext(Point chartPoint, out ChartHoverContext? context)
+    {
+        context = null;
+
+        if (!IsPointInsideChart(chartPoint))
+        {
+            return false;
+        }
+
+        var displayScale = PerformanceChart.DisplayScale;
+        if (!double.IsFinite(displayScale) || displayScale <= 0)
+        {
+            displayScale = 1;
+        }
+
+        var coordinates = PerformanceChart.Plot.GetCoordinates(
+            new Pixel(chartPoint.X * displayScale, chartPoint.Y * displayScale),
+            PerformanceChart.Plot.Axes.Bottom,
+            PerformanceChart.Plot.Axes.Left);
+
+        if (!double.IsFinite(coordinates.X))
+        {
+            return false;
+        }
+
+        DateTime targetTimestamp;
+        try
+        {
+            targetTimestamp = DateTime.FromOADate(coordinates.X);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        context = ChartHoverContextBuilder.Build(
+            targetTimestamp,
+            GetCurrentChartCounters(),
+            _counterData,
+            _seriesVisibility,
+            _counterScales,
+            _currentValueMode);
+
+        return context is not null;
+    }
+
+    private bool IsPointInsideChart(Point point)
+    {
+        return point.X >= 0 &&
+               point.Y >= 0 &&
+               point.X <= PerformanceChart.ActualWidth &&
+               point.Y <= PerformanceChart.ActualHeight;
+    }
+
+    private void ShowGraphHoverContext(ChartHoverContext context, Point cursorPoint)
+    {
+        GraphHoverTimestampText.Text = context.Timestamp.ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.CurrentCulture);
+        GraphHoverPinnedIconText.Visibility = _isGraphHoverContextPinned
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        GraphHoverItemsControl.ItemsSource = context.Items.Select(ToGraphHoverDisplayItem).ToList();
+        GraphHoverContextOverlay.Visibility = Visibility.Visible;
+        PositionGraphHoverContextOverlay(cursorPoint);
+    }
+
+    private GraphHoverDisplayItem ToGraphHoverDisplayItem(ChartHoverContextItem item)
+    {
+        return new GraphHoverDisplayItem
+        {
+            ColorBrush = GetGraphHoverItemBrush(item.Counter),
+            CounterName = item.CounterName,
+            CurrentText = item.FormattedValue
+        };
+    }
+
+    private Brush GetGraphHoverItemBrush(string counter)
+    {
+        var legendItem = _legendItems.FirstOrDefault(item => string.Equals(item.CounterPath, counter, StringComparison.Ordinal));
+        if (legendItem is not null)
+        {
+            var brush = new SolidColorBrush(legendItem.Color);
+            brush.Freeze();
+            return brush;
+        }
+
+        if (_counterLineColors.TryGetValue(counter, out var scottPlotColor))
+        {
+            var brush = new SolidColorBrush(ChartColorPalette.ConvertToMediaColor(scottPlotColor));
+            brush.Freeze();
+            return brush;
+        }
+
+        return DefaultGraphHoverItemBrush;
+    }
+
+    private void PositionGraphHoverContextOverlay(Point cursorPoint)
+    {
+        GraphHoverContextOverlay.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var desiredSize = GraphHoverContextOverlay.DesiredSize;
+
+        var left = cursorPoint.X + GraphHoverOverlayOffset;
+        var top = cursorPoint.Y + GraphHoverOverlayOffset;
+        var maxLeft = Math.Max(4, GraphHoverOverlayCanvas.ActualWidth - desiredSize.Width - 4);
+        var maxTop = Math.Max(4, GraphHoverOverlayCanvas.ActualHeight - desiredSize.Height - 4);
+
+        if (left > maxLeft)
+        {
+            left = cursorPoint.X - desiredSize.Width - GraphHoverOverlayOffset;
+        }
+
+        if (top > maxTop)
+        {
+            top = cursorPoint.Y - desiredSize.Height - GraphHoverOverlayOffset;
+        }
+
+        Canvas.SetLeft(GraphHoverContextOverlay, Math.Clamp(left, 4, maxLeft));
+        Canvas.SetTop(GraphHoverContextOverlay, Math.Clamp(top, 4, maxTop));
+    }
+
+    private void HideGraphHoverContext()
+    {
+        _isGraphHoverContextPinned = false;
+        _graphHoverMouseDownPoint = null;
+
+        if (GraphHoverContextOverlay.Visibility != Visibility.Collapsed)
+        {
+            GraphHoverContextOverlay.Visibility = Visibility.Collapsed;
+        }
+
+        GraphHoverPinnedIconText.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>
