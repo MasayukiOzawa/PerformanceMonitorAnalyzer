@@ -1,108 +1,40 @@
-# Custom Instrucitoin https://copilot-instructions.md/
+# Copilot Instructions
 
-# 応答に使用する言語
+## Language
 
-- 応答の基本動作として日本語を使用するようにしてください。
-- PR / セッションの内容は日本語に翻訳したものを記載してください。
+- Respond in Japanese by default.
+- Summaries, pull request notes, and review comments should also be written in Japanese unless the user asks otherwise.
 
-# リポジトリのブランチ戦略
+## Branches
 
-- main / release / feature / copilot のブランチによりリポジトリを管理します。
-  - 作業を開始する前に、必ず作業用ブランチを作成してそのブランチへ切り替えてください。
-  - main ブランチでは、直接ファイル編集・コミット・実装作業を行わないでください。
-  - Copilot が操作するリポジトリには、copilot のプレフィクス使用してください。
-  - copilot ブランチのマージ先は release ブランチを使用してください
-  - release から main にマージするための GitHub Actions を作成してください。
-    - release から main にマージするワークフローの実行は実行は手動を想定ください。
+- Create a working branch before changing files.
+- Do not edit or commit directly on `main`.
+- Use `codex/*` for Codex-authored work and `feature/*` for ordinary feature branches.
+- Do not create release automation unless the task explicitly asks for it.
 
-# 指示内に URL が含まれていた場合
+## Project Facts
 
-- 指示内示自レポジトリ以外の URL が含まれている場合、そのリポジトリ内のソースで実装してもらいたい内容がある可能性があります。
-  その場合、URL のリポジトリの内容を解析して、指示の内容の実装の参考としてください。
+- This is a Windows WPF application targeting .NET 10.0.
+- The solution is `src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.sln`.
+- The app parses BLG files with the Windows PDH API.
+- `relog.exe` is used as a reference command display; app data loading is PDH API based.
+- Public sample BLG files are not tracked. Keep local `.blg` files under `sample/` out of Git.
+- Build outputs, publish artifacts, logs, and local JSON exports must remain untracked.
 
-# Coding Guidline
+## Build And Test
 
-## 実行環境についてのルール
+- Restore: `dotnet restore src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.sln`
+- Debug build: `dotnet build src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.sln -c Debug`
+- Tests: `dotnet test src/PerformanceMonitorAnalyzer/PerformanceMonitorAnalyzer.sln`
+- Release single-file artifacts are created by `publish.bat` or Release publish commands documented in `.github/instructions/build.instructions.md`.
 
-- コードを実行するための Dev Container を作成してください。
-- 開発言語に応じた、 VS Code の launch.json のデバッグの定義を作成してください。
-  - IP or ホスト名を指定してプロセスを起動する場合 `localhost:ポート番号` ではなく `127.0.0.1:ポート番号` または `localhost:ポート番号` を指定してください。
-    - localhost が指定されている場合、VS Code でローカルからのポート転送が期待通り動作しない可能性がある場合の対応。
-  - PHP の Web サーバーでのデバッグ定義を作成する場合 `program` の定義で、特定のプログラムを指定するのは避けてください。
-- node の sharp モジュールは使用する必要がないのであればロードしないで下さい。
-  - 過去に sharp モジュールのロードでエラーとなったことがある場合がある場合の対応。
+## Documentation
 
-## ビルド
+- Keep `README.md` and `wiki/` aligned with the implemented UI and repository structure.
+- Do not document files, setup paths, or menu entries that are not present in the repository.
+- Update docs when user-facing behavior, build steps, dependencies, or release outputs change.
 
-- ビルド手順、Debug / Release の扱い、生成されるバイナリのパス、シングルバイナリ発行に関する Instructions は `.github/instructions/build.instructions.md` を参照してください。
+## UI Changes
 
-## ディレクトリ構造
-
-- ファイルの用途に応じて適切なディレクトリを作成し、用途別にファイルをディレクトリ管理してください。
-  - ディレクトリを作成した場合、.devcontainer の nginx.conf を必要に応じて更新してください。
-
-## ライブラリの使用
-
-- コードの実装にあたって、実装する処理のメジャーなライブラリが存在している場合は、必要に応じてライブラリを使用してください。
-  - ライブラリを使用する場合、ライブラリのバージョンをドキュメントに記載してください。
-  - ライブラリのバージョンは、特定のバージョンを指定するようにしてください。
-    - 例: `^1.0.0` のようなバージョン指定ではなく、`1.0.0` のように特定のバージョンを指定してください。
-  - ライブラリのインストール方法は、言語に応じたパッケージマネージャーを使用してください。
-
-## モジュール管理
-
-- モジュールのインストールは、言語に応じたパッケージマネージャーを使用してください。
-  - 使用したパッケージマネージャー / モジュールのバージョンをドキュメントに記載してください。
-  - 以下はパッケージマネージャーの例となります。
-    - Node.js を使用する場合、モジュールのインストールは npm または yarn を使用してください。
-    - Python を使用する場合、モジュールのインストールは pip を使用してください。
-    - Ruby を使用する場合、モジュールのインストールは bundler を使用してください。
-    - Go を使用する場合、モジュールのインストールは go modules を使用してください。
-    - PHP を使用する場合、モジュールのインストールは composer を使用してください。
-
-## CSS について
-
-- CSS はインライン CSS ではなく CSS ファイルに記載してください。
-  - CSS を作成する場合、CSS 用のディレクトリにファイルを配置してください。
-
-## API を作成する場合
-
-- API として公開するコードを作成する場合、API 用のディレクトリを作成してそのディレクトリにコードを配置してください
-  - API 用のディレクトリは nginx で自 IP からのみ呼び出しが可能内容に制限をしてください
-
-## エラーログ
-
-- コードのエラーについてはエラーログに出力するようにしてください
-  - どのファイルに出力されているかをドキュメントに記載してください。
-
-## Azure OpenAI を利用した場合
-
-- Azure OpenAI へのリクエスト / レスポンスを確認できる UI を作成してください。
-  - UI は折りたたみ表示が可能なように設定してください。
-
-# 画面間の遷移メニューを作成する場合のルール
-
-- パンくずリストを作成する場合、画面の上部に配置してください。
-  - パンくずリストは `ホーム` から始めてください。
-
-# Microsoft テクノロジの作業をする場合
-
-- microsoft.docs の MCP Server の利用を検討してください
-
-# ナレッジの収集
-
-- Coding Agent でタスクを完了した場合、knowledge ディレクトリにタスクの内容 / どのように試行してその内容を実施ししようとしたのかのナレッジを Markdown 形式で記載してください。
-- Coding Agent の実行ごとに 1 ファイルを作成するのではなく、同一の PR 内のタスクは一つのファイルに情報を集約してください。
-- ナレッジのファイル名は次の形式で作成してください
-  - {PR 番号}-{タスク名}.md
-  - 例: 123-API を作成する.md
-
-# スクリーンショットの取得
-
-- 画面を変更 / 新規に作成した際には画面全体のスクリーンショットを取得して PR の応答に含めてください。
-
-# wiki のメンテナンス
-
-- タスクの最後には更新されたリポジトリの内容を基にして wiki の作成 / 最新の情報への更新を行ってください。
-  - wiki ディレクトリを作成して、そのリポジトリ内に Markdown で Wiki となるドキュメントを作成してください。
-  - README.md から始まり、それぞれのナレッジごとに Wiki を作成し、README には各ドキュメントのリンクを作成してください。
+- Preserve the existing WPF style resources in `src/PerformanceMonitorAnalyzer/Styles/`.
+- When changing visible UI, verify text fit and capture a screenshot for PR notes when possible.

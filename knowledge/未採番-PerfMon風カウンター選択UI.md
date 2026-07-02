@@ -39,7 +39,7 @@
 ## 検証
 
 ```powershell
-dotnet build --nologo -v q -p:OutputPath=C:\Users\masayuki.ozawa\.copilot\session-state\437ca846-eb90-459e-bacf-3a8bf7ae3f99\files\isolated-build\ src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj
+dotnet build --nologo -v q -p:OutputPath=%TEMP%\pma-isolated-build\ src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj
 ```
 
 - ビルド成功

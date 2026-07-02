@@ -5,7 +5,7 @@
 SQLサーバー監視パターンでBLGファイルからカウンターを読み込む際に、以下のエラーが発生していました：
 
 ```
-カウンター '\\NUC-102\SQLServer:Buffer Manager\Buffer cache hit ratio' の読み込みに失敗: Index was out of range. Must be non-negative and less than or equal to the size of the collection. (Parameter 'startIndex')
+カウンター '\\COMPUTER-NAME\SQLServer:Buffer Manager\Buffer cache hit ratio' の読み込みに失敗: Index was out of range. Must be non-negative and less than or equal to the size of the collection. (Parameter 'startIndex')
 ```
 
 ## 原因分析

@@ -533,8 +533,8 @@ private string FormatValueWithUnit(double value, string unit)
 ```csharp
 private async void LoadSampleBlgFile_Click(object sender, RoutedEventArgs e)
 {
-    var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, 
-                                    "..", "..", "..", "..", "sample", "DataCollector01.blg");
+    var sampleFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                                    "..", "..", "..", "..", "sample", "your-file.blg");
     // ファイル存在確認と読み込み処理
 }
 ```
