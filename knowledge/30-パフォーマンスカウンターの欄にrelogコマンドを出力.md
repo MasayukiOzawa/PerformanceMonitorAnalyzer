@@ -35,8 +35,8 @@ Issue #30の要求に対応し、パフォーマンスカウンターの欄にPD
 ```
 relog.exe \
   "入力ファイル.blg" \
-  -o "出力ファイル_output.csv" \
-  -f CSV \
+  -o "出力ファイル_output.blg" \
+  -f BIN \
   -b "開始時刻" \
   -e "終了時刻" \
   -c \
@@ -77,8 +77,8 @@ relog.exe \
 📝 同等のrelog.exeコマンド:
 relog.exe \
   "C:\Logs\your-file.blg" \
-  -o "C:\Logs\your-file_output.csv" \
-  -f CSV \
+  -o "your-file_output.blg" \
+  -f BIN \
   -b "2024/01/15 10:00:00" \
   -e "2024/01/15 12:00:00" \
   -c \
@@ -97,8 +97,8 @@ relog.exe \
 📝 同等のrelog.exeコマンド:
 relog.exe \
   "C:\Logs\your-file.blg" \
-  -o "C:\Logs\your-file_output.csv" \
-  -f CSV \
+  -o "your-file_output.blg" \
+  -f BIN \
   -c \
     "\Processor(_Total)\% Processor Time" \
     "\Memory\Available MBytes" \

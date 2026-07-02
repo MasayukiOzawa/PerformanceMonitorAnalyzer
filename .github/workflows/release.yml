@@ -1,0 +1,130 @@
+name: Build release ZIPs
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing GitHub Release tag to upload assets to
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-zips-${{ github.event.release.tag_name || github.event.inputs.tag_name }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: 10.0.x
+  PROJECT_PATH: src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj
+  SOLUTION_PATH: src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.sln
+
+jobs:
+  test:
+    name: Test
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore $env:SOLUTION_PATH
+
+      - name: Test
+        run: dotnet test $env:SOLUTION_PATH --configuration Debug --no-restore
+
+  build-release-assets:
+    name: Build ${{ matrix.runtime }} ZIP
+    runs-on: windows-latest
+    needs: test
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: win-x64
+            zip_name: PerformanceMonitorAnalyzer-win-x64.zip
+          - runtime: win-arm64
+            zip_name: PerformanceMonitorAnalyzer-win-arm64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          $releaseTag = '${{ github.event.release.tag_name }}'
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+            $releaseTag = '${{ github.event.inputs.tag_name }}'
+          }
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+            throw 'Release tag was not provided.'
+          }
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore $env:PROJECT_PATH
+
+      - name: Publish single-file binary
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
+          dotnet publish $env:PROJECT_PATH `
+            --configuration Release `
+            --runtime ${{ matrix.runtime }} `
+            --self-contained true `
+            --output $publishDir `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:PublishSingleFileOnBuild=false
+
+      - name: Verify release contents
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
+          $exePath = Join-Path $publishDir "PerformanceMonitorAnalyzer.exe"
+          $configPath = Join-Path $publishDir "config\counter-patterns.yaml"
+
+          if (-not (Test-Path $exePath)) {
+            throw "Missing release executable: $exePath"
+          }
+          if (-not (Test-Path $configPath)) {
+            throw "Missing configuration file: $configPath"
+          }
+
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          $zipPath = Join-Path $artifactDir "${{ matrix.zip_name }}"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+
+          Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -Force
+          "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload ZIP to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload $env:RELEASE_TAG $env:ZIP_PATH --clobber
