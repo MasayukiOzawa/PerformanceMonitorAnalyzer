@@ -52,5 +52,5 @@
 - `dotnet build --nologo -v q -p:OutputPath=%TEMP%\copilot-graphdragdrop-build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
 - `dotnet test --nologo -v q -p:OutputPath=%TEMP%\copilot-graphdragdrop-test -p:SelfContained=false -p:UseAppHost=false tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
 - `dotnet publish --nologo -v q -c Release -r win-x64 --self-contained true -o %TEMP%\copilot-singlefile-check src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
-- `dotnet build --nologo -v q -r win-x64 -p:OutputPath=C:\Users\masayuki.ozawa\.copilot\session-state\95f3f6b6-82bd-481f-b58e-2f0147345a88\files\post-build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
-- `dotnet test --nologo -v q -p:OutputPath=C:\Users\masayuki.ozawa\.copilot\session-state\95f3f6b6-82bd-481f-b58e-2f0147345a88\files\post-test -p:SelfContained=false -p:UseAppHost=false tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`
+- `dotnet build --nologo -v q -r win-x64 -p:OutputPath=%TEMP%\pma-post-build src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.csproj`
+- `dotnet test --nologo -v q -p:OutputPath=%TEMP%\pma-post-test -p:SelfContained=false -p:UseAppHost=false tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj`

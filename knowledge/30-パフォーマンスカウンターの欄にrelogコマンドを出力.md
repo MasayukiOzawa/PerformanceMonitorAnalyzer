@@ -76,8 +76,8 @@ relog.exe \
 
 📝 同等のrelog.exeコマンド:
 relog.exe \
-  "C:\sample\DataCollector01.blg" \
-  -o "C:\sample\DataCollector01_output.csv" \
+  "C:\Logs\your-file.blg" \
+  -o "C:\Logs\your-file_output.csv" \
   -f CSV \
   -b "2024/01/15 10:00:00" \
   -e "2024/01/15 12:00:00" \
@@ -96,8 +96,8 @@ relog.exe \
 
 📝 同等のrelog.exeコマンド:
 relog.exe \
-  "C:\sample\DataCollector01.blg" \
-  -o "C:\sample\DataCollector01_output.csv" \
+  "C:\Logs\your-file.blg" \
+  -o "C:\Logs\your-file_output.csv" \
   -f CSV \
   -c \
     "\Processor(_Total)\% Processor Time" \

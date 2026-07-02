@@ -20,7 +20,7 @@ echo.
 
 if "%~1"=="" (
     echo 使用方法: build-and-run.bat [ファイルパス]
-    echo 例: build-and-run.bat "D:\Git\PerformanceMonitorAnalyzer\sample\DataCollector01.blg"
+    echo 例: build-and-run.bat "C:\Logs\your-file.blg"
     echo.
     echo 引数なしで実行します...
     dotnet run
