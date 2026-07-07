@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     
 
     private readonly Dictionary<string, ScottPlot.Plottables.FillY> _areaChartSeries = new();
+    // ScottPlot 5 HorizontalSpan uses X1/X2, so it is the correct plottable for a time-axis range.
     private ScottPlot.Plottables.HorizontalSpan? _timeHighlightSpan;
     private ScottPlot.Plottables.VerticalLine? _timeHighlightFocusLine;
     private ChartType _currentChartType = ChartType.LineChart;
@@ -3637,6 +3638,7 @@ public partial class MainWindow : Window
             var accentColor = ScottPlot.Color.FromHex("#B45309");
             var fillColor = ScottPlot.Color.FromHex("#F59E0B").WithAlpha(38);
 
+            // HorizontalSpan shades an X-axis range in ScottPlot 5.
             _timeHighlightSpan = PerformanceChart.Plot.Add.HorizontalSpan(
                 startTime.ToOADate(),
                 endTime.ToOADate(),
@@ -3673,7 +3675,13 @@ public partial class MainWindow : Window
 
         _isTimeHighlightEnabled = _timeRangeDetected && TimeHighlightEnabledCheckBox.IsChecked == true;
 
-        if (!_isUpdatingTimeHighlightControls && _isTimeHighlightEnabled)
+        if (_isUpdatingTimeHighlightControls)
+        {
+            UpdateTimeHighlightControls();
+            return;
+        }
+
+        if (_isTimeHighlightEnabled)
         {
             NormalizeTimeHighlightSliders(TimeHighlightSliderRole.None);
         }
@@ -3747,18 +3755,7 @@ public partial class MainWindow : Window
 
     private void ClearTimeHighlight_Click(object sender, RoutedEventArgs e)
     {
-        _isUpdatingTimeHighlightControls = true;
-        try
-        {
-            _isTimeHighlightEnabled = false;
-            TimeHighlightEnabledCheckBox.IsChecked = false;
-        }
-        finally
-        {
-            _isUpdatingTimeHighlightControls = false;
-        }
-
-        UpdateTimeHighlightControls();
+        ResetTimeHighlightSelection();
         UpdateChartTimeHighlight(refresh: true);
         AddOperationLog(LogLevel.Info, "注目時間帯のハイライトをクリアしました。");
     }
