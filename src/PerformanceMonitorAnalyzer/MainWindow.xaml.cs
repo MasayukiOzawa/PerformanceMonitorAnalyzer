@@ -43,8 +43,12 @@ public partial class MainWindow : Window
     
 
     private readonly Dictionary<string, ScottPlot.Plottables.FillY> _areaChartSeries = new();
+    private ScottPlot.Plottables.HorizontalSpan? _timeHighlightSpan;
+    private ScottPlot.Plottables.VerticalLine? _timeHighlightFocusLine;
     private ChartType _currentChartType = ChartType.LineChart;
     private CounterValueMode _currentValueMode = CounterValueMode.RawValue;
+    private bool _isTimeHighlightEnabled = false;
+    private bool _isUpdatingTimeHighlightControls = false;
     
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
@@ -125,6 +129,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeChart();
+        UpdateTimeHighlightControls();
         InitializeBulkScaleComboBox();
         InitializeCounterPanelControls();
         SelectedCountersListView.ItemsSource = _selectedCounterItems;
@@ -240,6 +245,7 @@ public partial class MainWindow : Window
         OpenCounterAddDialogButton.IsEnabled = !isLoading && _counterTreeNodes.Count > 0;
         StartTimeSlider.IsEnabled = !isLoading;
         EndTimeSlider.IsEnabled = !isLoading;
+        UpdateTimeHighlightControls(isLoading);
         ExecuteButton.IsEnabled = !isLoading && CanExecuteSelectedCounters();
     }
 
@@ -258,6 +264,8 @@ public partial class MainWindow : Window
     {
         // ScottPlot グラフの初期設定
         PerformanceChart.Plot.Clear();
+        _timeHighlightSpan = null;
+        _timeHighlightFocusLine = null;
         
         PerformanceChart.Plot.XLabel("時間");
         PerformanceChart.Plot.YLabel(GetCurrentYAxisLabel());
@@ -2405,6 +2413,8 @@ public partial class MainWindow : Window
             PerformanceChart.Plot.Clear();
             _chartSeries.Clear();
             _areaChartSeries.Clear();
+            _timeHighlightSpan = null;
+            _timeHighlightFocusLine = null;
             
             // 凡例をクリア
             ClearLegendItems(false);
@@ -3447,7 +3457,8 @@ public partial class MainWindow : Window
             EndTimeSlider.Minimum = 0;
             EndTimeSlider.Maximum = 100;
             EndTimeSlider.Value = 100;
-            
+
+            ResetTimeHighlightSelection();
             UpdateTimeSliderTexts();
             
             UpdateExecuteButtonState();
@@ -3458,6 +3469,8 @@ public partial class MainWindow : Window
         else
         {
             TimeRangeExpander.Visibility = Visibility.Collapsed;
+            ClearChartTimeHighlightPlottables();
+            UpdateTimeHighlightControls();
             UpdateExecuteButtonState();
         }
     }
@@ -3478,6 +3491,276 @@ public partial class MainWindow : Window
             StartTimeText.Text = selectedStartTime.ToString("MM/dd HH:mm:ss");
             EndTimeText.Text = selectedEndTime.ToString("MM/dd HH:mm:ss");
         }
+    }
+
+    private void ResetTimeHighlightSelection()
+    {
+        if (TimeHighlightEnabledCheckBox == null ||
+            HighlightStartTimeSlider == null ||
+            HighlightEndTimeSlider == null ||
+            HighlightFocusTimeSlider == null)
+        {
+            return;
+        }
+
+        _isUpdatingTimeHighlightControls = true;
+        try
+        {
+            _isTimeHighlightEnabled = false;
+            TimeHighlightEnabledCheckBox.IsChecked = false;
+            HighlightStartTimeSlider.Minimum = 0;
+            HighlightStartTimeSlider.Maximum = 100;
+            HighlightStartTimeSlider.Value = 0;
+            HighlightEndTimeSlider.Minimum = 0;
+            HighlightEndTimeSlider.Maximum = 100;
+            HighlightEndTimeSlider.Value = 100;
+            HighlightFocusTimeSlider.Minimum = 0;
+            HighlightFocusTimeSlider.Maximum = 100;
+            HighlightFocusTimeSlider.Value = 50;
+        }
+        finally
+        {
+            _isUpdatingTimeHighlightControls = false;
+        }
+
+        UpdateTimeHighlightTexts();
+        UpdateTimeHighlightControls();
+        UpdateChartTimeHighlight(refresh: false);
+    }
+
+    private void UpdateTimeHighlightControls(bool isLoading = false)
+    {
+        if (TimeHighlightEnabledCheckBox == null ||
+            TimeHighlightSliderPanel == null ||
+            UseVisibleRangeForHighlightButton == null ||
+            ClearTimeHighlightButton == null)
+        {
+            return;
+        }
+
+        var canUseTimeRange = _timeRangeDetected && !isLoading;
+        var canEditHighlight = canUseTimeRange && _isTimeHighlightEnabled;
+
+        TimeHighlightEnabledCheckBox.IsEnabled = canUseTimeRange;
+        TimeHighlightSliderPanel.IsEnabled = canEditHighlight;
+        UseVisibleRangeForHighlightButton.IsEnabled = canUseTimeRange;
+        ClearTimeHighlightButton.IsEnabled = canUseTimeRange && _isTimeHighlightEnabled;
+    }
+
+    private void NormalizeTimeHighlightSliders(TimeHighlightSliderRole changedRole)
+    {
+        if (HighlightStartTimeSlider == null ||
+            HighlightEndTimeSlider == null ||
+            HighlightFocusTimeSlider == null)
+        {
+            return;
+        }
+
+        var normalized = TimeHighlightRangeCalculator.NormalizePercentRange(
+            HighlightStartTimeSlider.Value,
+            HighlightEndTimeSlider.Value,
+            HighlightFocusTimeSlider.Value,
+            changedRole);
+
+        _isUpdatingTimeHighlightControls = true;
+        try
+        {
+            HighlightStartTimeSlider.Value = normalized.StartPercent;
+            HighlightEndTimeSlider.Value = normalized.EndPercent;
+            HighlightFocusTimeSlider.Value = normalized.FocusPercent;
+        }
+        finally
+        {
+            _isUpdatingTimeHighlightControls = false;
+        }
+    }
+
+    private (DateTime startTime, DateTime endTime, DateTime focusTime) GetTimeHighlightRange()
+    {
+        if (!_timeRangeDetected)
+        {
+            return (_fileStartTime, _fileEndTime, _fileStartTime);
+        }
+
+        return TimeHighlightRangeCalculator.CalculateRange(
+            _fileStartTime,
+            _fileEndTime,
+            HighlightStartTimeSlider.Value,
+            HighlightEndTimeSlider.Value,
+            HighlightFocusTimeSlider.Value);
+    }
+
+    private void UpdateTimeHighlightTexts()
+    {
+        if (TimeHighlightDisplay == null)
+        {
+            return;
+        }
+
+        if (!_timeRangeDetected)
+        {
+            TimeHighlightDisplay.Text = "--:--:-- ～ --:--:-- / 注目点 --:--:--";
+            return;
+        }
+
+        var (startTime, endTime, focusTime) = GetTimeHighlightRange();
+        TimeHighlightDisplay.Text = $"{startTime:MM/dd HH:mm:ss} ～ {endTime:MM/dd HH:mm:ss} / 注目点 {focusTime:MM/dd HH:mm:ss}";
+    }
+
+    private void ClearChartTimeHighlightPlottables()
+    {
+        if (_timeHighlightSpan is not null)
+        {
+            PerformanceChart.Plot.Remove(_timeHighlightSpan);
+            _timeHighlightSpan = null;
+        }
+
+        if (_timeHighlightFocusLine is not null)
+        {
+            PerformanceChart.Plot.Remove(_timeHighlightFocusLine);
+            _timeHighlightFocusLine = null;
+        }
+    }
+
+    private void UpdateChartTimeHighlight(bool refresh)
+    {
+        if (PerformanceChart == null)
+        {
+            return;
+        }
+
+        ClearChartTimeHighlightPlottables();
+
+        if (_timeRangeDetected && _isTimeHighlightEnabled)
+        {
+            var (startTime, endTime, focusTime) = GetTimeHighlightRange();
+            var accentColor = ScottPlot.Color.FromHex("#B45309");
+            var fillColor = ScottPlot.Color.FromHex("#F59E0B").WithAlpha(38);
+
+            _timeHighlightSpan = PerformanceChart.Plot.Add.HorizontalSpan(
+                startTime.ToOADate(),
+                endTime.ToOADate(),
+                fillColor);
+            _timeHighlightSpan.LineColor = accentColor.WithAlpha(128);
+            _timeHighlightSpan.LineWidth = 1;
+            _timeHighlightSpan.EnableAutoscale = false;
+            _timeHighlightSpan.LegendText = "注目時間帯";
+
+            _timeHighlightFocusLine = PerformanceChart.Plot.Add.VerticalLine(
+                focusTime.ToOADate(),
+                2,
+                accentColor,
+                LinePattern.Dashed);
+            _timeHighlightFocusLine.LabelText = $"注目点 {focusTime:HH:mm:ss}";
+            _timeHighlightFocusLine.LabelFontColor = accentColor;
+            _timeHighlightFocusLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#FFF7ED").WithAlpha(235);
+            _timeHighlightFocusLine.EnableAutoscale = false;
+            _timeHighlightFocusLine.LegendText = "注目点";
+        }
+
+        if (refresh)
+        {
+            PerformanceChart.Refresh();
+        }
+    }
+
+    private void TimeHighlightEnabled_Changed(object sender, RoutedEventArgs e)
+    {
+        if (TimeHighlightEnabledCheckBox == null)
+        {
+            return;
+        }
+
+        _isTimeHighlightEnabled = _timeRangeDetected && TimeHighlightEnabledCheckBox.IsChecked == true;
+
+        if (!_isUpdatingTimeHighlightControls && _isTimeHighlightEnabled)
+        {
+            NormalizeTimeHighlightSliders(TimeHighlightSliderRole.None);
+        }
+
+        UpdateTimeHighlightTexts();
+        UpdateTimeHighlightControls();
+        UpdateChartTimeHighlight(refresh: true);
+
+        if (!_isUpdatingTimeHighlightControls)
+        {
+            var message = _isTimeHighlightEnabled
+                ? "注目時間帯のハイライトを表示しました。"
+                : "注目時間帯のハイライトを解除しました。";
+            AddOperationLog(LogLevel.Info, message);
+        }
+    }
+
+    private void TimeHighlightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_timeRangeDetected ||
+            _isUpdatingTimeHighlightControls ||
+            HighlightStartTimeSlider == null ||
+            HighlightEndTimeSlider == null ||
+            HighlightFocusTimeSlider == null)
+        {
+            return;
+        }
+
+        var changedRole = sender == HighlightStartTimeSlider
+            ? TimeHighlightSliderRole.Start
+            : sender == HighlightEndTimeSlider
+                ? TimeHighlightSliderRole.End
+                : TimeHighlightSliderRole.Focus;
+
+        NormalizeTimeHighlightSliders(changedRole);
+        UpdateTimeHighlightTexts();
+        UpdateChartTimeHighlight(refresh: true);
+    }
+
+    private void UseVisibleRangeForHighlight_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_timeRangeDetected)
+        {
+            return;
+        }
+
+        _isUpdatingTimeHighlightControls = true;
+        try
+        {
+            var startPercent = StartTimeSlider.Value;
+            var endPercent = EndTimeSlider.Value;
+            var focusPercent = startPercent + ((endPercent - startPercent) / 2);
+
+            TimeHighlightEnabledCheckBox.IsChecked = true;
+            _isTimeHighlightEnabled = true;
+            HighlightStartTimeSlider.Value = startPercent;
+            HighlightEndTimeSlider.Value = endPercent;
+            HighlightFocusTimeSlider.Value = focusPercent;
+        }
+        finally
+        {
+            _isUpdatingTimeHighlightControls = false;
+        }
+
+        NormalizeTimeHighlightSliders(TimeHighlightSliderRole.None);
+        UpdateTimeHighlightTexts();
+        UpdateTimeHighlightControls();
+        UpdateChartTimeHighlight(refresh: true);
+        AddOperationLog(LogLevel.Info, "現在の表示範囲を注目時間帯に設定しました。");
+    }
+
+    private void ClearTimeHighlight_Click(object sender, RoutedEventArgs e)
+    {
+        _isUpdatingTimeHighlightControls = true;
+        try
+        {
+            _isTimeHighlightEnabled = false;
+            TimeHighlightEnabledCheckBox.IsChecked = false;
+        }
+        finally
+        {
+            _isUpdatingTimeHighlightControls = false;
+        }
+
+        UpdateTimeHighlightControls();
+        UpdateChartTimeHighlight(refresh: true);
+        AddOperationLog(LogLevel.Info, "注目時間帯のハイライトをクリアしました。");
     }
 
     /// <summary>
@@ -4909,6 +5192,7 @@ public partial class MainWindow : Window
             // ScottPlotでX軸の範囲を設定
             PerformanceChart.Plot.Axes.Bottom.Min = startTime.ToOADate();
             PerformanceChart.Plot.Axes.Bottom.Max = endTime.ToOADate();
+            UpdateChartTimeHighlight(refresh: false);
             
             // グラフを更新
             PerformanceChart.Refresh();
