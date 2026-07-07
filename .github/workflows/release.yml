@@ -1,12 +1,13 @@
-name: Build release ZIPs
+name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag_name:
-        description: Existing GitHub Release tag to upload assets to
+        description: Existing tag to create or update the GitHub Release for
         required: true
         type: string
 
@@ -14,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-zips-${{ github.event.release.tag_name || github.event.inputs.tag_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -23,13 +24,30 @@ env:
   SOLUTION_PATH: src\PerformanceMonitorAnalyzer\PerformanceMonitorAnalyzer.sln
 
 jobs:
-  test:
-    name: Test
+  release:
+    name: Build and publish release ZIPs
     runs-on: windows-latest
 
     steps:
+      - name: Resolve release tag
+        shell: pwsh
+        run: |
+          $releaseTag = "${{ github.ref_name }}"
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $releaseTag = "${{ inputs.tag_name }}"
+          }
+          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
+            throw "Release tag was not provided."
+          }
+          if ($releaseTag -match '[\r\n]') {
+            throw "Release tag must not contain CR or LF characters."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_TAG=$releaseTag" -Encoding utf8
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -42,89 +60,70 @@ jobs:
       - name: Test
         run: dotnet test $env:SOLUTION_PATH --configuration Debug --no-restore
 
-  build-release-assets:
-    name: Build ${{ matrix.runtime }} ZIP
-    runs-on: windows-latest
-    needs: test
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runtime: win-x64
-            zip_name: PerformanceMonitorAnalyzer-win-x64.zip
-          - runtime: win-arm64
-            zip_name: PerformanceMonitorAnalyzer-win-arm64.zip
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Resolve release tag
+      - name: Publish and package release assets
         shell: pwsh
         run: |
-          $releaseTag = '${{ github.event.release.tag_name }}'
-          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
-            $releaseTag = '${{ github.event.inputs.tag_name }}'
-          }
-          if ([string]::IsNullOrWhiteSpace($releaseTag)) {
-            throw 'Release tag was not provided.'
-          }
-          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Restore
-        shell: pwsh
-        run: dotnet restore $env:PROJECT_PATH
-
-      - name: Publish single-file binary
-        shell: pwsh
-        run: |
-          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
-          dotnet publish $env:PROJECT_PATH `
-            --configuration Release `
-            --runtime ${{ matrix.runtime }} `
-            --self-contained true `
-            --output $publishDir `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:PublishSingleFileOnBuild=false
-
-      - name: Verify release contents
-        shell: pwsh
-        run: |
-          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
-          $exePath = Join-Path $publishDir "PerformanceMonitorAnalyzer.exe"
-          $configPath = Join-Path $publishDir "config\counter-patterns.yaml"
-
-          if (-not (Test-Path $exePath)) {
-            throw "Missing release executable: $exePath"
-          }
-          if (-not (Test-Path $configPath)) {
-            throw "Missing configuration file: $configPath"
-          }
-
-      - name: Create ZIP
-        shell: pwsh
-        run: |
-          $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\${{ matrix.runtime }}"
+          $ErrorActionPreference = "Stop"
+          $runtimes = @("win-x64", "win-arm64")
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
           New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
 
-          $zipPath = Join-Path $artifactDir "${{ matrix.zip_name }}"
-          if (Test-Path $zipPath) {
-            Remove-Item $zipPath -Force
+          foreach ($runtime in $runtimes) {
+            $publishDir = Join-Path $env:GITHUB_WORKSPACE "publish\$runtime"
+            dotnet publish $env:PROJECT_PATH `
+              --configuration Release `
+              --runtime $runtime `
+              --self-contained true `
+              --output $publishDir `
+              -p:PublishSingleFile=true `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -p:PublishSingleFileOnBuild=false
+
+            $exePath = Join-Path $publishDir "PerformanceMonitorAnalyzer.exe"
+            $configPath = Join-Path $publishDir "config\counter-patterns.yaml"
+
+            if (-not (Test-Path $exePath)) {
+              throw "Missing release executable: $exePath"
+            }
+            if (-not (Test-Path $configPath)) {
+              throw "Missing configuration file: $configPath"
+            }
+
+            $zipPath = Join-Path $artifactDir "PerformanceMonitorAnalyzer-$env:RELEASE_TAG-$runtime.zip"
+            if (Test-Path $zipPath) {
+              Remove-Item $zipPath -Force
+            }
+
+            Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -Force
           }
 
-          Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -Force
-          "ZIP_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload ZIP to GitHub Release
+      - name: Create or update GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload $env:RELEASE_TAG $env:ZIP_PATH --clobber
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          $assetPaths = @(Get-ChildItem -Path $artifactDir -Filter "*.zip" |
+            Sort-Object Name |
+            ForEach-Object { $_.FullName })
+
+          if ($assetPaths.Count -eq 0) {
+            throw "No release ZIP files were created."
+          }
+
+          $releaseExists = $false
+          try {
+            gh release view $env:RELEASE_TAG *> $null
+            $releaseExists = $LASTEXITCODE -eq 0
+          }
+          catch {
+            $releaseExists = $false
+          }
+
+          if ($releaseExists) {
+            gh release upload $env:RELEASE_TAG @assetPaths --clobber
+          }
+          else {
+            gh release create $env:RELEASE_TAG @assetPaths --title $env:RELEASE_TAG --generate-notes --verify-tag
+          }
