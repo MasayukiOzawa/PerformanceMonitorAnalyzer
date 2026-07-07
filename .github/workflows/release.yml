@@ -39,7 +39,10 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($releaseTag)) {
             throw "Release tag was not provided."
           }
-          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if ($releaseTag -match '[\r\n]') {
+            throw "Release tag must not contain CR or LF characters."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "RELEASE_TAG=$releaseTag" -Encoding utf8
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,7 +103,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
-          $assetPaths = @(Get-ChildItem -Path artifacts -Filter "*.zip" |
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts"
+          $assetPaths = @(Get-ChildItem -Path $artifactDir -Filter "*.zip" |
             Sort-Object Name |
             ForEach-Object { $_.FullName })
 
