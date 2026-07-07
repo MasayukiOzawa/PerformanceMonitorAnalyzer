@@ -240,6 +240,82 @@
                                     <TextBlock x:Name="EndTimeText" Text="--:--:--" FontSize="10" HorizontalAlignment="Right" Foreground="{StaticResource AccentBrush}"/>
                                 </StackPanel>
                             </Grid>
+
+                            <Separator Margin="0,8,0,10"/>
+
+                            <TextBlock Text="注目時間帯:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                            <TextBlock x:Name="TimeHighlightDisplay"
+                                       Text="--:--:-- ～ --:--:-- / 注目点 --:--:--"
+                                       Margin="0,0,0,8"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"/>
+
+                            <CheckBox x:Name="TimeHighlightEnabledCheckBox"
+                                      Content="注目時間帯を表示"
+                                      Checked="TimeHighlightEnabled_Changed"
+                                      Unchecked="TimeHighlightEnabled_Changed"
+                                      Margin="0,0,0,6"
+                                      IsEnabled="False"/>
+
+                            <Grid x:Name="TimeHighlightSliderPanel" Margin="0,4,0,8" IsEnabled="False">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <StackPanel Grid.Row="0" Margin="0,0,0,5">
+                                    <TextBlock Text="ハイライト開始:" FontSize="11" Margin="0,0,0,2"/>
+                                    <Slider x:Name="HighlightStartTimeSlider"
+                                           Minimum="0"
+                                           Maximum="100"
+                                           Value="0"
+                                           ValueChanged="TimeHighlightSlider_ValueChanged"
+                                           TickPlacement="BottomRight"
+                                           TickFrequency="10"
+                                           IsSnapToTickEnabled="False"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Margin="0,0,0,5">
+                                    <TextBlock Text="ハイライト終了:" FontSize="11" Margin="0,0,0,2"/>
+                                    <Slider x:Name="HighlightEndTimeSlider"
+                                           Minimum="0"
+                                           Maximum="100"
+                                           Value="100"
+                                           ValueChanged="TimeHighlightSlider_ValueChanged"
+                                           TickPlacement="BottomRight"
+                                           TickFrequency="10"
+                                           IsSnapToTickEnabled="False"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="2" Margin="0,0,0,5">
+                                    <TextBlock Text="注目点:" FontSize="11" Margin="0,0,0,2"/>
+                                    <Slider x:Name="HighlightFocusTimeSlider"
+                                           Minimum="0"
+                                           Maximum="100"
+                                           Value="50"
+                                           ValueChanged="TimeHighlightSlider_ValueChanged"
+                                           TickPlacement="BottomRight"
+                                           TickFrequency="10"
+                                           IsSnapToTickEnabled="False"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <Button x:Name="UseVisibleRangeForHighlightButton"
+                                        Content="表示範囲を設定"
+                                        Click="UseVisibleRangeForHighlight_Click"
+                                        Style="{StaticResource SecondaryActionButtonStyle}"
+                                        Padding="8,4"
+                                        Margin="0,0,6,0"
+                                        IsEnabled="False"/>
+                                <Button x:Name="ClearTimeHighlightButton"
+                                        Content="クリア"
+                                        Click="ClearTimeHighlight_Click"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        Padding="8,4"
+                                        IsEnabled="False"/>
+                            </StackPanel>
                         </StackPanel>
                     </Expander>
                     
