@@ -1,132 +1,95 @@
 # Performance Monitor Analyzer
 
-Windows Performance Monitor の .blg ファイルを読み込み、解析・可視化するC# WPFデスクトップアプリケーションです。
+Windows Performance Monitor の `.blg` ファイルを読み込み、必要なカウンターだけを選んで解析・可視化する C# / WPF デスクトップアプリケーションです。
 
-## 機能
+BLG の解析は Windows 標準の PDH API を使用します。画面に表示される `relog.exe` 相当コマンドは、同じ条件を外部ツールで確認するための参考情報です。
 
-- ✅ BLGファイルの読み込み（Windows環境のみ、メニュー / グラフ領域へのドラッグアンドドロップ対応）
-- ✅ パフォーマンスカウンターの一覧表示（階層構造表示）
-- ✅ 複数カウンターの選択機能
-- ✅ **🎯 YAMLベースのカウンターパターン機能**（事前定義された選択パターン）
-- ✅ カウンターごとの一覧 + 詳細ビュー形式データテーブル表示
-- ✅ **詳細統計情報の表示**（平均、最大、最小、標準偏差）
-- ✅ **CSVファイルへのデータエクスポート**（個別カウンター）
-- ✅ **PDH API を使用した BLG 解析**
-- ✅ **relog.exe 相当コマンドの表示**（再現・外部確認用）
-- ✅ エラーログ機能
-- ✅ **データのグラフ化機能**（ScottPlot.WPF使用）
-- ✅ **グラフスケール調整機能**（自動スケール / 表示位置調整、実データ値は保持）
-- ✅ **値モード切り替え機能**（Raw / 差分）
-- ✅ **折れ線凡例ハイライト機能**（凡例から複数系列を太線強調）
-- ✅ **モダンUIテーマ**（共通 ResourceDictionary / カードベースレイアウト）
-- ✅ **カウンター選択エリアのUI制御**（トグルによる表示・非表示）
-- ✅ **凡例 / スケール設定パネルのUI制御**（トグルによる表示・非表示）
-- ✅ **下部データテーブル / ログ領域のUI制御**（トグル + 高さ調整）
-- ✅ **表示メニューからの一括折りたたみ / 展開**
+## 主な機能
 
-## プロジェクト構成
+- BLG ファイル読み込み
+  - メニューからのファイル選択
+  - グラフ領域への `.blg` ドラッグアンドドロップ
+  - コマンドライン引数での起動時読み込み
+- BLG メタデータ表示
+  - 読み込みファイルのフルパス、ファイルサイズ、コンピューター名、取得間隔、時間範囲
+- 非同期読み込みと中止
+  - BLG 初期読み込み、カウンターデータ読み込み中の進捗表示
+  - `読み込みを中止` によるキャンセル
+  - 取得済みカウンターの段階的なグラフ・データテーブル反映
+- PerfMon 風カウンター選択
+  - オブジェクト、カウンター、インスタンスを選ぶモーダルダイアログ
+  - `<すべてのインスタンス>` による一括追加
+  - 追加済みカウンターの削除、クリア、設定コピー
+- YAML ベースのカウンターパターン
+  - `config/counter-patterns.yaml` で定義
+  - ワイルドカード、個別 `scale`、`graphType`、`valueMode` に対応
+  - メニューまたは左ペインからワンクリック適用
+- グラフ表示
+  - ScottPlot.WPF による時系列グラフ
+  - 折れ線グラフ / 積み重ね面グラフの切り替え
+  - Raw / 差分値モードの切り替え
+  - X 軸の時間範囲表示、Y 軸範囲の手動指定
+  - カウンター別スケール設定と自動スケール
+  - 独立凡例パネル、系列の表示切り替え、折れ線ハイライト
+  - ホバー位置の値表示とクリックによる固定表示
+  - グラフ画像のクリップボードコピー
+- データテーブルと統計
+  - カウンター一覧 + 詳細ビュー
+  - 平均、最大、最小、標準偏差、取得期間の表示
+  - 列ソート、選択行コピー、TSV コピー
+  - カウンター別 CSV エクスポート
+  - 詳細チャートのクリップボードコピー
+- UI / 操作補助
+  - 共通 ResourceDictionary によるモダンテーマ
+  - カウンター、凡例、スケール設定、下部データテーブル / ログ領域の表示切り替え
+  - 表示メニューからの一括折りたたみ / 展開
+  - グラフサイズ、ウィンドウサイズの表示と手動設定
+  - `error.log` とアプリ内ログ表示
 
-```
-src/
-└── PerformanceMonitorAnalyzer/
-    ├── App.xaml                   # WPFアプリケーション設定
-    ├── App.xaml.cs
-    ├── Assets/
-    │   └── app-icon.ico           # アプリケーション / ウィンドウアイコン
-    ├── MainWindow.xaml            # メインウィンドウUI
-    ├── MainWindow.xaml.cs         # メインウィンドウロジック
-    ├── CounterAddDialog.xaml      # カウンター追加用モーダルダイアログ
-    ├── CounterSelectionModel.cs    # カウンター候補生成ロジック
-    ├── GraphSizeSettingDialog.xaml
-    ├── WindowSizeSettingDialog.xaml
-    ├── Styles/                    # 共通テーマ（配色 / コントロールスタイル）
-    │   ├── Colors.xaml
-    │   └── Controls.xaml
-    ├── BlgFileAnalyzer.cs         # PDH APIを使用したBLG解析
-    ├── PdhApi.cs                  # PDH API P/Invoke宣言
-    ├── RelogCommandBuilder.cs     # relog.exe 相当コマンド表示
-    ├── CounterPattern.cs          # YAMLパターン機能（NEW）
-    └── PerformanceMonitorAnalyzer.csproj
-config/
-└── counter-patterns.yaml          # カウンターパターン設定ファイル
-```
+## クイックスタート
 
-## 必要な環境
+### 必要な環境
 
-- .NET 10.0以降
-- Windows 10/11（WPF必須）
+- Windows 10 / 11
+- .NET 10.0 SDK 以降
 - Visual Studio 2022 または Visual Studio Code
 
-## UIデザイン
+WPF と BLG 解析の都合上、アプリケーションの実行は Windows 専用です。
 
-- `App.xaml` から `Styles\Colors.xaml` と `Styles\Controls.xaml` を読み込み、配色・余白・ボタン・GroupBox・Expander・タブ・DataGrid を共通テーマ化しています。
-- メイン画面は、既存の処理や操作フローを変えずに、カードベースのパネル・淡色トーン・統一トグルボタンへ刷新しています。
-- グラフサイズ / ウィンドウサイズ設定ダイアログも同じテーマに揃えています。
+### 実行
 
-## 使用方法
-
-### Windows環境での実行
-
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet build
+```cmd
+cd src\PerformanceMonitorAnalyzer
+dotnet restore
 dotnet run
 ```
 
-### ファイル読み込み
+BLG ファイルを起動時に指定する場合:
 
-1. **ファイル > BLGファイルを開く** - PDH APIを使用した従来の方法
-2. **グラフ表示領域へ `.blg` ファイルをドラッグアンドドロップ** - 単一の BLG ファイルを即座に読み込み
-3. **コマンドライン引数で `.blg` ファイルを指定** - 起動時に対象ファイルを直接読み込み
+```cmd
+dotnet run "C:\Logs\your-file.blg"
+```
 
-### 🔥 時間範囲表示とカウンター読み込み制御
+リポジトリルートからバッチファイルで起動することもできます。
 
-BLGファイルを開くと、以下の機能が利用できます：
+```cmd
+build-and-run.bat
+build-and-run.bat "C:\Logs\your-file.blg"
+```
 
-#### 📅 時間範囲選択機能
-- **📊 自動時間範囲検出**: BLGファイルの全期間を自動で取得・表示
-- **🎚️ 直感的スライダー操作**: デュアルスライダーで開始・終了時刻を簡単選択
-- **⏱️ リアルタイム表示**: 選択中の時間範囲と期間を即座に表示
-- **🔎 表示範囲の調整**: 選択した時間範囲をグラフのX軸表示範囲（ズーム）として利用
-- **💡 視認性向上**: 大容量BLGファイルでも注目期間を絞って確認
+## 基本的な使い方
 
-#### 🚀 カウンター読み込み制御機能
-- **🔄 実行状況表示**: 現在処理中のカウンター名と進捗詳細をリアルタイム表示
-- **☑️ PerfMon 風選択**: モーダルダイアログでオブジェクト、カウンター、インスタンスを選び、左ペインの追加済みカウンターを管理
-- **🎯 手動実行ボタン**: 「選択されたカウンターを読み込み」で追加済みカウンターを一括処理
-- **📊 一覧 + 詳細ビュー表示**: CSVデータを基にカウンター名別の一覧とデータテーブル詳細を表示
-- **✅ バッチ処理**: 複数カウンターの効率的な並列処理とエラーハンドリング
+1. `ファイル` -> `BLGファイルを開く`、またはグラフ領域へのドラッグアンドドロップで `.blg` ファイルを読み込みます。
+2. 左ペインの `カウンターを追加...` から対象のオブジェクト、カウンター、インスタンスを追加します。
+3. 既定パターンを使う場合は、左ペインまたは `パターン` メニューからカウンターパターンを適用します。
+4. `選択されたカウンターを読み込み` を実行します。
+5. グラフ、凡例、スケール設定、データテーブル、統計情報を使って時系列の傾向を確認します。
+6. 必要に応じて、グラフ画像のコピー、CSV 出力、表データのコピーを行います。
 
-### 🎯 NEW: カウンターパターン機能
+## カウンターパターン
 
-効率的な分析のため、事前定義されたカウンターパターンが利用できます：
+カウンターパターンは `config/counter-patterns.yaml` に定義します。パターンごとにカウンター、表示モード、値モード、スケールをまとめて指定できます。
 
-#### 📝 YAML設定ファイル
-- **設定ファイル**: `config/counter-patterns.yaml`
-- **カスタマイズ可能**: パターン名、説明、カウンターリスト、任意の `scale` 値を自由に設定
-- **scale は省略可能**: 省略時は `1.0` として扱われます
-- **表示モードも設定可能**: パターンごとに `graphType` / `valueMode` を指定して適用時の表示モードを揃えられます
-- **メニュー統合**: 「パターン」メニューから設定ファイルの開き・再読み込み
-
-#### 🚀 使用方法
-1. **パターン選択**: 左側パネルのコンボボックスから目的のパターンを選択
-2. **ワンクリック適用**: 「パターンを適用」ボタンで該当カウンターを自動選択
-3. **メニューからも選択可能**: 「パターン」→「カウンターパターンを適用」
-
-#### 📊 同梱パターン
-- **基本システム監視**: CPU、メモリ、ディスクの基本項目
-- **詳細システム監視**: 詳細なシステム分析項目（`Working Set` / `Private Bytes` に `scale: 0.000001` の例を同梱）
-- **SQLサーバー監視**: SQL Server特有のパフォーマンス項目
-
-#### 🎛️ 高度な機能
-- **ワイルドカード対応**: `*` や `?` を使用したパターンマッチング
-- **オブジェクト一括指定**: `\SQLServer:Batch_Resp_Statistics(Elapsed_Time:Total(ms))\*` のように書くと該当オブジェクト配下の全カウンターを一括選択
-- **スケール設定**: カウンターごとに任意の `scale` を指定可能（省略時は `1.0`）
-- **表示設定連動**: パターン適用時に `graphType`（`lineChart` / `stackedAreaChart`）と `valueMode`（`rawValue` / `deltaFromPrevious`）も反映
-- **部分マッチ**: 完全一致しない場合の柔軟な検索
-- **リアルタイムフィードバック**: 適用結果と未検出カウンターの表示
-
-#### YAML例
 ```yaml
 patterns:
   - name: 詳細システム監視
@@ -136,229 +99,117 @@ patterns:
     counters:
       - name: \System\Context Switches/sec
         enabled: true
+        scale: 1.0
       - name: \Process(_Total)\Working Set
         enabled: true
         scale: 0.000001
 ```
 
-### BLG解析の実装方針
+同梱パターン:
 
-#### PDH API方式（現在の解析方式）
-- Windows標準APIでBLGファイルを直接開き、カウンター一覧と選択カウンターのデータを読み込みます。
-- カウンター一覧の初期読み込みではメタデータを中心に取得し、データポイントは「選択されたカウンターを読み込み」実行時に読み込みます。
+- `基本システム監視`
+- `クエリ実行時間`
+- `詳細システム監視`
+- `SQL Server Monitoring`
+- `SQL Server Lock Info`
 
-#### relog.exe 相当コマンド表示
-- 画面には現在の設定を外部で確認しやすいように `relog.exe` 相当のコマンドを表示します。
-- アプリ内のデータ読み込み自体はPDH APIを使用します。
+`name` には `*` や `?` を使えます。たとえば `\SQLServer:Batch Resp Statistics(Elapsed Time:Total(ms))\*` のように指定すると、該当オブジェクト配下のカウンターをまとめて選択できます。
 
-### カウンター表示と操作
+## ビルドと配布
 
-- 左ペインの「カウンターを追加...」からモーダルダイアログを開き、標準のパフォーマンスモニターに近い形式でオブジェクト、カウンター、インスタンスを選択
-- ダイアログ内でオブジェクトを選択し、カウンターとインスタンスをチェックして「追加」を押すことで、左ペインの追加済みカウンター一覧に登録
-- 「追加」後もダイアログは開いたままになるため、別のオブジェクトやインスタンスを続けて追加可能
-- `Process` など複数インスタンスを持つオブジェクトでは、ダイアログ内の `<すべてのインスタンス>` から一括追加が可能
-- 左ペインの追加済みカウンターは「削除(<<)」または「クリア」で読み込み対象から除外可能
-- 「選択されたカウンターを読み込み」実行後は、読込済みの選択カウンターに対応するデータテーブル一覧と詳細が表示されます
-- 「すべて解除」ボタンで全カウンターを一括解除可能
-- カウンター選択エリアは境界線中央のトグルアイコン（◀/▶）で表示/非表示を切り替え可能
-- カウンター選択エリアとグラフ領域の境界はドラッグ調整せず、トグル操作のみを提供
-- メニューバーの **表示** → **すべて折りたたむ / すべて展開する**、または **グラフ表示上段のボタン** から、各トグル対応エリアを一括制御可能
+### 開発ビルド
 
-### データテーブル機能
-
-- **詳細な統計情報**: 各カウンターの平均、最大、最小、標準偏差を自動計算
-- **CSVエクスポート**: 個別カウンターのデータをCSV出力
-- **データ表示**: タイムスタンプ、値、カウンター名を表示
-- **一覧 + 詳細ビュー**: 複数カウンターを一覧で切り替えながら詳細を確認
-
-## BLGファイル解析機能
-
-### PDH API方式
-- Windows標準の Performance Data Helper API を使用してBLGを解析
-- カウンター一覧、コンピューター名、取得間隔、時間範囲を取得
-- 選択されたカウンターのデータを必要なタイミングで読み込み
-- 表示範囲スライダーはグラフのX軸ズームとして利用
-- 参考情報として `relog.exe` 相当コマンドを表示
-
-### Linux/macOS環境
-- WPFアプリケーションのため実行不可
-- エラーメッセージを表示してビルドを停止
-
-## ログ機能
-
-エラーログは実行ファイルと同じディレクトリの`error.log`に出力されます。
-- Windows環境必須
-- Visual Studio 2022 または Visual Studio Code
-
-## ビルドと実行
-
-### 🚀 バッチファイルを使用した簡単ビルド（Windows環境）
-
-プロジェクトルートディレクトリで以下のバッチファイルを実行できます：
-
-#### 開発時のビルド&実行
 ```cmd
-build-and-run.bat
-```
-または、引数付きで実行：
-```cmd
-build-and-run.bat "C:\Logs\your-file.blg"
+cd src\PerformanceMonitorAnalyzer
+dotnet build
 ```
 
-#### シングルバイナリの生成
+### シングルバイナリ生成
+
+リポジトリルートで実行します。
+
 ```cmd
 publish.bat
 ```
 
-このバッチファイルは以下のアーキテクチャ向けにシングルバイナリを生成します：
-- Windows x64: `publish/win-x64/PerformanceMonitorAnalyzer.exe`
-- Windows ARM64: `publish/win-arm64/PerformanceMonitorAnalyzer.exe`
-- publish 出力には `config\counter-patterns.yaml` も同梱されます。
+出力先:
 
-### 開発時の実行（Windows環境推奨）
+- `publish\win-x64\PerformanceMonitorAnalyzer.exe`
+- `publish\win-arm64\PerformanceMonitorAnalyzer.exe`
 
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet build
-dotnet run
+`config\counter-patterns.yaml` は publish 出力に同梱されます。
+
+手動で publish する場合:
+
+```cmd
+cd src\PerformanceMonitorAnalyzer
+dotnet publish --configuration Release --runtime win-x64 --self-contained true --output ..\..\publish\win-x64
+dotnet publish --configuration Release --runtime win-arm64 --self-contained true --output ..\..\publish\win-arm64
 ```
 
-### シングルバイナリとしてビルド
+## テスト
 
-本プロジェクトは自己完結型のシングルバイナリとしてビルド可能です：
-
-#### Windows x64向け
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet publish --configuration Release --runtime win-x64 --self-contained true --output ../../publish/win-x64
+```cmd
+dotnet test tests\PerformanceMonitorAnalyzer.Tests\PerformanceMonitorAnalyzer.Tests.csproj
 ```
 
-#### Windows ARM64向け
-```bash
-cd src/PerformanceMonitorAnalyzer
-dotnet publish --configuration Release --runtime win-arm64 --self-contained true --output ../../publish/win-arm64
+テストプロジェクトは xUnit を使用し、カウンターパターン、パス整形、統計計算、グラフ系列生成、クリップボード用文字列生成などのロジックを検証します。
+
+## プロジェクト構成
+
+```text
+config/
+  counter-patterns.yaml
+src/
+  PerformanceMonitorAnalyzer/
+    App.xaml
+    MainWindow.xaml
+    MainWindow.xaml.cs
+    BlgFileAnalyzer.cs
+    PdhApi.cs
+    CounterAddDialog.xaml
+    CounterPattern.cs
+    CounterTreeBuilder.cs
+    CounterStatisticsCalculator.cs
+    LineSeriesDataBuilder.cs
+    StackedAreaSeriesBuilder.cs
+    Styles/
+tests/
+  PerformanceMonitorAnalyzer.Tests/
+wiki/
+  user-guide.md
+  development-setup.md
+  testing-guide.md
+  build-deployment-guide.md
+  troubleshooting.md
 ```
 
-ビルド後の実行ファイル（`PerformanceMonitorAnalyzer.exe`）は.NET Frameworkが未インストールの環境でも単独で動作します。
+## 技術スタック
 
-### 引数でBLGファイルを指定（Windows環境のみ）
+- .NET 10.0 / `net10.0-windows`
+- WPF
+- PDH API
+- ScottPlot.WPF 5.0.41
+- YamlDotNet 15.1.1
+- Newtonsoft.Json 13.0.3
+- xUnit
 
-```bash
-dotnet run "C:\path\to\your\file.blg"
-```
+## 詳細ドキュメント
 
-## 使用方法
+- [使用方法ガイド](./wiki/user-guide.md)
+- [カウンターパターン機能](./wiki/counter-patterns.md)
+- [開発環境構築](./wiki/development-setup.md)
+- [テストガイド](./wiki/testing-guide.md)
+- [ビルドとデプロイメントガイド](./wiki/build-deployment-guide.md)
+- [トラブルシューティング](./wiki/troubleshooting.md)
 
-### WPF GUI アプリケーション
-1. アプリケーションを実行
-2. メニューから以下のいずれかを選択：
-   - 「ファイル」→「BLGファイルを開く」（PDH API使用）
-   - グラフ表示領域へ `.blg` ファイルをドラッグアンドドロップ
-3. **カウンター選択**（以下のいずれかの方法）：
-   - **🎯 パターン適用**: 左側パネルでパターンを選択し「パターンを適用」ボタンをクリック
-   - **手動選択**: 左側の「カウンターを追加...」から開くダイアログで、オブジェクト、カウンター、インスタンスを選んで「追加」をクリック（インスタンスはカウンター選択後に選択可能）
-   - **メニューから**: 「パターン」→「カウンターパターンを適用」→目的のパターンを選択
-4. 下部の一覧 + 詳細ビューでカウンターごとの詳細データを確認
-   - 統計情報（平均、最大、最小、標準偏差）
-   - 全データポイントの時系列表示
-   - CSVエクスポート機能
-   - 「選択されたカウンターを読み込み」実行時は、下部データテーブル / ログ領域が閉じていても自動で再表示
-   - 境界中央のトグルアイコンで下部エリアの最小化 / 再表示が可能
-5. **グラフ表示**: 追加済みカウンターを読み込むと、右側のグラフエリアに時系列グラフとして表示
-6. グラフ機能により、複数のパフォーマンスカウンターの推移を視覚的に分析可能
+## 制限事項
 
-### 🎨 グラフ機能の詳細
-
-#### スケール調整機能
-- **グラフ表示位置の調整**: 右側の「スケール設定」パネルで各カウンターの表示位置を調整可能
-- **パネル開閉**: 境界中央のトグルアイコンでスケール設定パネルの表示/非表示を切り替え可能
-- **自動スケール**: `自動スケール` ボタンで、表示中の各カウンターの最大絶対値が約 100 になるようカウンター別倍率を自動設定。倍率は `1` / `2` / `5` × 10 の累乗に丸められます
-- **実際のデータ値は保持**: スケール変更はグラフのプロット位置のみに影響し、実際のデータ値や統計情報は変更されません
-- **柔軟な比較**: 異なる単位や範囲のカウンターを同じグラフ上で視覚的に比較可能
-- **読み込み時の既定化**: 「選択されたカウンターを読み込み」実行後は一括スケールのUI選択のみ `1.0` に戻り、各カウンターの個別スケール値は保持されます
-
-#### グラフ表示オプション
-- **折れ線グラフ**: 各カウンターを個別の線として表示
-- **積み重ね面グラフ**: カウンター値を積み重ねて表示し、全体の傾向を把握
-- **値モード切り替え**: グラフタイプの右側で Raw と差分（current - previous）を切り替え可能
-- **Y軸表示**: 目盛りと軸線は表示し、Y軸ラベルは表示しません
-- **凡例機能**: 各カウンターの色、名前、現在値を表示（個別表示/非表示切り替え可能）
-- **凡例パネル開閉**: 境界中央のトグルアイコンで凡例パネルの表示/非表示を切り替え可能
-
-#### 表示される値の種類
-- **グラフプロット**: 選択中の値モード（Raw / 差分）で表示
-- **データテーブル**: 選択中の値モードに連動して表示
-- **統計情報**: 選択中の値モードに連動して計算（平均、最大、最小、標準偏差）
-- **凡例の現在値**: 選択中の値モードに連動して表示
-
-### 推奨ワークフロー
-1. **relog.exe方式でBLGファイルを読み込み**（安定性重視）
-2. **カウンターパターンの適用**（効率的な分析開始）
-3. **必要に応じて個別カウンターを追加選択**
-4. **グラフとデータテーブルで総合分析**
-5. **必要に応じてCSVエクスポート**
-
-### 🎯 カウンターパターンの活用方法
-- **初回分析**: 「基本システム監視」パターンで全体把握
-- **問題特定**: 「詳細システム監視」パターンでプロセスやページングを詳細調査
-- **特定サービス**: 「SQLサーバー監視」で専門分析
-- **カスタムパターン**: `config/counter-patterns.yaml` を編集して独自パターン作成
-
-## サポートするカウンター例
-
-- `\Processor(_Total)\% Processor Time` - CPU使用率
-- `\Memory\Available MBytes` - 利用可能メモリ
-- `\PhysicalDisk(_Total)\Disk Reads/sec` - ディスク読み取り速度
-- `\PhysicalDisk(_Total)\Disk Writes/sec` - ディスク書き込み速度
-- `\Network Interface(*)\Bytes Total/sec` - ネットワーク総バイト数
-- `\System\Context Switches/sec` - コンテキストスイッチ/秒
-- `\Process(_Total)\Working Set` - プロセス作業セット
-
-## エラーログ
-
-アプリケーションのエラーは `error.log` ファイルに出力されます。
-
-## 開発環境
-
-- Windows 10/11
-- .NET 10.0 SDK 以降
-- Visual Studio 2022（.NET desktop development ワークロード）または Visual Studio Code
-- 詳細は [wiki/development-setup.md](./wiki/development-setup.md) を参照してください。
-
-## 技術仕様
-
-### 使用技術
-- **フロントエンド**: WPF (Windows Presentation Foundation)
-- **グラフライブラリ**: ScottPlot.WPF
-- **設定管理**: YamlDotNet (YAML設定ファイル)
-- **データ形式**: JSON (Newtonsoft.Json), CSV, YAML
-- **BLG解析**: 
-  - relog.exe (Windows標準ツール)
-  - PDH API (Performance Data Helper)
-- **データ処理**: 非同期処理、動的読み込み
-
-### アーキテクチャ
-- MVVMパターン（WPF版）
-- 非同期処理対応
-- PDH API ベースの BLG 解析
-- YAML設定ベースのパターン管理システム
-- リソース管理（一時ファイル自動クリーンアップ）
-
-## 今後の実装予定
-
-- [x] relog.exe を使用したBLG解析
-- [x] CSVエクスポート機能
-- [x] **データのグラフ化機能**（ScottPlot.WPF使用）
-- [x] **YAMLベースのカウンターパターン機能**
-- [ ] カウンターフィルタリング機能
-- [ ] グラフの時間範囲指定
-- [ ] リアルタイム監視機能
-- [ ] カスタムカウンター追加
+- WPF アプリケーションのため、Linux / macOS では実行できません。
+- BLG 解析は Windows の PDH API に依存します。
+- 非常に大きな BLG ファイルでは、読み込むカウンター数とメモリ使用量に注意してください。
+- リアルタイム監視ではなく、保存済み BLG ファイルの解析を対象にしています。
 
 ## ライセンス
 
 このプロジェクトは [MIT License](./LICENSE) の下で公開されています。
-
-## 貢献
-
-プルリクエストやイシューの報告をお待ちしています。開発環境の準備は [開発環境構築ガイド](./wiki/development-setup.md) を参照してください。
