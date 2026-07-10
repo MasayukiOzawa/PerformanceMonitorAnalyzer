@@ -7,8 +7,8 @@
 
 ## Branches
 
-- Create a working branch before changing files.
-- Do not edit or commit directly on `main`.
+- Always create and switch to a working branch before changing files.
+- Do not edit, commit, or otherwise perform implementation work directly on `main` or `master`.
 - Use `codex/*` for Codex-authored work and `feature/*` for ordinary feature branches.
 - Do not create release automation unless the task explicitly asks for it.
 
