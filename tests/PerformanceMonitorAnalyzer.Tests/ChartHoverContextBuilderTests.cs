@@ -112,6 +112,34 @@ public class ChartHoverContextBuilderTests
     }
 
     [Fact]
+    public void Build_UsesPerCounterValueModeOverride()
+    {
+        var start = new DateTime(2026, 1, 1, 0, 0, 0);
+        var context = ChartHoverContextBuilder.Build(
+            start.AddSeconds(1),
+            ["primary", "secondary"],
+            new Dictionary<string, List<PerformanceDataPoint>>
+            {
+                ["primary"] = [Point(start, 10), Point(start.AddSeconds(1), 15)],
+                ["secondary"] = [Point(start, 100), Point(start.AddSeconds(1), 130)]
+            },
+            new Dictionary<string, bool>(),
+            new Dictionary<string, double>(),
+            CounterValueMode.DeltaFromPrevious,
+            CreateSecondaryAxisState("secondary"));
+
+        Assert.NotNull(context);
+        Assert.Equal([5d, 130d], context.Items.Select(static item => item.Value).ToArray());
+    }
+
+    private static YAxisAssignmentState CreateSecondaryAxisState(string counter)
+    {
+        var state = new YAxisAssignmentState();
+        state.SetAssignment(counter, YAxisAssignment.Secondary);
+        return state;
+    }
+
+    [Fact]
     public void Build_AppliesScaleToDisplayValue()
     {
         var start = new DateTime(2026, 1, 1, 0, 0, 0);
