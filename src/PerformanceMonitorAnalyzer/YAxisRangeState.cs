@@ -11,9 +11,19 @@ internal sealed class YAxisRangeState
 
     public void SetManual(double minimum, double maximum)
     {
-        if (!double.IsFinite(minimum) || !double.IsFinite(maximum) || maximum <= minimum)
+        if (!double.IsFinite(minimum))
         {
-            throw new ArgumentOutOfRangeException(nameof(maximum));
+            throw new ArgumentOutOfRangeException(nameof(minimum), minimum, "The minimum must be finite.");
+        }
+
+        if (!double.IsFinite(maximum))
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximum), maximum, "The maximum must be finite.");
+        }
+
+        if (maximum <= minimum)
+        {
+            throw new ArgumentException("The maximum must be greater than the minimum.", nameof(maximum));
         }
 
         Minimum = minimum;

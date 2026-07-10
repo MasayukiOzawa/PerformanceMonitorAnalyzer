@@ -853,6 +853,7 @@
                                                                   Tag="{Binding CounterPath}"
                                                                   Margin="6,0"
                                                                   VerticalAlignment="Center"
+                                                                  AutomationProperties.Name="2軸へ表示"
                                                                   ToolTip="この系列を右側の2軸へ折れ線で表示します"/>
                                                         
                                                         <!-- 色見本 -->

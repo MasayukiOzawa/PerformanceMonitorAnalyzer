@@ -25,6 +25,43 @@ public class YAxisRangeStateTests
     }
 
     [Fact]
+    public void SetManual_NonFiniteMinimum_IdentifiesMinimumParameter()
+    {
+        var state = new YAxisRangeState();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => state.SetManual(double.NaN, 100));
+
+        Assert.Equal("minimum", exception.ParamName);
+    }
+
+    [Fact]
+    public void SetManual_NonFiniteMaximum_IdentifiesMaximumParameter()
+    {
+        var state = new YAxisRangeState();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => state.SetManual(0, double.PositiveInfinity));
+
+        Assert.Equal("maximum", exception.ParamName);
+    }
+
+    [Theory]
+    [InlineData(10, 10)]
+    [InlineData(10, 9)]
+    public void SetManual_MaximumNotGreaterThanMinimum_ThrowsArgumentException(
+        double minimum,
+        double maximum)
+    {
+        var state = new YAxisRangeState();
+
+        var exception = Assert.Throws<ArgumentException>(
+            () => state.SetManual(minimum, maximum));
+
+        Assert.Equal("maximum", exception.ParamName);
+    }
+
+    [Fact]
     public void CalculateAutomaticRange_UsesLargestLineValue()
     {
         var range = YAxisRangeCalculator.CalculateAutomaticRange(

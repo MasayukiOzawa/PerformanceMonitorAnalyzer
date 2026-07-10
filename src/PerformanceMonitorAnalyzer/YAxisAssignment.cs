@@ -14,7 +14,10 @@ internal sealed class YAxisAssignmentState
 {
     private readonly Dictionary<string, YAxisAssignment> _assignments = new(StringComparer.Ordinal);
 
-    public bool HasSecondaryAssignment => _assignments.Count > 0;
+    public bool ContainsSecondaryAssignment(IEnumerable<string> counters)
+    {
+        return counters.Any(_assignments.ContainsKey);
+    }
 
     public YAxisAssignment GetAssignment(string counter)
     {

@@ -8,7 +8,7 @@ public class YAxisAssignmentTests
         var state = new YAxisAssignmentState();
 
         Assert.Equal(YAxisAssignment.Primary, state.GetAssignment("counter"));
-        Assert.False(state.HasSecondaryAssignment);
+        Assert.False(state.ContainsSecondaryAssignment(["counter"]));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public class YAxisAssignmentTests
         state.SetAssignment("counter", YAxisAssignment.Primary);
 
         Assert.Equal(YAxisAssignment.Primary, state.GetAssignment("counter"));
-        Assert.False(state.HasSecondaryAssignment);
+        Assert.False(state.ContainsSecondaryAssignment(["counter"]));
     }
 
     [Fact]
@@ -59,11 +59,22 @@ public class YAxisAssignmentTests
         state.Remove("counter-a");
 
         Assert.Equal(YAxisAssignment.Primary, state.GetAssignment("counter-a"));
-        Assert.True(state.HasSecondaryAssignment);
+        Assert.True(state.ContainsSecondaryAssignment(["counter-a", "counter-b"]));
 
         state.Clear();
 
         Assert.Equal(YAxisAssignment.Primary, state.GetAssignment("counter-b"));
-        Assert.False(state.HasSecondaryAssignment);
+        Assert.False(state.ContainsSecondaryAssignment(["counter-a", "counter-b"]));
+    }
+
+    [Fact]
+    public void ContainsSecondaryAssignment_UsesOnlyProvidedCounters()
+    {
+        var state = new YAxisAssignmentState();
+        state.SetAssignment("secondary", YAxisAssignment.Secondary);
+
+        Assert.True(state.ContainsSecondaryAssignment(["primary", "secondary"]));
+        Assert.False(state.ContainsSecondaryAssignment(["primary"]));
+        Assert.False(state.ContainsSecondaryAssignment([]));
     }
 }

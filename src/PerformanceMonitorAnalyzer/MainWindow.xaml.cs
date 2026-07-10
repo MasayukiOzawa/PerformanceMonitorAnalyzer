@@ -342,9 +342,7 @@ public partial class MainWindow : Window
                 _primaryYAxisRange,
                 stacked: _currentChartType == ChartType.StackedAreaChart);
 
-            var hasVisibleSecondarySeries = _chartSeries.Any(series =>
-                GetYAxisAssignment(series.Key) == YAxisAssignment.Secondary &&
-                series.Value.IsVisible);
+            var hasVisibleSecondarySeries = HasVisibleSecondarySeries();
 
             PerformanceChart.Plot.Axes.Right.IsVisible = hasVisibleSecondarySeries;
             if (hasVisibleSecondarySeries)
@@ -445,6 +443,14 @@ public partial class MainWindow : Window
     private CounterValueMode GetEffectiveValueMode(string counter)
     {
         return _yAxisAssignments.GetEffectiveValueMode(counter, _currentValueMode);
+    }
+
+    private bool HasVisibleSecondarySeries()
+    {
+        return _yAxisAssignments.ContainsSecondaryAssignment(
+            _chartSeries
+                .Where(static series => series.Value.IsVisible)
+                .Select(static series => series.Key));
     }
 
     /// <summary>
@@ -2445,6 +2451,7 @@ public partial class MainWindow : Window
             if (!selectedCounters.Any())
             {
                 System.Diagnostics.Debug.WriteLine("No selected counters found");
+                UpdateYAxisRangeControls();
                 PerformanceChart.Refresh();
                 UpdateChartVisibility();
                 return;
@@ -2471,6 +2478,7 @@ public partial class MainWindow : Window
             
             // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
             EnsureYAxisFixedRange();
+            UpdateYAxisRangeControls();
             
             // X軸の範囲を選択された時間範囲に設定
             UpdateChartXAxisRange();
@@ -4370,8 +4378,9 @@ public partial class MainWindow : Window
             .Where(itemsByPath.ContainsKey)
             .Select(counter => itemsByPath[counter])
             .ToList();
+        var counterPathSet = counterOrder.ToHashSet(StringComparer.Ordinal);
 
-        foreach (var item in _legendItems.Where(item => !counterOrder.Contains(item.CounterPath, StringComparer.Ordinal)))
+        foreach (var item in _legendItems.Where(item => !counterPathSet.Contains(item.CounterPath)))
         {
             orderedItems.Add(item);
         }
@@ -5751,8 +5760,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var hasSecondaryAssignment = _yAxisAssignments.HasSecondaryAssignment;
-        if (!hasSecondaryAssignment && _selectedYAxisRange == YAxisAssignment.Secondary)
+        var hasVisibleSecondarySeries = HasVisibleSecondarySeries();
+        if (!hasVisibleSecondarySeries && _selectedYAxisRange == YAxisAssignment.Secondary)
         {
             _selectedYAxisRange = YAxisAssignment.Primary;
         }
@@ -5762,13 +5771,13 @@ public partial class MainWindow : Window
         {
             PrimaryYAxisRangeRadio.IsChecked = _selectedYAxisRange == YAxisAssignment.Primary;
             SecondaryYAxisRangeRadio.IsChecked = _selectedYAxisRange == YAxisAssignment.Secondary;
-            SecondaryYAxisRangeRadio.IsEnabled = hasSecondaryAssignment;
+            SecondaryYAxisRangeRadio.IsEnabled = hasVisibleSecondarySeries;
 
             var rangeState = GetSelectedYAxisRangeState();
             YAxisMinTextBox.Text = rangeState.Minimum.ToString(CultureInfo.CurrentCulture);
             YAxisMaxTextBox.Text = rangeState.Maximum.ToString(CultureInfo.CurrentCulture);
 
-            var canEditSelectedAxis = _selectedYAxisRange == YAxisAssignment.Primary || hasSecondaryAssignment;
+            var canEditSelectedAxis = _selectedYAxisRange == YAxisAssignment.Primary || hasVisibleSecondarySeries;
             YAxisMinTextBox.IsEnabled = canEditSelectedAxis;
             YAxisMaxTextBox.IsEnabled = canEditSelectedAxis;
             ApplyYAxisRangeButton.IsEnabled = canEditSelectedAxis;
@@ -6075,6 +6084,7 @@ public partial class MainWindow : Window
 
             ApplyLineSeriesHighlight(refresh: false);
             EnsureYAxisFixedRange();
+            UpdateYAxisRangeControls();
             PerformanceChart.Refresh();
         }
         catch (Exception ex)
