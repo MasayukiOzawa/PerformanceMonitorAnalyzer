@@ -3653,7 +3653,7 @@ public partial class MainWindow : Window
                 2,
                 accentColor,
                 LinePattern.Dashed);
-            _timeHighlightFocusLine.LabelText = $"注目点 {focusTime:HH:mm:ss}";
+            _timeHighlightFocusLine.LabelText = $"{focusTime:HH:mm:ss}";
             _timeHighlightFocusLine.LabelFontColor = accentColor;
             _timeHighlightFocusLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#FFF7ED").WithAlpha(235);
             _timeHighlightFocusLine.EnableAutoscale = false;

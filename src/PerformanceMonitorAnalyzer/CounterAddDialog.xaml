@@ -53,8 +53,10 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              IsThreeState="{Binding IsBulkSelector}"
                                               Checked="CounterSelectorCheckBox_Changed"
                                               Unchecked="CounterSelectorCheckBox_Changed"
+                                              Click="CounterSelectorCheckBox_Click"
                                               Tag="{Binding}"
                                               ToolTip="{Binding CounterName}">
                                         <TextBlock Text="{Binding DisplayName}"/>
@@ -73,8 +75,10 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                              IsThreeState="{Binding IsBulkSelector}"
                                               Checked="CounterSelectorCheckBox_Changed"
                                               Unchecked="CounterSelectorCheckBox_Changed"
+                                              Click="CounterSelectorCheckBox_Click"
                                               Tag="{Binding}"
                                               ToolTip="{Binding InstanceDisplayName}">
                                         <TextBlock Text="{Binding DisplayName}"/>

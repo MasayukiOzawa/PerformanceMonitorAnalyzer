@@ -17,6 +17,23 @@ public static class CounterSelectionModel
 
     public static List<CounterSelectorItem> CreateCounterItems(CounterTreeNode objectNode)
     {
+        var items = CreateConcreteCounterItems(objectNode);
+
+        if (items.Count > 1)
+        {
+            items.Insert(0, new CounterSelectorItem
+            {
+                DisplayName = "<すべてのカウンター>",
+                ObjectName = objectNode.DisplayName,
+                IsAllCounters = true
+            });
+        }
+
+        return items;
+    }
+
+    private static List<CounterSelectorItem> CreateConcreteCounterItems(CounterTreeNode objectNode)
+    {
         return GetActualInstanceNodes(objectNode, sortByDisplayName: true)
             .SelectMany(static instanceNode => instanceNode.Children)
             .Where(static counterNode => !counterNode.IsWildCard)
@@ -62,6 +79,25 @@ public static class CounterSelectionModel
         return GetVisibleInstanceNodes(GetActualInstanceNodes(objectNode)).Count > 0;
     }
 
+    public static void SetAllItemsChecked(IEnumerable<CounterSelectorItem> items, bool isChecked)
+    {
+        foreach (var item in items)
+        {
+            item.IsChecked = isChecked;
+        }
+    }
+
+    public static bool? GetBulkSelectionState(IEnumerable<CounterSelectorItem> items)
+    {
+        var concreteItems = items.Where(static item => !item.IsBulkSelector).ToList();
+        if (concreteItems.Count == 0 || concreteItems.All(static item => item.IsChecked == false))
+        {
+            return false;
+        }
+
+        return concreteItems.All(static item => item.IsChecked == true) ? true : null;
+    }
+
     public static List<CounterTreeNode> ResolveSelectedInstanceNodes(
         CounterTreeNode objectNode,
         IReadOnlyCollection<CounterSelectorItem> selectedInstances)
@@ -100,11 +136,19 @@ public static class CounterSelectionModel
             return [];
         }
 
+        var resolvedCounterItems = selectedCounters.Any(static item => item.IsAllCounters)
+            ? CreateConcreteCounterItems(objectNode)
+            : selectedCounters.Where(static item => !item.IsAllCounters).ToList();
+        if (resolvedCounterItems.Count == 0)
+        {
+            return [];
+        }
+
         var selectedPaths = new List<string>();
         var addedPaths = new HashSet<string>(StringComparer.Ordinal);
         var instanceNodes = ResolveSelectedInstanceNodes(objectNode, selectedInstances);
 
-        foreach (var counterItem in selectedCounters)
+        foreach (var counterItem in resolvedCounterItems)
         {
             foreach (var instanceNode in instanceNodes)
             {

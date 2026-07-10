@@ -5,18 +5,20 @@ namespace PerformanceMonitorAnalyzer;
 
 public sealed class CounterSelectorItem : INotifyPropertyChanged
 {
-    private bool _isChecked;
+    private bool? _isChecked = false;
 
     public string DisplayName { get; init; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
     public string ObjectName { get; init; } = string.Empty;
     public string InstanceName { get; init; } = string.Empty;
     public string CounterName { get; init; } = string.Empty;
+    public bool IsAllCounters { get; init; }
     public bool IsAllInstances { get; init; }
+    public bool IsBulkSelector => IsAllCounters || IsAllInstances;
 
     public string InstanceDisplayName => string.IsNullOrWhiteSpace(InstanceName) ? string.Empty : InstanceName;
 
-    public bool IsChecked
+    public bool? IsChecked
     {
         get => _isChecked;
         set
