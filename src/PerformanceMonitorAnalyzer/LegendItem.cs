@@ -11,6 +11,7 @@ public class LegendItem : INotifyPropertyChanged
 {
     private bool _isVisible = true;
     private bool _isHighlighted = false;
+    private bool _isSecondaryAxis;
     private string _currentValue = "";
     private Color _color = Colors.Blue;
 
@@ -45,6 +46,19 @@ public class LegendItem : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CounterFontWeight));
                 OnPropertyChanged(nameof(HighlightMark));
                 OnPropertyChanged(nameof(HighlightBrush));
+            }
+        }
+    }
+
+    public bool IsSecondaryAxis
+    {
+        get => _isSecondaryAxis;
+        set
+        {
+            if (_isSecondaryAxis != value)
+            {
+                _isSecondaryAxis = value;
+                OnPropertyChanged();
             }
         }
     }

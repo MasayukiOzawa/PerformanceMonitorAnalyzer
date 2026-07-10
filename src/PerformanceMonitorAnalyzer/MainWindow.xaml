@@ -455,7 +455,21 @@
                                 </Grid.ColumnDefinitions>
                             
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="0,0,20,0" VerticalAlignment="Center">
-                                <TextBlock Text="Y軸:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                                <TextBlock Text="Y軸範囲:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                                <RadioButton x:Name="PrimaryYAxisRangeRadio"
+                                             Content="1軸"
+                                             GroupName="YAxisRange"
+                                             IsChecked="True"
+                                             Checked="YAxisRangeTarget_Changed"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,6,0"/>
+                                <RadioButton x:Name="SecondaryYAxisRangeRadio"
+                                             Content="2軸"
+                                             GroupName="YAxisRange"
+                                             Checked="YAxisRangeTarget_Changed"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,8,0"
+                                             ToolTip="2軸系列の表示範囲を編集します"/>
                                 <TextBlock Text="下限" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBox x:Name="YAxisMinTextBox"
                                         Width="70"
@@ -463,7 +477,7 @@
                                         Margin="0,0,6,0"
                                         VerticalContentAlignment="Center"
                                         KeyDown="YAxisRangeTextBox_KeyDown"
-                                        ToolTip="Y軸の下限値"/>
+                                        ToolTip="選択中のY軸の下限値"/>
                                 <TextBlock Text="上限" VerticalAlignment="Center" Margin="0,0,4,0"/>
                                 <TextBox x:Name="YAxisMaxTextBox"
                                         Width="70"
@@ -471,7 +485,7 @@
                                         Margin="0,0,6,0"
                                         VerticalContentAlignment="Center"
                                         KeyDown="YAxisRangeTextBox_KeyDown"
-                                        ToolTip="Y軸の上限値"/>
+                                        ToolTip="選択中のY軸の上限値"/>
                                  <Button x:Name="ApplyYAxisRangeButton"
                                         Content="適用"
                                         Click="ApplyYAxisRange_Click"
@@ -484,7 +498,7 @@
                                         Click="ResetYAxisRange_Click"
                                         Style="{StaticResource GhostButtonStyle}"
                                         Padding="8,4"
-                                        ToolTip="Y軸範囲を自動設定に戻します"/>
+                                        ToolTip="選択中のY軸範囲を自動設定に戻します"/>
                             </StackPanel>
 
                             <!-- グラフタイプ選択 -->
@@ -803,6 +817,7 @@
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
                                                             <ColumnDefinition Width="20"/>
                                                             <ColumnDefinition Width="*"/>
                                                         </Grid.ColumnDefinitions>
@@ -829,16 +844,27 @@
                                                                   Tag="{Binding CounterPath}"
                                                                   VerticalAlignment="Center"
                                                                   ToolTip="シリーズの表示/非表示を切り替えます"/>
+
+                                                        <!-- 2軸割り当て -->
+                                                        <CheckBox Grid.Column="2"
+                                                                  IsChecked="{Binding IsSecondaryAxis}"
+                                                                  Checked="LegendSecondaryAxis_Changed"
+                                                                  Unchecked="LegendSecondaryAxis_Changed"
+                                                                  Tag="{Binding CounterPath}"
+                                                                  Margin="6,0"
+                                                                  VerticalAlignment="Center"
+                                                                  AutomationProperties.Name="2軸へ表示"
+                                                                  ToolTip="この系列を右側の2軸へ折れ線で表示します"/>
                                                         
                                                         <!-- 色見本 -->
-                                                        <Rectangle Grid.Column="2"
+                                                        <Rectangle Grid.Column="3"
                                                                    Width="16" Height="3"
                                                                    Fill="{Binding ColorBrush}"
                                                                    Margin="5,0"
                                                                    VerticalAlignment="Center"/>
                                                         
                                                         <!-- カウンター名 -->
-                                                        <TextBlock Grid.Column="3"
+                                                        <TextBlock Grid.Column="4"
                                                                    Text="{Binding CounterName}"
                                                                    TextWrapping="Wrap"
                                                                    VerticalAlignment="Center"

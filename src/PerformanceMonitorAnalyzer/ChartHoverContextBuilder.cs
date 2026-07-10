@@ -26,7 +26,8 @@ internal static class ChartHoverContextBuilder
         IReadOnlyDictionary<string, List<PerformanceDataPoint>> counterData,
         IReadOnlyDictionary<string, bool> seriesVisibility,
         IReadOnlyDictionary<string, double> counterScales,
-        CounterValueMode valueMode)
+        CounterValueMode valueMode,
+        YAxisAssignmentState? yAxisAssignments = null)
     {
         var visibleCounters = counters
             .Where(counter => seriesVisibility.GetValueOrDefault(counter, true))
@@ -44,8 +45,9 @@ internal static class ChartHoverContextBuilder
 
         foreach (var counter in visibleCounters)
         {
+            var effectiveValueMode = GetEffectiveValueMode(counter, valueMode, yAxisAssignments);
             if (!counterData.TryGetValue(counter, out var rawData) ||
-                !TryGetTimestampBounds(rawData, valueMode, out var firstTimestamp, out var lastTimestamp))
+                !TryGetTimestampBounds(rawData, effectiveValueMode, out var firstTimestamp, out var lastTimestamp))
             {
                 continue;
             }
@@ -57,7 +59,7 @@ internal static class ChartHoverContextBuilder
                 ? maxTimestamp
                 : lastTimestamp;
 
-            if (TryGetClosestFinitePoint(counter, rawData, valueMode, targetTimestamp, out var sourcePoint))
+            if (TryGetClosestFinitePoint(counter, rawData, effectiveValueMode, targetTimestamp, out var sourcePoint))
             {
                 nearestByCounter.Add(sourcePoint);
             }
@@ -81,8 +83,9 @@ internal static class ChartHoverContextBuilder
         var items = new List<ChartHoverContextItem>();
         foreach (var counter in visibleCounters)
         {
+            var effectiveValueMode = GetEffectiveValueMode(counter, valueMode, yAxisAssignments);
             if (!counterData.TryGetValue(counter, out var rawData) ||
-                !TryGetClosestFinitePoint(counter, rawData, valueMode, selectedTimestamp, out var sourcePoint))
+                !TryGetClosestFinitePoint(counter, rawData, effectiveValueMode, selectedTimestamp, out var sourcePoint))
             {
                 continue;
             }
@@ -107,6 +110,16 @@ internal static class ChartHoverContextBuilder
         return items.Any()
             ? new ChartHoverContext(selectedTimestamp, items)
             : null;
+    }
+
+    private static CounterValueMode GetEffectiveValueMode(
+        string counter,
+        CounterValueMode valueMode,
+        YAxisAssignmentState? yAxisAssignments)
+    {
+        return yAxisAssignments is null
+            ? valueMode
+            : yAxisAssignments.GetEffectiveValueMode(counter, valueMode);
     }
 
     private static bool TryGetTimestampBounds(

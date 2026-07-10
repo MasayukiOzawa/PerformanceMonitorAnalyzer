@@ -13,6 +13,7 @@ public class LegendItemTests
 
         Assert.True(item.IsVisible);
         Assert.False(item.IsHighlighted);
+        Assert.False(item.IsSecondaryAxis);
         Assert.Equal(string.Empty, item.CurrentValue);
         Assert.Equal(Colors.Blue, item.Color);
         Assert.Equal(Colors.Blue, GetBrushColor(item.ColorBrush));
@@ -83,6 +84,18 @@ public class LegendItemTests
 
         Assert.Equal(new[] { nameof(LegendItem.CurrentValue) }, changedProperties);
         Assert.Equal("42.00 %", item.CurrentValue);
+    }
+
+    [Fact]
+    public void IsSecondaryAxis_WhenChanged_RaisesOnlyAxisNotification()
+    {
+        var item = new LegendItem();
+        var changedProperties = TrackPropertyChanges(item);
+
+        item.IsSecondaryAxis = true;
+
+        Assert.True(item.IsSecondaryAxis);
+        Assert.Equal(new[] { nameof(LegendItem.IsSecondaryAxis) }, changedProperties);
     }
 
     [Fact]

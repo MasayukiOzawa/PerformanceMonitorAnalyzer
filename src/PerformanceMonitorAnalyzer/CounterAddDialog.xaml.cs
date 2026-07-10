@@ -12,6 +12,7 @@ public partial class CounterAddDialog : Window
     private readonly ObservableCollection<CounterSelectorItem> _availableCounterItems = new();
     private readonly ObservableCollection<CounterSelectorItem> _availableInstanceItems = new();
     private bool _isRefreshingCounterSelector;
+    private bool _isSynchronizingBulkSelection;
 
     public CounterAddDialog(
         IReadOnlyList<CounterTreeNode> counterTreeNodes,
@@ -159,23 +160,23 @@ public partial class CounterAddDialog : Window
 
     private bool HasSelectedCounterItems()
     {
-        return _availableCounterItems.Any(static item => item.IsChecked) ||
-               AvailableCountersListBox.SelectedItems.OfType<CounterSelectorItem>().Any();
+        return _availableCounterItems.Any(static item => !item.IsBulkSelector && item.IsChecked == true) ||
+               AvailableCountersListBox.SelectedItems.OfType<CounterSelectorItem>().Any(static item => !item.IsBulkSelector);
     }
 
     private bool HasSelectedInstanceItems()
     {
-        return _availableInstanceItems.Any(static item => item.IsChecked) ||
-               AvailableInstancesListBox.SelectedItems.OfType<CounterSelectorItem>().Any();
+        return _availableInstanceItems.Any(static item => !item.IsBulkSelector && item.IsChecked == true) ||
+               AvailableInstancesListBox.SelectedItems.OfType<CounterSelectorItem>().Any(static item => !item.IsBulkSelector);
     }
 
     private void ClearInstanceSelection()
     {
         AvailableInstancesListBox.SelectedIndex = -1;
-        foreach (var instanceItem in _availableInstanceItems)
+        SynchronizeBulkSelection(() =>
         {
-            instanceItem.IsChecked = false;
-        }
+            CounterSelectionModel.SetAllItemsChecked(_availableInstanceItems, false);
+        });
     }
 
     private CounterTreeNode? GetSelectedCounterObjectNode()
@@ -187,20 +188,87 @@ public partial class CounterAddDialog : Window
 
     private void CounterSelectorCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        if (_isRefreshingCounterSelector)
+        if (_isRefreshingCounterSelector || _isSynchronizingBulkSelection)
         {
             return;
         }
 
         if (sender is CheckBox checkBox && checkBox.Tag is CounterSelectorItem item)
         {
-            item.IsChecked = checkBox.IsChecked == true;
+            item.IsChecked = checkBox.IsChecked;
+
+            if (item.IsBulkSelector)
+            {
+                return;
+            }
+
+            var items = _availableCounterItems.Contains(item)
+                ? _availableCounterItems
+                : _availableInstanceItems;
+            UpdateBulkSelectorState(items);
         }
 
         if (sender is CheckBox { Tag: CounterSelectorItem itemForList } &&
             _availableCounterItems.Contains(itemForList))
         {
             UpdateInstanceSelectionAvailability();
+        }
+    }
+
+    private void CounterSelectorCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isRefreshingCounterSelector ||
+            _isSynchronizingBulkSelection ||
+            sender is not CheckBox { Tag: CounterSelectorItem item } ||
+            !item.IsBulkSelector)
+        {
+            return;
+        }
+
+        var items = item.IsAllCounters ? _availableCounterItems : _availableInstanceItems;
+        var shouldSelectAll = CounterSelectionModel.GetBulkSelectionState(items) != true;
+
+        SynchronizeBulkSelection(() =>
+        {
+            CounterSelectionModel.SetAllItemsChecked(items, shouldSelectAll);
+        });
+
+        var listBox = item.IsAllCounters ? AvailableCountersListBox : AvailableInstancesListBox;
+        if (!shouldSelectAll)
+        {
+            listBox.UnselectAll();
+        }
+
+        if (item.IsAllCounters)
+        {
+            UpdateInstanceSelectionAvailability();
+        }
+    }
+
+    private void UpdateBulkSelectorState(ObservableCollection<CounterSelectorItem> items)
+    {
+        var bulkSelector = items.FirstOrDefault(static item => item.IsBulkSelector);
+        if (bulkSelector is null)
+        {
+            return;
+        }
+
+        SynchronizeBulkSelection(() =>
+        {
+            bulkSelector.IsChecked = CounterSelectionModel.GetBulkSelectionState(items);
+        });
+    }
+
+    private void SynchronizeBulkSelection(Action updateSelection)
+    {
+        _isSynchronizingBulkSelection = true;
+        try
+        {
+            updateSelection();
+        }
+        finally
+        {
+            _isSynchronizingBulkSelection = false;
         }
     }
 
@@ -240,7 +308,7 @@ public partial class CounterAddDialog : Window
         ListBox listBox,
         ObservableCollection<CounterSelectorItem> items)
     {
-        var checkedItems = items.Where(static item => item.IsChecked).ToList();
+        var checkedItems = items.Where(static item => item.IsChecked == true).ToList();
         if (checkedItems.Count > 0)
         {
             return checkedItems;
@@ -248,6 +316,7 @@ public partial class CounterAddDialog : Window
 
         return listBox.SelectedItems
             .OfType<CounterSelectorItem>()
+            .Where(static item => !item.IsBulkSelector)
             .ToList();
     }
 

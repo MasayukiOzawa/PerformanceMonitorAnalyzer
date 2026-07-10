@@ -53,6 +53,7 @@ public partial class MainWindow : Window
     
     // カウンターごとのスケール設定を管理
     private readonly Dictionary<string, double> _counterScales = new();
+    private readonly YAxisAssignmentState _yAxisAssignments = new();
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
@@ -83,9 +84,10 @@ public partial class MainWindow : Window
     private Point _resizeStartPoint;
     private Size _resizeStartSize;
 
-    private bool _isManualYAxisRangeEnabled = false;
-    private double _manualYAxisMin = 0;
-    private double _manualYAxisMax = 100;
+    private readonly YAxisRangeState _primaryYAxisRange = new();
+    private readonly YAxisRangeState _secondaryYAxisRange = new();
+    private YAxisAssignment _selectedYAxisRange = YAxisAssignment.Primary;
+    private bool _isUpdatingYAxisRangeControls;
     private string? _statisticsSortMemberPath;
     private ListSortDirection? _statisticsSortDirection;
     private readonly ObservableCollection<DataTableCounterItem> _openDataTableCounters = new();
@@ -130,6 +132,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         InitializeChart();
+        UpdateYAxisRangeControls();
         UpdateTimeHighlightControls();
         InitializeBulkScaleComboBox();
         InitializeCounterPanelControls();
@@ -278,6 +281,10 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.Min = 0;
         PerformanceChart.Plot.Axes.Left.Max = 100;
         PerformanceChart.Plot.Axes.Left.IsVisible = true;
+        PerformanceChart.Plot.Axes.Right.Min = 0;
+        PerformanceChart.Plot.Axes.Right.Max = 100;
+        PerformanceChart.Plot.Axes.Right.IsVisible = false;
+        PerformanceChart.Plot.Axes.Right.Label.Text = string.Empty;
         
         // ユーザー操作後も現在データに応じたY軸範囲を維持
         PerformanceChart.Plot.RenderManager.RenderFinished += (sender, args) =>
@@ -289,10 +296,12 @@ public partial class MainWindow : Window
         // 軸ラベルのフォントサイズ設定
         PerformanceChart.Plot.Axes.Bottom.Label.FontSize = 16;
         PerformanceChart.Plot.Axes.Left.Label.FontSize = 16;
+        PerformanceChart.Plot.Axes.Right.Label.FontSize = 16;
         
         // 軸目盛りのフォントサイズ設定
         PerformanceChart.Plot.Axes.Bottom.TickLabelStyle.FontSize = 16;
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
+        PerformanceChart.Plot.Axes.Right.TickLabelStyle.FontSize = 16;
         
         // 凡例を無効化（独立した凡例コンポーネントを使用）
         PerformanceChart.Plot.Legend.IsVisible = false;
@@ -327,28 +336,27 @@ public partial class MainWindow : Window
     {
         try
         {
-            const double defaultYAxisMin = 0;
-            const double defaultYAxisMax = 100;
+            ApplyYAxisRange(
+                PerformanceChart.Plot.Axes.Left,
+                YAxisAssignment.Primary,
+                _primaryYAxisRange,
+                stacked: _currentChartType == ChartType.StackedAreaChart);
 
-            var yAxisMin = defaultYAxisMin;
-            var yAxisMax = defaultYAxisMax;
+            var hasVisibleSecondarySeries = HasVisibleSecondarySeries();
 
-            if (_isManualYAxisRangeEnabled)
+            PerformanceChart.Plot.Axes.Right.IsVisible = hasVisibleSecondarySeries;
+            if (hasVisibleSecondarySeries)
             {
-                yAxisMin = _manualYAxisMin;
-                yAxisMax = _manualYAxisMax;
+                ApplyYAxisRange(
+                    PerformanceChart.Plot.Axes.Right,
+                    YAxisAssignment.Secondary,
+                    _secondaryYAxisRange,
+                    stacked: false);
             }
-            else if (TryGetCurrentDisplayMax(out var displayMax) && displayMax > defaultYAxisMax)
+            else
             {
-                yAxisMax = Math.Ceiling(displayMax * 1.1);
-            }
-
-            if (Math.Abs(PerformanceChart.Plot.Axes.Left.Min - yAxisMin) > 1e-9 ||
-                Math.Abs(PerformanceChart.Plot.Axes.Left.Max - yAxisMax) > 1e-9)
-            {
-                PerformanceChart.Plot.Axes.Left.Min = yAxisMin;
-                PerformanceChart.Plot.Axes.Left.Max = yAxisMax;
-                System.Diagnostics.Debug.WriteLine($"Y軸範囲を更新しました: {yAxisMin} - {yAxisMax}");
+                PerformanceChart.Plot.Axes.Right.Min = YAxisRangeState.DefaultMinimum;
+                PerformanceChart.Plot.Axes.Right.Max = YAxisRangeState.DefaultMaximum;
             }
         }
         catch (Exception ex)
@@ -358,64 +366,42 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 現在表示中データの最大表示値を取得
+    /// 指定したY軸の表示範囲を更新
     /// </summary>
-    private bool TryGetCurrentDisplayMax(out double maxValue)
+    private void ApplyYAxisRange(
+        ScottPlot.IYAxis axis,
+        YAxisAssignment assignment,
+        YAxisRangeState rangeState,
+        bool stacked)
     {
-        maxValue = 0;
-
-        var currentCounters = GetCurrentChartCounters()
-            .Where(counter => _seriesVisibility.GetValueOrDefault(counter, true))
-            .ToList();
-
-        if (!currentCounters.Any())
+        double minimum;
+        double maximum;
+        if (rangeState.IsManual)
         {
-            return false;
+            minimum = rangeState.Minimum;
+            maximum = rangeState.Maximum;
+        }
+        else
+        {
+            var seriesValues = GetCurrentChartCounters()
+                .Where(counter =>
+                    GetYAxisAssignment(counter) == assignment &&
+                    _seriesVisibility.GetValueOrDefault(counter, true))
+                .Select(counter =>
+                {
+                    var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+                    return GetCurrentDisplayDataPoints(counter).Select(point => point.Value * scale);
+                });
+
+            (minimum, maximum) = YAxisRangeCalculator.CalculateAutomaticRange(seriesValues, stacked);
         }
 
-        bool hasValue = false;
-        double currentMax = double.MinValue;
-        double stackedUpperBound = 0;
-
-        foreach (var counter in currentCounters)
+        if (Math.Abs(axis.Min - minimum) > 1e-9 || Math.Abs(axis.Max - maximum) > 1e-9)
         {
-            var dataPoints = GetCurrentDisplayDataPoints(counter);
-            if (!dataPoints.Any())
-            {
-                continue;
-            }
-
-            var manualScale = _counterScales.GetValueOrDefault(counter, 1.0);
-            var finalScale = manualScale;
-            var counterMax = dataPoints.Max(dp => dp.Value * finalScale);
-
-            if (double.IsNaN(counterMax) || double.IsInfinity(counterMax))
-            {
-                continue;
-            }
-
-            hasValue = true;
-            currentMax = Math.Max(currentMax, counterMax);
-
-            if (_currentChartType == ChartType.StackedAreaChart && counterMax > 0)
-            {
-                stackedUpperBound += counterMax;
-            }
+            axis.Min = minimum;
+            axis.Max = maximum;
+            System.Diagnostics.Debug.WriteLine($"Y軸範囲を更新しました: {minimum} - {maximum}");
         }
-
-        if (_currentChartType == ChartType.StackedAreaChart && stackedUpperBound > 0)
-        {
-            currentMax = Math.Max(currentMax, stackedUpperBound);
-            hasValue = true;
-        }
-
-        if (!hasValue)
-        {
-            return false;
-        }
-
-        maxValue = currentMax;
-        return true;
     }
 
     /// <summary>
@@ -446,7 +432,25 @@ public partial class MainWindow : Window
             return new List<PerformanceDataPoint>();
         }
 
-        return CounterValueModeConverter.ToDisplayDataPoints(counter, rawData, _currentValueMode);
+        return CounterValueModeConverter.ToDisplayDataPoints(counter, rawData, GetEffectiveValueMode(counter));
+    }
+
+    private YAxisAssignment GetYAxisAssignment(string counter)
+    {
+        return _yAxisAssignments.GetAssignment(counter);
+    }
+
+    private CounterValueMode GetEffectiveValueMode(string counter)
+    {
+        return _yAxisAssignments.GetEffectiveValueMode(counter, _currentValueMode);
+    }
+
+    private bool HasVisibleSecondarySeries()
+    {
+        return _yAxisAssignments.ContainsSecondaryAssignment(
+            _chartSeries
+                .Where(static series => series.Value.IsVisible)
+                .Select(static series => series.Key));
     }
 
     /// <summary>
@@ -1553,6 +1557,10 @@ public partial class MainWindow : Window
         ClearDataTableDisplay();
         _counterData.Clear();
         _counterLineColors.Clear();
+        _yAxisAssignments.Clear();
+        _primaryYAxisRange.Reset();
+        _secondaryYAxisRange.Reset();
+        UpdateYAxisRangeControls();
         
         // 凡例をクリア
         ClearLegendItems();
@@ -2101,15 +2109,17 @@ public partial class MainWindow : Window
 
     private void ClearSelectedCounters(bool removeFromChart)
     {
+        var itemsToRemove = _selectedCounterItems.ToList();
+        _selectedCounterItems.Clear();
+
         if (removeFromChart)
         {
-            foreach (var item in _selectedCounterItems.ToList())
+            foreach (var item in itemsToRemove)
             {
                 RemoveCounterFromChart(item.FullPath);
             }
         }
 
-        _selectedCounterItems.Clear();
         UpdateExecuteButtonState();
         UpdateRelogCommandDisplay();
     }
@@ -2131,9 +2141,7 @@ public partial class MainWindow : Window
         System.Diagnostics.Debug.WriteLine($"Counter found in _counterData with {_counterData[counter].Count} data points");
         
         // 既存のシリーズをチェック（現在のチャートタイプに応じて）
-        bool seriesExists = _currentChartType == ChartType.LineChart 
-            ? _chartSeries.ContainsKey(counter) 
-            : _areaChartSeries.ContainsKey(counter);
+        bool seriesExists = _chartSeries.ContainsKey(counter) || _areaChartSeries.ContainsKey(counter);
             
         if (seriesExists)
         {
@@ -2227,6 +2235,9 @@ public partial class MainWindow : Window
         scatter.LineStyle.Width = DefaultLineWidth; // 線の太さを明示的に設定
         scatter.LineColor = lineSeries.LineColor; // 色を設定
         scatter.IsVisible = _seriesVisibility.GetValueOrDefault(lineSeries.Counter, true);
+        scatter.Axes.YAxis = GetYAxisAssignment(lineSeries.Counter) == YAxisAssignment.Secondary
+            ? PerformanceChart.Plot.Axes.Right
+            : PerformanceChart.Plot.Axes.Left;
 
         _chartSeries[lineSeries.Counter] = scatter;
         AddLegendItem(lineSeries.Counter, lineSeries.DisplayName, lineSeries.LegendColor);
@@ -2343,17 +2354,18 @@ public partial class MainWindow : Window
             removedArea = true;
             System.Diagnostics.Debug.WriteLine($"Removed area series from chart for: {counter}");
         }
+
+        _yAxisAssignments.Remove(counter);
         
         // 積み重ね面グラフの場合は全体を再描画
-        if (_currentChartType == ChartType.StackedAreaChart && removedArea)
+        if (_currentChartType == ChartType.StackedAreaChart && (removedArea || removedLine))
         {
             System.Diagnostics.Debug.WriteLine("Stacked area chart requires full redraw after removal");
             RefreshChartWithCurrentType();
         }
         else if (removedLine)
         {
-            
-            
+            EnsureYAxisFixedRange();
             PerformanceChart.Refresh();
         }
         
@@ -2371,6 +2383,7 @@ public partial class MainWindow : Window
         
         // スケールコントロールの表示を更新
         UpdateScaleControlVisibility();
+        UpdateYAxisRangeControls();
     }
 
     /// <summary>
@@ -2384,9 +2397,10 @@ public partial class MainWindow : Window
         var selectedCounters = GetSelectedCounters().ToHashSet();
         
         // 現在のチャートタイプに応じてカウンターリストを取得
-        var currentChartCounters = _currentChartType == ChartType.LineChart 
-            ? _chartSeries.Keys.ToList() 
-            : _areaChartSeries.Keys.ToList();
+        var currentChartCounters = _chartSeries.Keys
+            .Concat(_areaChartSeries.Keys)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         
         // 選択されていないカウンターをグラフから削除
         foreach (var counter in currentChartCounters)
@@ -2425,6 +2439,8 @@ public partial class MainWindow : Window
             PerformanceChart.Plot.YLabel(GetCurrentYAxisLabel());
             PerformanceChart.Plot.Axes.DateTimeTicksBottom();
             PerformanceChart.Plot.Axes.Left.IsVisible = true;
+            PerformanceChart.Plot.Axes.Right.IsVisible = false;
+            PerformanceChart.Plot.Axes.Right.Label.Text = string.Empty;
             
             // 凡例を無効化（独立した凡例コンポーネントを使用）
             PerformanceChart.Plot.Legend.IsVisible = false;
@@ -2435,27 +2451,34 @@ public partial class MainWindow : Window
             if (!selectedCounters.Any())
             {
                 System.Diagnostics.Debug.WriteLine("No selected counters found");
+                UpdateYAxisRangeControls();
                 PerformanceChart.Refresh();
                 UpdateChartVisibility();
                 return;
             }
             
-            // グラフタイプに応じて描画
+            var seriesPlan = _yAxisAssignments.CreateSeriesPlan(selectedCounters);
+
+            // グラフタイプに応じて1軸を描画し、2軸は常に折れ線で描画
             switch (_currentChartType)
             {
                 case ChartType.LineChart:
-                    DrawLineChart(selectedCounters);
+                    DrawLineChart(seriesPlan.PrimaryCounters);
                     break;
                 case ChartType.StackedAreaChart:
-                    DrawStackedAreaChart(selectedCounters);
+                    DrawStackedAreaChart(seriesPlan.PrimaryCounters);
                     break;
             }
+
+            DrawLineChart(seriesPlan.SecondaryCounters);
+            ReorderLegendItems(selectedCounters);
 
             // 凡例ハイライト状態を反映
             ApplyLineSeriesHighlight(refresh: false);
             
             // グラフを更新（Y軸固定範囲なのでAutoScaleは使わない）
             EnsureYAxisFixedRange();
+            UpdateYAxisRangeControls();
             
             // X軸の範囲を選択された時間範囲に設定
             UpdateChartXAxisRange();
@@ -2478,7 +2501,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// 折れ線グラフを描画
     /// </summary>
-    private void DrawLineChart(List<string> selectedCounters)
+    private void DrawLineChart(IReadOnlyList<string> selectedCounters)
     {
         System.Diagnostics.Debug.WriteLine($"Drawing line chart for {selectedCounters.Count} counters");
         
@@ -2495,17 +2518,12 @@ public partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine($"Added line series for: {counter}");
         }
 
-        // 凡例ハイライト状態を反映
-        ApplyLineSeriesHighlight(refresh: false);
-        
-        // 凡例の現在値を更新
-        UpdateLegendCurrentValues();
     }
 
     /// <summary>
     /// 積み重ね面グラフを描画
     /// </summary>
-    private void DrawStackedAreaChart(List<string> selectedCounters)
+    private void DrawStackedAreaChart(IReadOnlyList<string> selectedCounters)
     {
         System.Diagnostics.Debug.WriteLine($"Drawing stacked area chart for {selectedCounters.Count} counters");
 
@@ -2519,7 +2537,7 @@ public partial class MainWindow : Window
         for (int i = 0; i < selectedCounters.Count; i++)
         {
             var counter = selectedCounters[i];
-            var scottPlotColor = ChartColorPalette.GetNextColor(i);
+            var scottPlotColor = GetOrCreateCounterColor(counter);
             counterColors[counter] = scottPlotColor;
             AddLegendItem(counter, CounterPathFormatter.GetDisplayName(counter), ChartColorPalette.ConvertToMediaColor(scottPlotColor));
         }
@@ -2636,13 +2654,8 @@ public partial class MainWindow : Window
             // 統計情報のコレクションを作成
             var statisticsItems = new List<CounterStatisticsItem>();
             
-            // 現在のチャートタイプに応じて統計情報を計算
-            var currentCounters = _currentChartType == ChartType.LineChart 
-                ? (IEnumerable<string>)_chartSeries.Keys 
-                : (IEnumerable<string>)_areaChartSeries.Keys;
-            
             // 各カウンターの統計情報を計算
-            foreach (var counterName in currentCounters.OrderBy(c => c))
+            foreach (var counterName in GetCurrentChartCounters().OrderBy(static counter => counter))
             {
                 var dataPoints = GetCurrentDisplayDataPoints(counterName);
                 if (dataPoints.Any())
@@ -2987,9 +3000,7 @@ public partial class MainWindow : Window
             scatter.LineStyle.Width = 1.5f;
             scatter.LineColor = GetOrCreateCounterColor(counter);
             scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
-            chart.Plot.Axes.AutoScale();
-            chart.Plot.Axes.Left.Min = 0;
-            chart.Plot.Axes.Left.Max = CalculatePaddedYAxisMaximum(displayDataPoints);
+            ResetDataTableDetailChartZoom(chart, displayDataPoints, refresh: false);
         }
 
         chart.Loaded += (_, _) => chart.Refresh();
@@ -2999,6 +3010,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 4)
         };
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var titleBlock = new TextBlock
@@ -3012,6 +3024,24 @@ public partial class MainWindow : Window
         };
         Grid.SetColumn(titleBlock, 0);
         headerGrid.Children.Add(titleBlock);
+
+        var resetZoomButton = new Button
+        {
+            Content = "ズームリセット",
+            Padding = new Thickness(8, 1, 8, 1),
+            Height = 22,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            IsEnabled = displayDataPoints.Any(),
+            ToolTip = "選択中データのグラフを初期表示範囲へ戻します"
+        };
+        if (TryFindResource("GhostButtonStyle") is Style resetZoomButtonStyle)
+        {
+            resetZoomButton.Style = resetZoomButtonStyle;
+        }
+
+        Grid.SetColumn(resetZoomButton, 1);
+        headerGrid.Children.Add(resetZoomButton);
 
         var copyButton = new Button
         {
@@ -3027,7 +3057,7 @@ public partial class MainWindow : Window
             copyButton.Style = copyButtonStyle;
         }
 
-        Grid.SetColumn(copyButton, 1);
+        Grid.SetColumn(copyButton, 2);
         headerGrid.Children.Add(copyButton);
 
         var contentGrid = new Grid();
@@ -3049,20 +3079,36 @@ public partial class MainWindow : Window
             Child = contentGrid
         };
 
+        resetZoomButton.Click += (_, _) =>
+        {
+            ResetDataTableDetailChartZoom(chart, displayDataPoints, refresh: true);
+            AddOperationLog(LogLevel.Info, $"選択中データのグラフをズームリセットしました: {titleText}");
+        };
         copyButton.Click += (_, _) => CopyDataTableDetailChartToClipboard(counter, displayDataPoints, titleText, chart);
 
         return chartContainer;
     }
 
-    private static double CalculatePaddedYAxisMaximum(IEnumerable<PerformanceDataPoint> dataPoints)
+    private static void ResetDataTableDetailChartZoom(
+        WpfPlot chart,
+        IReadOnlyCollection<PerformanceDataPoint> displayDataPoints,
+        bool refresh)
     {
-        var maximum = dataPoints
-            .Select(static dataPoint => dataPoint.Value)
-            .Where(double.IsFinite)
-            .DefaultIfEmpty(0)
-            .Max();
+        if (displayDataPoints.Count == 0)
+        {
+            return;
+        }
 
-        return maximum > 0 ? maximum * 1.1 : 1;
+        chart.Plot.Axes.AutoScale();
+        var range = YAxisRangeCalculator.CalculateDetailChartRange(
+            displayDataPoints.Select(static dataPoint => dataPoint.Value));
+        chart.Plot.Axes.Left.Min = range.Minimum;
+        chart.Plot.Axes.Left.Max = range.Maximum;
+
+        if (refresh)
+        {
+            chart.Refresh();
+        }
     }
 
     private void CopyDataTableDetailChartToClipboard(
@@ -3136,8 +3182,10 @@ public partial class MainWindow : Window
         scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
 
         plot.Axes.AutoScale();
-        plot.Axes.Left.Min = 0;
-        plot.Axes.Left.Max = CalculatePaddedYAxisMaximum(displayDataPoints);
+        var range = YAxisRangeCalculator.CalculateDetailChartRange(
+            displayDataPoints.Select(static dataPoint => dataPoint.Value));
+        plot.Axes.Left.Min = range.Minimum;
+        plot.Axes.Left.Max = range.Maximum;
 
         return plot;
     }
@@ -3653,7 +3701,7 @@ public partial class MainWindow : Window
                 2,
                 accentColor,
                 LinePattern.Dashed);
-            _timeHighlightFocusLine.LabelText = $"注目点 {focusTime:HH:mm:ss}";
+            _timeHighlightFocusLine.LabelText = $"{focusTime:HH:mm:ss}";
             _timeHighlightFocusLine.LabelFontColor = accentColor;
             _timeHighlightFocusLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#FFF7ED").WithAlpha(235);
             _timeHighlightFocusLine.EnableAutoscale = false;
@@ -4299,9 +4347,9 @@ public partial class MainWindow : Window
     /// </summary>
     private List<string> GetCurrentChartCounters()
     {
-        var chartCounters = _currentChartType == ChartType.LineChart
-            ? _chartSeries.Keys.ToHashSet(StringComparer.Ordinal)
-            : _areaChartSeries.Keys.ToHashSet(StringComparer.Ordinal);
+        var chartCounters = _chartSeries.Keys
+            .Concat(_areaChartSeries.Keys)
+            .ToHashSet(StringComparer.Ordinal);
 
         var countersInLegendOrder = _legendItems
             .Select(static item => item.CounterPath)
@@ -4314,6 +4362,34 @@ public partial class MainWindow : Window
             .OrderBy(static counter => counter));
 
         return countersInLegendOrder;
+    }
+
+    private void ReorderLegendItems(IReadOnlyList<string> counterOrder)
+    {
+        if (_legendItems.Count < 2)
+        {
+            return;
+        }
+
+        var itemsByPath = _legendItems.ToDictionary(
+            static item => item.CounterPath,
+            StringComparer.Ordinal);
+        var orderedItems = counterOrder
+            .Where(itemsByPath.ContainsKey)
+            .Select(counter => itemsByPath[counter])
+            .ToList();
+        var counterPathSet = counterOrder.ToHashSet(StringComparer.Ordinal);
+
+        foreach (var item in _legendItems.Where(item => !counterPathSet.Contains(item.CounterPath)))
+        {
+            orderedItems.Add(item);
+        }
+
+        _legendItems.Clear();
+        foreach (var item in orderedItems)
+        {
+            _legendItems.Add(item);
+        }
     }
 
     private static ComboBoxItem CreateScaleComboBoxItem(string scaleLabel)
@@ -5485,7 +5561,8 @@ public partial class MainWindow : Window
             _counterData,
             _seriesVisibility,
             _counterScales,
-            _currentValueMode);
+            _currentValueMode,
+            _yAxisAssignments);
 
         return context is not null;
     }
@@ -5506,6 +5583,7 @@ public partial class MainWindow : Window
             : Visibility.Collapsed;
         GraphHoverItemsControl.ItemsSource = context.Items.Select(ToGraphHoverDisplayItem).ToList();
         GraphHoverContextOverlay.Visibility = Visibility.Visible;
+        GraphHoverOverlayCanvas.IsHitTestVisible = _isGraphHoverContextPinned;
         PositionGraphHoverContextOverlay(cursorPoint);
     }
 
@@ -5574,6 +5652,7 @@ public partial class MainWindow : Window
         }
 
         GraphHoverPinnedIconText.Visibility = Visibility.Collapsed;
+        GraphHoverOverlayCanvas.IsHitTestVisible = false;
     }
 
     /// <summary>
@@ -5598,19 +5677,20 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (yAxisMax <= yAxisMin)
+            if (!double.IsFinite(yAxisMin) || !double.IsFinite(yAxisMax) || yAxisMax <= yAxisMin)
             {
                 AddOperationLog(LogLevel.Warning, "Y軸範囲の入力値が不正です。上限は下限より大きい値を指定してください。");
                 return;
             }
 
-            _manualYAxisMin = yAxisMin;
-            _manualYAxisMax = yAxisMax;
-            _isManualYAxisRangeEnabled = true;
+            var rangeState = GetSelectedYAxisRangeState();
+            rangeState.SetManual(yAxisMin, yAxisMax);
 
             EnsureYAxisFixedRange();
             PerformanceChart.Refresh();
-            AddOperationLog(LogLevel.Info, $"Y軸範囲を手動設定しました: {_manualYAxisMin} ～ {_manualYAxisMax}");
+            AddOperationLog(
+                LogLevel.Info,
+                $"{GetSelectedYAxisDisplayName()}の範囲を手動設定しました: {rangeState.Minimum} ～ {rangeState.Maximum}");
         }
         catch (Exception ex)
         {
@@ -5637,15 +5717,76 @@ public partial class MainWindow : Window
     /// </summary>
     private void ResetYAxisRange_Click(object sender, RoutedEventArgs e)
     {
-        _isManualYAxisRangeEnabled = false;
-        _manualYAxisMin = 0;
-        _manualYAxisMax = 100;
-        YAxisMinTextBox.Text = "0";
-        YAxisMaxTextBox.Text = "100";
+        GetSelectedYAxisRangeState().Reset();
+        UpdateYAxisRangeControls();
 
         EnsureYAxisFixedRange();
         PerformanceChart.Refresh();
-        AddOperationLog(LogLevel.Info, "Y軸範囲を自動設定に戻しました。");
+        AddOperationLog(LogLevel.Info, $"{GetSelectedYAxisDisplayName()}の範囲を自動設定に戻しました。");
+    }
+
+    private void YAxisRangeTarget_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_isUpdatingYAxisRangeControls || sender is not RadioButton radioButton)
+        {
+            return;
+        }
+
+        _selectedYAxisRange = radioButton == SecondaryYAxisRangeRadio
+            ? YAxisAssignment.Secondary
+            : YAxisAssignment.Primary;
+        UpdateYAxisRangeControls();
+    }
+
+    private YAxisRangeState GetSelectedYAxisRangeState()
+    {
+        return _selectedYAxisRange == YAxisAssignment.Secondary
+            ? _secondaryYAxisRange
+            : _primaryYAxisRange;
+    }
+
+    private string GetSelectedYAxisDisplayName()
+    {
+        return _selectedYAxisRange == YAxisAssignment.Secondary ? "2軸" : "1軸";
+    }
+
+    private void UpdateYAxisRangeControls()
+    {
+        if (PrimaryYAxisRangeRadio == null ||
+            SecondaryYAxisRangeRadio == null ||
+            YAxisMinTextBox == null ||
+            YAxisMaxTextBox == null)
+        {
+            return;
+        }
+
+        var hasVisibleSecondarySeries = HasVisibleSecondarySeries();
+        if (!hasVisibleSecondarySeries && _selectedYAxisRange == YAxisAssignment.Secondary)
+        {
+            _selectedYAxisRange = YAxisAssignment.Primary;
+        }
+
+        _isUpdatingYAxisRangeControls = true;
+        try
+        {
+            PrimaryYAxisRangeRadio.IsChecked = _selectedYAxisRange == YAxisAssignment.Primary;
+            SecondaryYAxisRangeRadio.IsChecked = _selectedYAxisRange == YAxisAssignment.Secondary;
+            SecondaryYAxisRangeRadio.IsEnabled = hasVisibleSecondarySeries;
+
+            var rangeState = GetSelectedYAxisRangeState();
+            YAxisMinTextBox.Text = rangeState.Minimum.ToString(CultureInfo.CurrentCulture);
+            YAxisMaxTextBox.Text = rangeState.Maximum.ToString(CultureInfo.CurrentCulture);
+
+            var canEditSelectedAxis = _selectedYAxisRange == YAxisAssignment.Primary || hasVisibleSecondarySeries;
+            YAxisMinTextBox.IsEnabled = canEditSelectedAxis;
+            YAxisMaxTextBox.IsEnabled = canEditSelectedAxis;
+            ApplyYAxisRangeButton.IsEnabled = canEditSelectedAxis;
+            ResetYAxisRangeButton.IsEnabled = canEditSelectedAxis;
+        }
+        finally
+        {
+            _isUpdatingYAxisRangeControls = false;
+        }
     }
 
     /// <summary>
@@ -5750,7 +5891,7 @@ public partial class MainWindow : Window
 
     private bool IsLineCounterHighlighted(string counterPath)
     {
-        return _currentChartType == ChartType.LineChart
+        return _chartSeries.ContainsKey(counterPath)
             && _highlightedLegendCounterPaths.Contains(counterPath);
     }
 
@@ -5786,9 +5927,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_currentChartType != ChartType.LineChart)
+        if (!_chartSeries.ContainsKey(counterPath))
         {
-            AddOperationLog(LogLevel.Info, "凡例ハイライトは折れ線グラフでのみ使用できます。");
+            AddOperationLog(LogLevel.Info, "凡例ハイライトは折れ線系列でのみ使用できます。");
             return;
         }
 
@@ -5801,6 +5942,31 @@ public partial class MainWindow : Window
             _highlightedLegendCounterPaths.Add(counterPath);
         }
         ApplyLineSeriesHighlight();
+    }
+
+    private void LegendSecondaryAxis_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: string counterPath } checkBox)
+        {
+            return;
+        }
+
+        var newAssignment = checkBox.IsChecked == true
+            ? YAxisAssignment.Secondary
+            : YAxisAssignment.Primary;
+        if (GetYAxisAssignment(counterPath) == newAssignment)
+        {
+            return;
+        }
+
+        _yAxisAssignments.SetAssignment(counterPath, newAssignment);
+
+        RefreshChartWithCurrentType();
+        RefreshAllDataTabsForCurrentMode();
+        UpdateYAxisRangeControls();
+        AddOperationLog(
+            LogLevel.Info,
+            $"{CounterPathFormatter.GetDisplayName(counterPath)} を{(newAssignment == YAxisAssignment.Secondary ? "2軸（Raw折れ線）" : "1軸")}へ変更しました。");
     }
 
     /// <summary>
@@ -5917,6 +6083,8 @@ public partial class MainWindow : Window
             }
 
             ApplyLineSeriesHighlight(refresh: false);
+            EnsureYAxisFixedRange();
+            UpdateYAxisRangeControls();
             PerformanceChart.Refresh();
         }
         catch (Exception ex)
@@ -5937,6 +6105,7 @@ public partial class MainWindow : Window
             existingItem.Color = color;
             existingItem.IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
             existingItem.IsHighlighted = IsLineCounterHighlighted(counterPath);
+            existingItem.IsSecondaryAxis = GetYAxisAssignment(counterPath) == YAxisAssignment.Secondary;
             return;
         }
         
@@ -5947,6 +6116,7 @@ public partial class MainWindow : Window
             Color = color,
             IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true),
             IsHighlighted = IsLineCounterHighlighted(counterPath),
+            IsSecondaryAxis = GetYAxisAssignment(counterPath) == YAxisAssignment.Secondary,
             CurrentValue = "-"
         };
         
@@ -5990,7 +6160,10 @@ public partial class MainWindow : Window
             foreach (var item in _legendItems)
             {
                 if (_counterData.TryGetValue(item.CounterPath, out var rawData) &&
-                    CounterValueModeConverter.TryGetLatestValue(rawData, _currentValueMode, out var latestValue))
+                    CounterValueModeConverter.TryGetLatestValue(
+                        rawData,
+                        GetEffectiveValueMode(item.CounterPath),
+                        out var latestValue))
                 {
                     // 値をフォーマット
                     item.CurrentValue = ValueFormatHelper.FormatCounterValue(latestValue);
