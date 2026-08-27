@@ -56,4 +56,72 @@ public class TimeHighlightRangeCalculatorTests
         Assert.Equal(start.AddHours(3), result.EndTime);
         Assert.Equal(start.AddHours(2), result.FocusTime);
     }
+
+    [Fact]
+    public void FindNearestTimestampInRange_ReturnsClosestTimestampToFocus()
+    {
+        var start = new DateTime(2026, 1, 1, 0, 0, 0);
+        var timestamps = new[]
+        {
+            start.AddSeconds(5),
+            start.AddSeconds(10),
+            start.AddSeconds(15)
+        };
+
+        var result = TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+            timestamps,
+            start,
+            start.AddSeconds(20),
+            start.AddSeconds(12));
+
+        Assert.Equal(start.AddSeconds(10), result);
+    }
+
+    [Fact]
+    public void FindNearestTimestampInRange_IgnoresTimestampsOutsideHighlightRange()
+    {
+        var start = new DateTime(2026, 1, 1, 0, 0, 0);
+        var timestamps = new[]
+        {
+            start.AddSeconds(5),
+            start.AddSeconds(15)
+        };
+
+        var result = TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+            timestamps,
+            start.AddSeconds(10),
+            start.AddSeconds(20),
+            start.AddSeconds(8));
+
+        Assert.Equal(start.AddSeconds(15), result);
+    }
+
+    [Fact]
+    public void FindNearestTimestampInRange_WhenNoTimestampIsInRange_ReturnsNull()
+    {
+        var start = new DateTime(2026, 1, 1, 0, 0, 0);
+
+        var result = TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+            new[] { start, start.AddSeconds(30) },
+            start.AddSeconds(10),
+            start.AddSeconds(20),
+            start.AddSeconds(15));
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void FindNearestTimestampInRange_WhenTimestampsIsNull_ThrowsArgumentNullException()
+    {
+        var timestamp = new DateTime(2026, 1, 1, 0, 0, 0);
+
+        var exception = Assert.Throws<ArgumentNullException>(() =>
+            TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+                null!,
+                timestamp,
+                timestamp,
+                timestamp));
+
+        Assert.Equal("timestamps", exception.ParamName);
+    }
 }

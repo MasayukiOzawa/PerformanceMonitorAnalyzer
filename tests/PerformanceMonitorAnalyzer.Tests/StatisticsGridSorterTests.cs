@@ -7,6 +7,25 @@ namespace PerformanceMonitorAnalyzer.Tests;
 public class StatisticsGridSorterTests
 {
     [Fact]
+    public void SortItems_CounterNameAscending_OrdersByCounterName()
+    {
+        using var _ = new CurrentCultureScope("ja-JP");
+        var items = new[]
+        {
+            CreateItem("Counter-B", average: 10, maximum: 30, minimum: 1),
+            CreateItem("Counter-A", average: 2, maximum: 20, minimum: 3),
+            CreateItem("Counter-C", average: 100, maximum: 10, minimum: 2)
+        };
+
+        var sorted = StatisticsGridSorter.SortItems(
+            items,
+            nameof(CounterStatisticsItem.CounterName),
+            ListSortDirection.Ascending);
+
+        Assert.Equal(["Counter-A", "Counter-B", "Counter-C"], sorted.Select(item => item.CounterName).ToArray());
+    }
+
+    [Fact]
     public void SortItems_AverageAscending_OrdersByNumericAverageValue()
     {
         using var _ = new CurrentCultureScope("ja-JP");

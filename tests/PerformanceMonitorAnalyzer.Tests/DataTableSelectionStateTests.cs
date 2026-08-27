@@ -3,6 +3,29 @@ namespace PerformanceMonitorAnalyzer.Tests;
 public class DataTableSelectionStateTests
 {
     [Fact]
+    public void Synchronize_OrdersVisibleCountersByDisplayName()
+    {
+        using var _ = new TestCultureScope("ja-JP");
+        var snapshot = DataTableSelectionState.Synchronize(
+            previousCounters: Array.Empty<string>(),
+            nextCounters:
+            [
+                @"\\A-PC\System\Processor Queue Length",
+                @"\\Z-PC\Memory\Available MBytes",
+                @"\\M-PC\Processor(_Total)\% Processor Time"
+            ],
+            selectedCounter: null);
+
+        Assert.Equal(
+            [
+                @"\\Z-PC\Memory\Available MBytes",
+                @"\\M-PC\Processor(_Total)\% Processor Time",
+                @"\\A-PC\System\Processor Queue Length"
+            ],
+            snapshot.Counters);
+    }
+
+    [Fact]
     public void Synchronize_WhenSelectedCounterStillExists_PreservesSelection()
     {
         var snapshot = DataTableSelectionState.Synchronize(

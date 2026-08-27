@@ -66,4 +66,35 @@ internal static class TimeHighlightRangeCalculator
 
         return (range.StartTime, range.EndTime, focusRange.StartTime);
     }
+
+    public static DateTime? FindNearestTimestampInRange(
+        IEnumerable<DateTime> timestamps,
+        DateTime rangeStart,
+        DateTime rangeEnd,
+        DateTime focusTime)
+    {
+        ArgumentNullException.ThrowIfNull(timestamps);
+
+        DateTime? nearestTimestamp = null;
+        long nearestDistance = long.MaxValue;
+
+        foreach (var timestamp in timestamps)
+        {
+            if (timestamp < rangeStart || timestamp > rangeEnd)
+            {
+                continue;
+            }
+
+            var distance = Math.Abs(timestamp.Ticks - focusTime.Ticks);
+            if (distance < nearestDistance ||
+                (distance == nearestDistance &&
+                 (!nearestTimestamp.HasValue || timestamp < nearestTimestamp.Value)))
+            {
+                nearestTimestamp = timestamp;
+                nearestDistance = distance;
+            }
+        }
+
+        return nearestTimestamp;
+    }
 }
