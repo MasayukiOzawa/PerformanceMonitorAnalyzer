@@ -66,6 +66,6 @@ internal static class DataTableSelectionState
             normalized.Add(counter);
         }
 
-        return normalized;
+        return CounterDisplayNameSorter.Sort(normalized);
     }
 }

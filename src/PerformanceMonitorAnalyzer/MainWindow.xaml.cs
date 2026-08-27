@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private ChartType _currentChartType = ChartType.LineChart;
     private CounterValueMode _currentValueMode = CounterValueMode.RawValue;
     private bool _isTimeHighlightEnabled = false;
+    private bool _isTimeHighlightFocusVisible = true;
     private bool _isUpdatingTimeHighlightControls = false;
     
     // カウンターごとのスケール設定を管理
@@ -57,7 +58,6 @@ public partial class MainWindow : Window
     
     // スケールコントロール更新中フラグ
     private bool _isUpdatingScaleControls = false;
-    private bool _isInitializingBulkScaleComboBox = false;
     private bool _isSynchronizingModeControls = false;
     
     // パターン管理機能
@@ -65,6 +65,8 @@ public partial class MainWindow : Window
     
     // 凡例管理用のプロパティ
     private readonly ObservableCollection<LegendItem> _legendItems = new();
+    private ScottPlot.Panels.LegendPanel? _embeddedChartLegendPanel;
+    private bool _isEmbeddedChartLegendVisible = true;
     private readonly Dictionary<string, bool> _seriesVisibility = new();
     private readonly Dictionary<string, ScottPlot.Color> _counterLineColors = new(StringComparer.Ordinal);
     private bool _isBulkLegendVisibilityUpdate = false;
@@ -88,11 +90,18 @@ public partial class MainWindow : Window
     private readonly YAxisRangeState _secondaryYAxisRange = new();
     private YAxisAssignment _selectedYAxisRange = YAxisAssignment.Primary;
     private bool _isUpdatingYAxisRangeControls;
-    private string? _statisticsSortMemberPath;
-    private ListSortDirection? _statisticsSortDirection;
+    private string? _statisticsSortMemberPath = nameof(CounterStatisticsItem.CounterName);
+    private ListSortDirection? _statisticsSortDirection = ListSortDirection.Ascending;
     private readonly ObservableCollection<DataTableCounterItem> _openDataTableCounters = new();
     private string? _selectedDataTableCounter;
     private bool _isUpdatingDataTableSelection;
+    private DataGrid? _dataTableDetailDataGrid;
+    private DateTime? _dataTableDetailFocusTimestamp;
+    private WpfPlot? _dataTableDetailChart;
+    private ScottPlot.Plottables.HorizontalSpan? _dataTableDetailTimeHighlightSpan;
+    private ScottPlot.Plottables.VerticalLine? _dataTableDetailTimeHighlightFocusLine;
+    private const string DataTableTimeRangeRowTag = "TimeRange";
+    private const string DataTableFocusRowTag = "Focus";
     
     
     // ログ機能
@@ -303,8 +312,8 @@ public partial class MainWindow : Window
         PerformanceChart.Plot.Axes.Left.TickLabelStyle.FontSize = 16;
         PerformanceChart.Plot.Axes.Right.TickLabelStyle.FontSize = 16;
         
-        // 凡例を無効化（独立した凡例コンポーネントを使用）
-        PerformanceChart.Plot.Legend.IsVisible = false;
+        // 操作用の独立凡例とは別に、コピー画像にも含まれる下部凡例を表示する
+        UpdateEmbeddedChartLegend();
 
         // ScottPlot既定メニューは Open in New Window でNREが発生するため無効化
         // （右クリック時はXAMLで定義したアプリ独自メニューを使用）
@@ -358,6 +367,8 @@ public partial class MainWindow : Window
                 PerformanceChart.Plot.Axes.Right.Min = YAxisRangeState.DefaultMinimum;
                 PerformanceChart.Plot.Axes.Right.Max = YAxisRangeState.DefaultMaximum;
             }
+
+            SyncDataTableDetailChartYAxisRange(refresh: true);
         }
         catch (Exception ex)
         {
@@ -526,6 +537,11 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(counter) || !_counterData.ContainsKey(counter))
         {
+            _dataTableDetailDataGrid = null;
+            _dataTableDetailFocusTimestamp = null;
+            _dataTableDetailChart = null;
+            _dataTableDetailTimeHighlightSpan = null;
+            _dataTableDetailTimeHighlightFocusLine = null;
             SelectedDataCounterTextBlock.Text = _openDataTableCounters.Count == 0
                 ? "表示対象がありません"
                 : "左の一覧からカウンターを選択してください";
@@ -546,6 +562,18 @@ public partial class MainWindow : Window
         DataTableDetailContent.Content = CreateDataTableDetailContent(counter, GetCurrentDisplayDataPoints(counter));
         DataTableDetailContent.Visibility = Visibility.Visible;
         DataTableEmptyStateTextBlock.Visibility = Visibility.Collapsed;
+    }
+
+    private void RefreshSelectedDataTableDetail(string? changedCounter = null)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedDataTableCounter) ||
+            (changedCounter is not null &&
+             !string.Equals(_selectedDataTableCounter, changedCounter, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        UpdateDataTableDetail(_selectedDataTableCounter);
     }
 
     private void DataCounterListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2442,8 +2470,7 @@ public partial class MainWindow : Window
             PerformanceChart.Plot.Axes.Right.IsVisible = false;
             PerformanceChart.Plot.Axes.Right.Label.Text = string.Empty;
             
-            // 凡例を無効化（独立した凡例コンポーネントを使用）
-            PerformanceChart.Plot.Legend.IsVisible = false;
+            UpdateEmbeddedChartLegend();
             
             // 選択されているカウンターを取得
             var selectedCounters = GetSelectedCounters();
@@ -2471,7 +2498,7 @@ public partial class MainWindow : Window
             }
 
             DrawLineChart(seriesPlan.SecondaryCounters);
-            ReorderLegendItems(selectedCounters);
+            SortLegendItemsByCounterName();
 
             // 凡例ハイライト状態を反映
             ApplyLineSeriesHighlight(refresh: false);
@@ -2655,7 +2682,7 @@ public partial class MainWindow : Window
             var statisticsItems = new List<CounterStatisticsItem>();
             
             // 各カウンターの統計情報を計算
-            foreach (var counterName in GetCurrentChartCounters().OrderBy(static counter => counter))
+            foreach (var counterName in GetCurrentChartCounters())
             {
                 var dataPoints = GetCurrentDisplayDataPoints(counterName);
                 if (dataPoints.Any())
@@ -2828,6 +2855,61 @@ public partial class MainWindow : Window
         }
     }
 
+    private bool IsInTimeHighlightRange(DateTime timestamp)
+    {
+        if (!_timeRangeDetected || !_isTimeHighlightEnabled)
+        {
+            return false;
+        }
+
+        var (startTime, endTime, _) = GetTimeHighlightRange();
+        return timestamp >= startTime && timestamp <= endTime;
+    }
+
+    private void ApplyDataTableDetailRowHighlight(DataGridRow row)
+    {
+        if (row.Item is not PerformanceDataPoint dataPoint ||
+            !IsInTimeHighlightRange(dataPoint.Timestamp))
+        {
+            row.Tag = null;
+            return;
+        }
+
+        row.Tag = _isTimeHighlightFocusVisible &&
+                  _dataTableDetailFocusTimestamp == dataPoint.Timestamp
+            ? DataTableFocusRowTag
+            : DataTableTimeRangeRowTag;
+    }
+
+    private void UpdateDataTableDetailRowHighlights()
+    {
+        if (_dataTableDetailDataGrid is null)
+        {
+            return;
+        }
+
+        _dataTableDetailFocusTimestamp = null;
+        if (_timeRangeDetected && _isTimeHighlightEnabled && _isTimeHighlightFocusVisible)
+        {
+            var (startTime, endTime, focusTime) = GetTimeHighlightRange();
+            _dataTableDetailFocusTimestamp = TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+                _dataTableDetailDataGrid.Items
+                    .OfType<PerformanceDataPoint>()
+                    .Select(static dataPoint => dataPoint.Timestamp),
+                startTime,
+                endTime,
+                focusTime);
+        }
+
+        foreach (var dataPoint in _dataTableDetailDataGrid.Items.OfType<PerformanceDataPoint>())
+        {
+            if (_dataTableDetailDataGrid.ItemContainerGenerator.ContainerFromItem(dataPoint) is DataGridRow row)
+            {
+                ApplyDataTableDetailRowHighlight(row);
+            }
+        }
+    }
+
     private UIElement CreateDataTableDetailContent(string counter, List<PerformanceDataPoint> displayDataPoints)
     {
         var mainGrid = new Grid();
@@ -2850,13 +2932,55 @@ public partial class MainWindow : Window
             IsReadOnly = true,
             ItemsSource = displayDataPoints,
             FontSize = 12,
-            AlternatingRowBackground = System.Windows.Media.Brushes.AliceBlue,
+            AlternationCount = 2,
             GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
             HeadersVisibility = DataGridHeadersVisibility.Column,
             SelectionMode = DataGridSelectionMode.Extended
         };
+        var rowStyle = new Style(typeof(DataGridRow));
+        var alternatingRowTrigger = new Trigger
+        {
+            Property = ItemsControl.AlternationIndexProperty,
+            Value = 1
+        };
+        alternatingRowTrigger.Setters.Add(new Setter(
+            Control.BackgroundProperty,
+            System.Windows.Media.Brushes.AliceBlue));
+        rowStyle.Triggers.Add(alternatingRowTrigger);
+
+        var highlightTrigger = new Trigger
+        {
+            Property = FrameworkElement.TagProperty,
+            Value = DataTableTimeRangeRowTag
+        };
+        highlightTrigger.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(255, 237, 213))));
+        rowStyle.Triggers.Add(highlightTrigger);
+
+        var focusTrigger = new Trigger
+        {
+            Property = FrameworkElement.TagProperty,
+            Value = DataTableFocusRowTag
+        };
+        focusTrigger.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(254, 202, 202))));
+        rowStyle.Triggers.Add(focusTrigger);
+
+        var selectedRowTrigger = new Trigger
+        {
+            Property = DataGridRow.IsSelectedProperty,
+            Value = true
+        };
+        selectedRowTrigger.Setters.Add(new Setter(Control.BackgroundProperty, SystemColors.HighlightBrush));
+        selectedRowTrigger.Setters.Add(new Setter(Control.ForegroundProperty, SystemColors.HighlightTextBrush));
+        rowStyle.Triggers.Add(selectedRowTrigger);
+
+        dataGrid.RowStyle = rowStyle;
+        dataGrid.LoadingRow += (_, e) => ApplyDataTableDetailRowHighlight(e.Row);
         dataGrid.PreviewMouseRightButtonDown += DataTableDetailDataGrid_PreviewMouseRightButtonDown;
         dataGrid.ContextMenu = CreateDataTableDetailDataGridContextMenu();
+        _dataTableDetailDataGrid = dataGrid;
+        UpdateDataTableDetailRowHighlights();
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
@@ -2980,28 +3104,33 @@ public partial class MainWindow : Window
     private UIElement CreateDataTableDetailChart(string counter, List<PerformanceDataPoint> displayDataPoints)
     {
         var titleText = CounterPathFormatter.GetDisplayName(counter);
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
         var chart = new WpfPlot
         {
             Background = Brushes.White,
             MinHeight = 120
         };
+        _dataTableDetailChart = chart;
+        _dataTableDetailTimeHighlightSpan = null;
+        _dataTableDetailTimeHighlightFocusLine = null;
 
         chart.Plot.Clear();
         chart.Plot.XLabel("時間");
-        chart.Plot.YLabel("値");
         chart.Plot.Axes.DateTimeTicksBottom();
         chart.Plot.Legend.IsVisible = false;
 
         if (displayDataPoints.Any())
         {
-            var chartData = LineSeriesDataBuilder.Build(displayDataPoints, 1.0);
+            var chartData = LineSeriesDataBuilder.Build(displayDataPoints, scale);
             var scatter = chart.Plot.Add.Scatter(chartData.XValues, chartData.YValues);
             scatter.LineWidth = 1.5f;
             scatter.LineStyle.Width = 1.5f;
             scatter.LineColor = GetOrCreateCounterColor(counter);
             scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
-            ResetDataTableDetailChartZoom(chart, displayDataPoints, refresh: false);
+            ResetDataTableDetailChartZoom(chart, counter, displayDataPoints, scale, refresh: false);
         }
+
+        UpdateDataTableDetailChartTimeHighlight(refresh: false);
 
         chart.Loaded += (_, _) => chart.Refresh();
 
@@ -3081,7 +3210,7 @@ public partial class MainWindow : Window
 
         resetZoomButton.Click += (_, _) =>
         {
-            ResetDataTableDetailChartZoom(chart, displayDataPoints, refresh: true);
+            ResetDataTableDetailChartZoom(chart, counter, displayDataPoints, scale, refresh: true);
             AddOperationLog(LogLevel.Info, $"選択中データのグラフをズームリセットしました: {titleText}");
         };
         copyButton.Click += (_, _) => CopyDataTableDetailChartToClipboard(counter, displayDataPoints, titleText, chart);
@@ -3089,9 +3218,11 @@ public partial class MainWindow : Window
         return chartContainer;
     }
 
-    private static void ResetDataTableDetailChartZoom(
+    private void ResetDataTableDetailChartZoom(
         WpfPlot chart,
+        string counter,
         IReadOnlyCollection<PerformanceDataPoint> displayDataPoints,
+        double scale,
         bool refresh)
     {
         if (displayDataPoints.Count == 0)
@@ -3100,10 +3231,70 @@ public partial class MainWindow : Window
         }
 
         chart.Plot.Axes.AutoScale();
-        var range = YAxisRangeCalculator.CalculateDetailChartRange(
-            displayDataPoints.Select(static dataPoint => dataPoint.Value));
+        var range = GetMainChartYAxisRange(
+            counter,
+            displayDataPoints.Select(dataPoint => dataPoint.Value * scale));
         chart.Plot.Axes.Left.Min = range.Minimum;
         chart.Plot.Axes.Left.Max = range.Maximum;
+
+        ApplySelectedTimeRangeToDataTableDetailChart(chart, refresh);
+    }
+
+    private void UpdateDataTableDetailChartTimeRange()
+    {
+        if (_dataTableDetailChart is null)
+        {
+            return;
+        }
+
+        ApplySelectedTimeRangeToDataTableDetailChart(_dataTableDetailChart, refresh: true);
+    }
+
+    private void SyncDataTableDetailChartYAxisRange(bool refresh)
+    {
+        if (_dataTableDetailChart is null || string.IsNullOrWhiteSpace(_selectedDataTableCounter))
+        {
+            return;
+        }
+
+        var counter = _selectedDataTableCounter;
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
+        var range = GetMainChartYAxisRange(
+            counter,
+            GetCurrentDisplayDataPoints(counter).Select(dataPoint => dataPoint.Value * scale));
+
+        _dataTableDetailChart.Plot.Axes.Left.Min = range.Minimum;
+        _dataTableDetailChart.Plot.Axes.Left.Max = range.Maximum;
+
+        if (refresh)
+        {
+            _dataTableDetailChart.Refresh();
+        }
+    }
+
+    private (double Minimum, double Maximum) GetMainChartYAxisRange(
+        string counter,
+        IEnumerable<double> fallbackValues)
+    {
+        var mainAxis = GetYAxisAssignment(counter) == YAxisAssignment.Secondary
+            ? PerformanceChart.Plot.Axes.Right
+            : PerformanceChart.Plot.Axes.Left;
+
+        return double.IsFinite(mainAxis.Min) &&
+               double.IsFinite(mainAxis.Max) &&
+               mainAxis.Max > mainAxis.Min
+            ? (mainAxis.Min, mainAxis.Max)
+            : YAxisRangeCalculator.CalculateDetailChartRange(fallbackValues);
+    }
+
+    private void ApplySelectedTimeRangeToDataTableDetailChart(WpfPlot chart, bool refresh)
+    {
+        if (_timeRangeDetected)
+        {
+            var (startTime, endTime) = GetSelectedTimeRange();
+            chart.Plot.Axes.Bottom.Min = startTime.ToOADate();
+            chart.Plot.Axes.Bottom.Max = endTime.ToOADate();
+        }
 
         if (refresh)
         {
@@ -3167,14 +3358,14 @@ public partial class MainWindow : Window
         List<PerformanceDataPoint> displayDataPoints,
         string title)
     {
+        var scale = _counterScales.GetValueOrDefault(counter, 1.0);
         var plot = new ScottPlot.Plot();
         plot.Title(title, 16);
         plot.XLabel("時間");
-        plot.YLabel("値");
         plot.Axes.DateTimeTicksBottom();
         plot.Legend.IsVisible = false;
 
-        var chartData = LineSeriesDataBuilder.Build(displayDataPoints, 1.0);
+        var chartData = LineSeriesDataBuilder.Build(displayDataPoints, scale);
         var scatter = plot.Add.Scatter(chartData.XValues, chartData.YValues);
         scatter.LineWidth = 1.5f;
         scatter.LineStyle.Width = 1.5f;
@@ -3182,10 +3373,31 @@ public partial class MainWindow : Window
         scatter.MarkerSize = displayDataPoints.Count == 1 ? 5 : 0;
 
         plot.Axes.AutoScale();
-        var range = YAxisRangeCalculator.CalculateDetailChartRange(
-            displayDataPoints.Select(static dataPoint => dataPoint.Value));
+        var range = GetMainChartYAxisRange(
+            counter,
+            displayDataPoints.Select(dataPoint => dataPoint.Value * scale));
         plot.Axes.Left.Min = range.Minimum;
         plot.Axes.Left.Max = range.Maximum;
+
+        if (_timeRangeDetected)
+        {
+            var (startTime, endTime) = GetSelectedTimeRange();
+            plot.Axes.Bottom.Min = startTime.ToOADate();
+            plot.Axes.Bottom.Max = endTime.ToOADate();
+        }
+
+        if (_timeRangeDetected && _isTimeHighlightEnabled)
+        {
+            var (startTime, endTime, focusTime) = GetTimeHighlightRange();
+            var accentColor = ScottPlot.Color.FromHex("#B45309");
+            var fillColor = ScottPlot.Color.FromHex("#F59E0B").WithAlpha(38);
+            _ = AddTimeHighlightSpan(plot, startTime, endTime, accentColor, fillColor);
+
+            if (_isTimeHighlightFocusVisible)
+            {
+                _ = AddTimeHighlightFocusLine(plot, focusTime, accentColor);
+            }
+        }
 
         return plot;
     }
@@ -3545,6 +3757,7 @@ public partial class MainWindow : Window
     private void ResetTimeHighlightSelection()
     {
         if (TimeHighlightEnabledCheckBox == null ||
+            TimeHighlightFocusVisibleCheckBox == null ||
             HighlightStartTimeSlider == null ||
             HighlightEndTimeSlider == null ||
             HighlightFocusTimeSlider == null)
@@ -3556,7 +3769,9 @@ public partial class MainWindow : Window
         try
         {
             _isTimeHighlightEnabled = false;
+            _isTimeHighlightFocusVisible = true;
             TimeHighlightEnabledCheckBox.IsChecked = false;
+            TimeHighlightFocusVisibleCheckBox.IsChecked = true;
             HighlightStartTimeSlider.Minimum = 0;
             HighlightStartTimeSlider.Maximum = 100;
             HighlightStartTimeSlider.Value = 0;
@@ -3580,6 +3795,7 @@ public partial class MainWindow : Window
     private void UpdateTimeHighlightControls(bool isLoading = false)
     {
         if (TimeHighlightEnabledCheckBox == null ||
+            TimeHighlightFocusVisibleCheckBox == null ||
             TimeHighlightSliderPanel == null ||
             UseVisibleRangeForHighlightButton == null ||
             ClearTimeHighlightButton == null)
@@ -3591,6 +3807,7 @@ public partial class MainWindow : Window
         var canEditHighlight = canUseTimeRange && _isTimeHighlightEnabled;
 
         TimeHighlightEnabledCheckBox.IsEnabled = canUseTimeRange;
+        TimeHighlightFocusVisibleCheckBox.IsEnabled = canEditHighlight;
         TimeHighlightSliderPanel.IsEnabled = canEditHighlight;
         UseVisibleRangeForHighlightButton.IsEnabled = canUseTimeRange;
         ClearTimeHighlightButton.IsEnabled = canUseTimeRange && _isTimeHighlightEnabled;
@@ -3671,6 +3888,96 @@ public partial class MainWindow : Window
         }
     }
 
+    private static ScottPlot.Plottables.VerticalLine AddTimeHighlightFocusLine(
+        ScottPlot.Plot plot,
+        DateTime focusTime,
+        ScottPlot.Color accentColor)
+    {
+        var focusLine = plot.Add.VerticalLine(
+            focusTime.ToOADate(),
+            2,
+            accentColor,
+            LinePattern.Dashed);
+        focusLine.LabelText = $"{focusTime:HH:mm:ss}";
+        focusLine.LabelFontColor = accentColor;
+        focusLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#FFF7ED").WithAlpha(235);
+        focusLine.EnableAutoscale = false;
+        focusLine.LegendText = "注目点";
+        return focusLine;
+    }
+
+    private static ScottPlot.Plottables.HorizontalSpan AddTimeHighlightSpan(
+        ScottPlot.Plot plot,
+        DateTime startTime,
+        DateTime endTime,
+        ScottPlot.Color accentColor,
+        ScottPlot.Color fillColor)
+    {
+        var span = plot.Add.HorizontalSpan(
+            startTime.ToOADate(),
+            endTime.ToOADate(),
+            fillColor);
+        span.LineColor = accentColor.WithAlpha(128);
+        span.LineWidth = 1;
+        span.EnableAutoscale = false;
+        span.LegendText = "注目時間帯";
+        return span;
+    }
+
+    private void ClearDataTableDetailChartTimeHighlight()
+    {
+        if (_dataTableDetailChart is not null && _dataTableDetailTimeHighlightSpan is not null)
+        {
+            _dataTableDetailChart.Plot.Remove(_dataTableDetailTimeHighlightSpan);
+        }
+
+        if (_dataTableDetailChart is not null && _dataTableDetailTimeHighlightFocusLine is not null)
+        {
+            _dataTableDetailChart.Plot.Remove(_dataTableDetailTimeHighlightFocusLine);
+        }
+
+        _dataTableDetailTimeHighlightSpan = null;
+        _dataTableDetailTimeHighlightFocusLine = null;
+    }
+
+    private void UpdateDataTableDetailChartTimeHighlight(bool refresh)
+    {
+        UpdateDataTableDetailRowHighlights();
+
+        if (_dataTableDetailChart is null)
+        {
+            return;
+        }
+
+        ClearDataTableDetailChartTimeHighlight();
+
+        if (_timeRangeDetected && _isTimeHighlightEnabled)
+        {
+            var (startTime, endTime, focusTime) = GetTimeHighlightRange();
+            var accentColor = ScottPlot.Color.FromHex("#B45309");
+            var fillColor = ScottPlot.Color.FromHex("#F59E0B").WithAlpha(38);
+            _dataTableDetailTimeHighlightSpan = AddTimeHighlightSpan(
+                _dataTableDetailChart.Plot,
+                startTime,
+                endTime,
+                accentColor,
+                fillColor);
+
+            if (_isTimeHighlightFocusVisible)
+            {
+                _dataTableDetailTimeHighlightFocusLine = AddTimeHighlightFocusLine(
+                    _dataTableDetailChart.Plot,
+                    focusTime,
+                    accentColor);
+            }
+        }
+
+        if (refresh)
+        {
+            _dataTableDetailChart.Refresh();
+        }
+    }
+
     private void UpdateChartTimeHighlight(bool refresh)
     {
         if (PerformanceChart == null)
@@ -3686,27 +3993,23 @@ public partial class MainWindow : Window
             var accentColor = ScottPlot.Color.FromHex("#B45309");
             var fillColor = ScottPlot.Color.FromHex("#F59E0B").WithAlpha(38);
 
-            // HorizontalSpan shades an X-axis range in ScottPlot 5.
-            _timeHighlightSpan = PerformanceChart.Plot.Add.HorizontalSpan(
-                startTime.ToOADate(),
-                endTime.ToOADate(),
-                fillColor);
-            _timeHighlightSpan.LineColor = accentColor.WithAlpha(128);
-            _timeHighlightSpan.LineWidth = 1;
-            _timeHighlightSpan.EnableAutoscale = false;
-            _timeHighlightSpan.LegendText = "注目時間帯";
-
-            _timeHighlightFocusLine = PerformanceChart.Plot.Add.VerticalLine(
-                focusTime.ToOADate(),
-                2,
+            _timeHighlightSpan = AddTimeHighlightSpan(
+                PerformanceChart.Plot,
+                startTime,
+                endTime,
                 accentColor,
-                LinePattern.Dashed);
-            _timeHighlightFocusLine.LabelText = $"{focusTime:HH:mm:ss}";
-            _timeHighlightFocusLine.LabelFontColor = accentColor;
-            _timeHighlightFocusLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#FFF7ED").WithAlpha(235);
-            _timeHighlightFocusLine.EnableAutoscale = false;
-            _timeHighlightFocusLine.LegendText = "注目点";
+                fillColor);
+
+            if (_isTimeHighlightFocusVisible)
+            {
+                _timeHighlightFocusLine = AddTimeHighlightFocusLine(
+                    PerformanceChart.Plot,
+                    focusTime,
+                    accentColor);
+            }
         }
+
+        UpdateDataTableDetailChartTimeHighlight(refresh);
 
         if (refresh)
         {
@@ -3745,6 +4048,27 @@ public partial class MainWindow : Window
                 : "注目時間帯のハイライトを解除しました。";
             AddOperationLog(LogLevel.Info, message);
         }
+    }
+
+    private void TimeHighlightFocusVisible_Changed(object sender, RoutedEventArgs e)
+    {
+        if (TimeHighlightFocusVisibleCheckBox == null)
+        {
+            return;
+        }
+
+        _isTimeHighlightFocusVisible = TimeHighlightFocusVisibleCheckBox.IsChecked == true;
+
+        if (_isUpdatingTimeHighlightControls)
+        {
+            UpdateTimeHighlightControls();
+            return;
+        }
+
+        UpdateChartTimeHighlight(refresh: true);
+        AddOperationLog(
+            LogLevel.Info,
+            _isTimeHighlightFocusVisible ? "注目点を表示しました。" : "注目点を非表示にしました。");
     }
 
     private void TimeHighlightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -3835,6 +4159,9 @@ public partial class MainWindow : Window
             
             // グラフのX軸範囲を更新
             UpdateChartXAxisRange();
+
+            // データテーブル詳細グラフも同じ表示時間範囲へ更新
+            UpdateDataTableDetailChartTimeRange();
         }
     }
 
@@ -4307,7 +4634,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        _isInitializingBulkScaleComboBox = true;
         BulkScaleComboBox.Items.Clear();
 
         AddSupportedScaleItems(BulkScaleComboBox);
@@ -4321,25 +4647,6 @@ public partial class MainWindow : Window
             BulkScaleComboBox.SelectedItem = defaultItem;
         }
 
-        _isInitializingBulkScaleComboBox = false;
-    }
-
-    /// <summary>
-    /// 一括スケール選択変更時に即時適用
-    /// </summary>
-    private void BulkScaleComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isInitializingBulkScaleComboBox || !IsLoaded)
-        {
-            return;
-        }
-
-        if (!GetCurrentChartCounters().Any())
-        {
-            return;
-        }
-
-        ApplyScaleToAllCounters_Click(sender, new RoutedEventArgs());
     }
 
     /// <summary>
@@ -4351,39 +4658,20 @@ public partial class MainWindow : Window
             .Concat(_areaChartSeries.Keys)
             .ToHashSet(StringComparer.Ordinal);
 
-        var countersInLegendOrder = _legendItems
-            .Select(static item => item.CounterPath)
-            .Where(chartCounters.Contains)
-            .ToList();
-
-        var legendCounterSet = countersInLegendOrder.ToHashSet(StringComparer.Ordinal);
-        countersInLegendOrder.AddRange(chartCounters
-            .Where(counter => !legendCounterSet.Contains(counter))
-            .OrderBy(static counter => counter));
-
-        return countersInLegendOrder;
+        return CounterDisplayNameSorter.Sort(chartCounters);
     }
 
-    private void ReorderLegendItems(IReadOnlyList<string> counterOrder)
+    private void SortLegendItemsByCounterName()
     {
         if (_legendItems.Count < 2)
         {
             return;
         }
 
-        var itemsByPath = _legendItems.ToDictionary(
-            static item => item.CounterPath,
-            StringComparer.Ordinal);
-        var orderedItems = counterOrder
-            .Where(itemsByPath.ContainsKey)
-            .Select(counter => itemsByPath[counter])
+        var orderedItems = _legendItems
+            .OrderBy(static item => item.CounterName, StringComparer.CurrentCulture)
+            .ThenBy(static item => item.CounterPath, StringComparer.CurrentCulture)
             .ToList();
-        var counterPathSet = counterOrder.ToHashSet(StringComparer.Ordinal);
-
-        foreach (var item in _legendItems.Where(item => !counterPathSet.Contains(item.CounterPath)))
-        {
-            orderedItems.Add(item);
-        }
 
         _legendItems.Clear();
         foreach (var item in orderedItems)
@@ -4475,6 +4763,41 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// コンボボックスで選択中のスケール値を取得
+    /// </summary>
+    private static bool TryGetSelectedScale(ComboBox comboBox, out double scale, out string scaleLabel)
+    {
+        if (comboBox.SelectedItem is ComboBoxItem selectedItem &&
+            selectedItem.Tag is string selectedScaleLabel &&
+            double.TryParse(selectedScaleLabel, NumberStyles.Float, CultureInfo.InvariantCulture, out scale))
+        {
+            scaleLabel = selectedScaleLabel;
+            return true;
+        }
+
+        scale = default;
+        scaleLabel = string.Empty;
+        return false;
+    }
+
+    private void ApplyScaleToCounter(string counter, double newScale, string scaleLabel)
+    {
+        var oldScale = _counterScales.GetValueOrDefault(counter, 1.0);
+        _counterScales[counter] = newScale;
+
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            RefreshCounterInChart(counter);
+            RefreshSelectedDataTableDetail(counter);
+        }), System.Windows.Threading.DispatcherPriority.Normal);
+
+        AddOperationLog(
+            LogLevel.Success,
+            $"{CounterPathFormatter.GetDisplayName(counter)} にスケール {scaleLabel} を適用しました。");
+        System.Diagnostics.Debug.WriteLine($"Counter '{counter}' scale changed from {oldScale} to {newScale}");
+    }
+
+    /// <summary>
     /// カウンター別スケール設定コントロールを作成
     /// </summary>
     private Border CreateCounterScaleControl(string counter)
@@ -4491,6 +4814,8 @@ public partial class MainWindow : Window
         var grid = new Grid();
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         // カウンター名表示
         var counterLabel = new TextBlock
@@ -4503,13 +4828,15 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 3)
         };
         Grid.SetRow(counterLabel, 0);
+        Grid.SetColumnSpan(counterLabel, 2);
         grid.Children.Add(counterLabel);
 
         // スケール選択コンボボックス
         var scaleComboBox = new ComboBox
         {
-            Width = 160,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+            MinWidth = 80,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 0, 6, 0),
             Tag = counter
         };
 
@@ -4529,37 +4856,58 @@ public partial class MainWindow : Window
             scaleComboBox.SelectedIndex = 0;
         }
 
-        // イベントハンドラー追加
-        scaleComboBox.SelectionChanged += (sender, e) =>
+        var applyButton = new Button
         {
-            if (_isUpdatingScaleControls)
+            Content = "適用",
+            Padding = new Thickness(6, 3, 6, 3),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            ToolTip = "一括スケールで選択した値をこのカウンターへ適用します"
+        };
+        if (TryFindResource("SecondaryActionButtonStyle") is Style applyButtonStyle)
+        {
+            applyButton.Style = applyButtonStyle;
+        }
+
+        scaleComboBox.SelectionChanged += (_, _) =>
+        {
+            if (_isUpdatingScaleControls ||
+                !TryGetSelectedScale(scaleComboBox, out var newScale, out var scaleLabel))
             {
                 return;
             }
 
-            if (sender is ComboBox comboBox && 
-                comboBox.Tag is string counterName &&
-                comboBox.SelectedItem is ComboBoxItem selectedItem &&
-                selectedItem.Tag is string scaleString)
+            ApplyScaleToCounter(counter, newScale, scaleLabel);
+        };
+
+        applyButton.Click += (_, _) =>
+        {
+            if (!TryGetSelectedScale(BulkScaleComboBox, out var newScale, out var scaleLabel))
             {
-                if (double.TryParse(scaleString, NumberStyles.Float, CultureInfo.InvariantCulture, out double newScale))
-                {
-                    var oldScale = _counterScales.GetValueOrDefault(counterName, 1.0);
-                    _counterScales[counterName] = newScale;
-                    
-                    // グラフを即座に更新
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        RefreshCounterInChart(counterName);
-                    }), System.Windows.Threading.DispatcherPriority.Normal);
-                    
-                    LogError($"Counter '{counterName}' scale changed from {oldScale} to {newScale} (グラフ表示位置のみ変更、実際のデータ値は保持)");
-                }
+                AddOperationLog(LogLevel.Warning, "一括スケールの値を選択してください。");
+                return;
             }
+
+            _isUpdatingScaleControls = true;
+            try
+            {
+                EnsureScaleComboBoxContainsScale(scaleComboBox, newScale);
+                _ = TrySelectScaleComboBoxItem(scaleComboBox, newScale);
+            }
+            finally
+            {
+                _isUpdatingScaleControls = false;
+            }
+
+            ApplyScaleToCounter(counter, newScale, scaleLabel);
         };
 
         Grid.SetRow(scaleComboBox, 1);
+        Grid.SetColumn(scaleComboBox, 0);
         grid.Children.Add(scaleComboBox);
+
+        Grid.SetRow(applyButton, 1);
+        Grid.SetColumn(applyButton, 1);
+        grid.Children.Add(applyButton);
 
         border.Child = grid;
         return border;
@@ -4675,6 +5023,7 @@ public partial class MainWindow : Window
                 RefreshChartWithCurrentType();
             }
 
+            RefreshSelectedDataTableDetail();
             UpdateScaleControlVisibility();
             SyncVisibleCounterScaleComboBoxes(newScale);
 
@@ -4736,6 +5085,7 @@ public partial class MainWindow : Window
                 RefreshChartWithCurrentType();
             }
 
+            RefreshSelectedDataTableDetail();
             UpdateScaleControlVisibility();
 
             var skippedMessage = skippedCount > 0 ? $"（{skippedCount} 件スキップ）" : string.Empty;
@@ -4757,15 +5107,7 @@ public partial class MainWindow : Window
 
         if (BulkScaleComboBox != null)
         {
-            _isInitializingBulkScaleComboBox = true;
-            try
-            {
-                _ = TrySelectScaleComboBoxItem(BulkScaleComboBox, defaultScale);
-            }
-            finally
-            {
-                _isInitializingBulkScaleComboBox = false;
-            }
+            _ = TrySelectScaleComboBoxItem(BulkScaleComboBox, defaultScale);
         }
 
         UpdateScaleControlVisibility();
@@ -5228,6 +5570,26 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             LogError($"relog.exe情報表示の更新エラー: {ex.Message}");
+        }
+    }
+
+    private void CopyRelogCommand_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(RelogCommandDisplay.Text))
+            {
+                AddOperationLog(LogLevel.Warning, "コピーする relog.exe コマンドがありません。");
+                return;
+            }
+
+            Clipboard.SetText(RelogCommandDisplay.Text);
+            AddOperationLog(LogLevel.Success, "relog.exe コマンドをクリップボードにコピーしました。");
+        }
+        catch (Exception ex)
+        {
+            AddOperationLog(LogLevel.Error, $"relog.exe コマンドのコピーに失敗しました: {ex.Message}");
+            LogError($"relog.exe command clipboard copy failed: {ex}");
         }
     }
 
@@ -5889,6 +6251,97 @@ public partial class MainWindow : Window
         LegendItemsControl.ItemsSource = _legendItems;
     }
 
+    private void EnsureEmbeddedChartLegend()
+    {
+        if (_embeddedChartLegendPanel is null)
+        {
+            _embeddedChartLegendPanel = PerformanceChart.Plot.ShowLegend(ScottPlot.Edge.Bottom);
+        }
+
+        var legend = _embeddedChartLegendPanel.Legend;
+        legend.DisplayPlottableLegendItems = false;
+        legend.Orientation = ScottPlot.Orientation.Horizontal;
+        legend.TightHorizontalWrapping = true;
+        legend.FontSize = 11;
+    }
+
+    private void RemoveEmbeddedChartLegend()
+    {
+        if (_embeddedChartLegendPanel is null)
+        {
+            return;
+        }
+
+        PerformanceChart.Plot.Remove(_embeddedChartLegendPanel);
+        _embeddedChartLegendPanel = null;
+    }
+
+    private void UpdateEmbeddedChartLegend()
+    {
+        if (PerformanceChart is null)
+        {
+            return;
+        }
+
+        var visibleItems = _legendItems
+            .Where(static item => item.IsVisible)
+            .OrderBy(static item => item.CounterName, StringComparer.CurrentCulture)
+            .ThenBy(static item => item.CounterPath, StringComparer.CurrentCulture)
+            .ToList();
+
+        if (!_isEmbeddedChartLegendVisible || visibleItems.Count == 0)
+        {
+            RemoveEmbeddedChartLegend();
+            return;
+        }
+
+        EnsureEmbeddedChartLegend();
+
+        var legend = _embeddedChartLegendPanel!.Legend;
+        legend.ManualItems.Clear();
+
+        foreach (var item in visibleItems)
+        {
+            legend.ManualItems.Add(new ScottPlot.LegendItem
+            {
+                LabelText = item.CounterName,
+                LineColor = GetOrCreateCounterColor(item.CounterPath),
+                LineWidth = DefaultLineWidth,
+                MarkerSize = 0,
+                IsVisible = true
+            });
+        }
+
+        _embeddedChartLegendPanel.IsVisible = true;
+    }
+
+    private void EmbeddedChartLegendVisibility_Changed(object sender, RoutedEventArgs e)
+    {
+        if (EmbeddedChartLegendVisibleCheckBox is null)
+        {
+            return;
+        }
+
+        _isEmbeddedChartLegendVisible = EmbeddedChartLegendVisibleCheckBox.IsChecked == true;
+
+        if (PerformanceChart is null)
+        {
+            return;
+        }
+
+        UpdateEmbeddedChartLegend();
+        PerformanceChart.Refresh();
+
+        if (IsLoaded)
+        {
+            AddOperationLog(
+                LogLevel.Info,
+                _isEmbeddedChartLegendVisible
+                    ? "グラフ内凡例を表示しました。"
+                    : "グラフ内凡例を非表示にしました。");
+        }
+    }
+
     private bool IsLineCounterHighlighted(string counterPath)
     {
         return _chartSeries.ContainsKey(counterPath)
@@ -6085,6 +6538,7 @@ public partial class MainWindow : Window
             ApplyLineSeriesHighlight(refresh: false);
             EnsureYAxisFixedRange();
             UpdateYAxisRangeControls();
+            UpdateEmbeddedChartLegend();
             PerformanceChart.Refresh();
         }
         catch (Exception ex)
@@ -6106,6 +6560,7 @@ public partial class MainWindow : Window
             existingItem.IsVisible = _seriesVisibility.GetValueOrDefault(counterPath, true);
             existingItem.IsHighlighted = IsLineCounterHighlighted(counterPath);
             existingItem.IsSecondaryAxis = GetYAxisAssignment(counterPath) == YAxisAssignment.Secondary;
+            UpdateEmbeddedChartLegend();
             return;
         }
         
@@ -6121,6 +6576,8 @@ public partial class MainWindow : Window
         };
         
         _legendItems.Add(legendItem);
+        SortLegendItemsByCounterName();
+        UpdateEmbeddedChartLegend();
     }
     
     /// <summary>
@@ -6135,6 +6592,7 @@ public partial class MainWindow : Window
         }
 
         _highlightedLegendCounterPaths.Remove(counterPath);
+        UpdateEmbeddedChartLegend();
     }
     
     /// <summary>
@@ -6143,6 +6601,7 @@ public partial class MainWindow : Window
     private void ClearLegendItems(bool clearVisibility = true)
     {
         _legendItems.Clear();
+        UpdateEmbeddedChartLegend();
         if (clearVisibility)
         {
             _seriesVisibility.Clear();
