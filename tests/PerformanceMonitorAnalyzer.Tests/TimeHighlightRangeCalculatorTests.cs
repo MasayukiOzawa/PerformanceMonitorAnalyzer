@@ -109,4 +109,19 @@ public class TimeHighlightRangeCalculatorTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public void FindNearestTimestampInRange_WhenTimestampsIsNull_ThrowsArgumentNullException()
+    {
+        var timestamp = new DateTime(2026, 1, 1, 0, 0, 0);
+
+        var exception = Assert.Throws<ArgumentNullException>(() =>
+            TimeHighlightRangeCalculator.FindNearestTimestampInRange(
+                null!,
+                timestamp,
+                timestamp,
+                timestamp));
+
+        Assert.Equal("timestamps", exception.ParamName);
+    }
 }

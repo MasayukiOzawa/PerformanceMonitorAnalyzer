@@ -73,6 +73,8 @@ internal static class TimeHighlightRangeCalculator
         DateTime rangeEnd,
         DateTime focusTime)
     {
+        ArgumentNullException.ThrowIfNull(timestamps);
+
         DateTime? nearestTimestamp = null;
         long nearestDistance = long.MaxValue;
 
