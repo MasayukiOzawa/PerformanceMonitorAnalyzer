@@ -4670,7 +4670,7 @@ public partial class MainWindow : Window
 
         var orderedItems = _legendItems
             .OrderBy(static item => item.CounterName, StringComparer.CurrentCulture)
-            .ThenBy(static item => item.CounterPath, StringComparer.CurrentCulture)
+            .ThenBy(static item => item.CounterPath, StringComparer.Ordinal)
             .ToList();
 
         _legendItems.Clear();
@@ -6286,7 +6286,7 @@ public partial class MainWindow : Window
         var visibleItems = _legendItems
             .Where(static item => item.IsVisible)
             .OrderBy(static item => item.CounterName, StringComparer.CurrentCulture)
-            .ThenBy(static item => item.CounterPath, StringComparer.CurrentCulture)
+            .ThenBy(static item => item.CounterPath, StringComparer.Ordinal)
             .ToList();
 
         if (!_isEmbeddedChartLegendVisible || visibleItems.Count == 0)

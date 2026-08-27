@@ -8,7 +8,7 @@ internal static class CounterDisplayNameSorter
 
         return counterPaths
             .OrderBy(CounterPathFormatter.GetDisplayName, StringComparer.CurrentCulture)
-            .ThenBy(static counterPath => counterPath, StringComparer.CurrentCulture)
+            .ThenBy(static counterPath => counterPath, StringComparer.Ordinal)
             .ToList();
     }
 }

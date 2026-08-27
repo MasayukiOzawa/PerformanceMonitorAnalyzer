@@ -25,4 +25,24 @@ public class CounterDisplayNameSorterTests
             ],
             sorted);
     }
+
+    [Fact]
+    public void Sort_WhenDisplayNamesMatch_UsesOrdinalCounterPathTieBreaker()
+    {
+        using var _ = new TestCultureScope("ja-JP");
+        var counters = new[]
+        {
+            @"\\ä-PC\Memory\Available MBytes",
+            @"\\z-PC\Memory\Available MBytes"
+        };
+
+        var sorted = CounterDisplayNameSorter.Sort(counters);
+
+        Assert.Equal(
+            [
+                @"\\z-PC\Memory\Available MBytes",
+                @"\\ä-PC\Memory\Available MBytes"
+            ],
+            sorted);
+    }
 }
